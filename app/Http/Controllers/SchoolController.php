@@ -6,7 +6,7 @@ use Illuminate\Http\Request;
 use App\Models\Subcategory;
 use App\Models\Category;
 
-class SubcategoryController extends Controller
+class SchoolController extends Controller
 {
     public function index()
     {
