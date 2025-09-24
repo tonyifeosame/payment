@@ -9,46 +9,70 @@
 
     <!-- Navbar -->
     <nav class="bg-blue-600 p-4 text-white flex space-x-6">
-        <a href="{{ url('/categories') }}" class="hover:underline">Categories</a>
-        <a href="{{ url('/subcategories') }}" class="hover:underline">Subcategories</a>
-        <a href="{{ url('/transactions') }}" class="hover:underline">Transactions</a>
+        <a href="{{ route('categories.index') }}" class="hover:underline">Categories</a>
+        <a href="{{ route('subcategories.index') }}" class="hover:underline">Subcategories</a>
+        <a href="{{ route('transactions.index') }}" class="hover:underline">Transactions</a>
     </nav>
 
-    <div class="container mx-auto mt-8">
-        <h1 class="text-2xl font-bold mb-4">Categories</h1>
-        <div class="bg-white p-6 rounded-lg shadow-md mb-6">
-    <h2 class="text-xl font-semibold mb-4">Add Category</h2>
-    <form method="POST" action="{{ url('/categories') }}" class="space-y-4">
-        @csrf
-        <input type="text" name="name" placeholder="Category Name"
-               class="w-full border rounded p-2 focus:outline-none focus:ring focus:ring-blue-300">
+    <div class="max-w-5xl mx-auto mt-8">
+        <h1 class="text-3xl font-bold mb-6">Categories</h1>
 
-        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
-            Add Category
-        </button>
-    </form>
-</div>
+        <!-- Success message -->
+        @if(session('success'))
+            <div class="bg-green-100 text-green-800 px-4 py-2 rounded mb-4">
+                {{ session('success') }}
+            </div>
+        @endif
 
+        <!-- Add Category -->
+        <div class="bg-white p-6 rounded-lg shadow mb-6">
+            <h2 class="text-xl font-semibold mb-4">Add Category</h2>
+            <form method="POST" action="{{ route('categories.store') }}" class="space-y-4">
+                @csrf
+                <input type="text" name="name" placeholder="Category Name"
+                       class="w-full border rounded p-2 focus:outline-none focus:ring focus:ring-blue-300">
 
-        <div class="overflow-x-auto">
-            <table class="min-w-full bg-white border border-gray-300 rounded-lg shadow-md">
-                <thead class="bg-blue-600 text-white">
+                <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+                    Add Category
+                </button>
+            </form>
+        </div>
+
+        <!-- Categories Table -->
+        <div class="overflow-x-auto bg-white rounded-lg shadow">
+            <table class="min-w-full border border-gray-200">
+                <thead class="bg-gray-100 text-gray-700">
                     <tr>
-                        <th class="py-2 px-4 border">ID</th>
-                        <th class="py-2 px-4 border">Name</th>
-                        <th class="py-2 px-4 border">Created At</th>
-                        <th class="py-2 px-4 border">Updated At</th>
+                        <th class="p-3 border">#</th>
+                        <th class="p-3 border">Name</th>
+                        <th class="p-3 border">Created At</th>
+                        <th class="p-3 border">Updated At</th>
+                        <th class="p-3 border">Action</th>
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach ($categories as $category)
-                        <tr class="hover:bg-gray-100">
-                            <td class="py-2 px-4 border">{{ $category->id }}</td>
-                            <td class="py-2 px-4 border">{{ $category->name }}</td>
-                            <td class="py-2 px-4 border">{{ $category->created_at }}</td>
-                            <td class="py-2 px-4 border">{{ $category->updated_at }}</td>
+                    @forelse($categories as $category)
+                        <tr class="border-b hover:bg-gray-50">
+                            <td class="p-3 border">{{ $category->id }}</td>
+                            <td class="p-3 border">{{ $category->name }}</td>
+                            <td class="p-3 border">{{ $category->created_at->format('Y-m-d H:i') }}</td>
+                            <td class="p-3 border">{{ $category->updated_at->format('Y-m-d H:i') }}</td>
+                            <td class="p-3 border">
+                                <form action="{{ route('categories.destroy', $category->id) }}" method="POST"
+                                      onsubmit="return confirm('Are you sure you want to delete this category?');">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button type="submit" class="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700">
+                                        Delete
+                                    </button>
+                                </form>
+                            </td>
                         </tr>
-                    @endforeach
+                    @empty
+                        <tr>
+                            <td colspan="5" class="p-3 text-center text-gray-500">No categories found.</td>
+                        </tr>
+                    @endforelse
                 </tbody>
             </table>
         </div>

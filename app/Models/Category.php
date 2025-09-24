@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class Category extends Model
 {
-    protected $fillable = ['name', 'price'];
+    protected $fillable = ['name'];
 
     public function subcategories()
     {
@@ -18,5 +18,3 @@ class Category extends Model
         return $this->hasMany(Transaction::class);
     }
 }
-
-

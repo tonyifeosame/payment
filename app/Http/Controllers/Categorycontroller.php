@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\Category;
+use App\Models\Subcategory;
 
 class CategoryController extends Controller
 {
@@ -24,5 +25,17 @@ class CategoryController extends Controller
         ]);
 
         return redirect('/categories')->with('success', 'Category created successfully!');
+    }
+
+    public function destroy(Category $category)
+    {
+        $category->delete();
+        return redirect()->route('categories.index')->with('success', 'Category deleted successfully.');
+    }
+
+    public function destroySubcategory(Subcategory $subcategory)
+    {
+        $subcategory->delete();
+        return redirect()->route('subcategories.index')->with('success', 'Subcategory deleted successfully.');
     }
 }

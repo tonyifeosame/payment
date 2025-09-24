@@ -12,13 +12,11 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('categories', function (Blueprint $table) {
-    $table->id();
-    $table->string('name');   // is it "name" or "category_name"?
-    $table->decimal('price', 10, 2)->nullable();
-    $table->timestamps();
-
-});
-
+            $table->id();
+            $table->string('name'); // Name of the category (e.g. school fees, uniform)
+            $table->decimal('price', 10, 2)->nullable(); // Price can be null
+            $table->timestamps(); // created_at and updated_at
+        });
     }
 
     /**

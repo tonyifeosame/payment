@@ -7,13 +7,22 @@ use Illuminate\Database\Eloquent\Model;
 class Transaction extends Model
 {
     protected $fillable = [
-        'admission_no', 'amount', 'status',
-        'payment_method', 'email', 'name',
-        'category_id', 'subcategory_id', 'meta_data'
+        'reference',
+        'category_id',
+        'subcategory_id',
+        'category_name',
+        'subcategory_name',
+        'admission_number',
+        'email',
+        'name',
+        'amount',
+        'status',
+        'payment_method',
+        'meta_data',
     ];
 
     protected $casts = [
-        'meta_data' => 'array', // JSONB in Postgres
+        'meta_data' => 'array',
     ];
 
     public function category()

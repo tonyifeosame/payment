@@ -8,64 +8,70 @@
 <body class="bg-gray-100 text-gray-800">
 
     <!-- Navbar -->
-    <nav class="bg-blue-600 p-4 text-white flex space-x-6">
-        <a href="{{ url('/categories') }}" class="hover:underline">Categories</a>
-        <a href="{{ url('/subcategories') }}" class="hover:underline">Subcategories</a>
-        <a href="{{ url('/transactions') }}" class="hover:underline">Transactions</a>
+    <nav class="bg-blue-600 p-4 text-white flex space-x-6 shadow">
+        <a href="{{ route('categories.index') }}" class="hover:underline">Categories</a>
+        <a href="{{ route('subcategories.index') }}" class="hover:underline font-bold">Subcategories</a>
+        <a href="{{ route('transactions.index') }}" class="hover:underline">Transactions</a>
     </nav>
 
-    <div class="container mx-auto mt-8">
-        <h1 class="text-2xl font-bold mb-4">Subcategories</h1>
-        <div class="bg-white p-6 rounded-lg shadow-md mb-6">
-    <h2 class="text-xl font-semibold mb-4">Add Subcategory</h2>
-    <form method="POST" action="{{ url('/subcategories') }}" class="space-y-4">
-        @csrf
-        <select name="category_id" class="w-full border rounded p-2">
-            <option value="">Select Category</option>
-            @foreach($categories as $category)
-                <option value="{{ $category->id }}">{{ $category->name }}</option>
-            @endforeach
-        </select>
+    <div class="max-w-6xl mx-auto p-6">
+        <h1 class="text-3xl font-bold mb-6">Subcategories</h1>
 
-        <input type="text" name="name" placeholder="Subcategory Name"
-               class="w-full border rounded p-2 focus:outline-none focus:ring focus:ring-blue-300">
+        <!-- Add Subcategory Button -->
+        <div class="mb-6">
+            <a href="{{ route('subcategories.create') }}" 
+               class="bg-blue-600 text-white px-4 py-2 rounded-lg shadow hover:bg-blue-700 transition">
+                + Add Subcategory
+            </a>
+        </div>
 
-        <input type="number" name="price" placeholder="Price"
-               class="w-full border rounded p-2 focus:outline-none focus:ring focus:ring-blue-300">
+        <!-- Flash message -->
+        @if(session('success'))
+            <div class="mb-4 p-3 bg-green-100 text-green-700 rounded">
+                {{ session('success') }}
+            </div>
+        @endif
 
-        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
-            Add Subcategory
-        </button>
-    </form>
-</div>
-
-
-        <div class="overflow-x-auto">
-            <table class="min-w-full bg-white border border-gray-300 rounded-lg shadow-md">
-                <thead class="bg-blue-600 text-white">
-                    <tr>
-                        <th class="py-2 px-4 border">ID</th>
-                        <th class="py-2 px-4 border">Category ID</th>
-                        <th class="py-2 px-4 border">Name</th>
-                        <th class="py-2 px-4 border">Price</th>
-                        <th class="py-2 px-4 border">Created At</th>
-                        <th class="py-2 px-4 border">Updated At</th>
+        <!-- Subcategories Table -->
+        <div class="overflow-x-auto bg-white rounded-lg shadow">
+            <table class="min-w-full border border-gray-200">
+                <thead>
+                    <tr class="bg-gray-100 text-left text-gray-700">
+                        <th class="p-3 border">#</th>
+                        <th class="p-3 border">Category</th>
+                        <th class="p-3 border">Name</th>
+                        <th class="p-3 border">Price</th>
+                        <th class="p-3 border">Action</th>
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach ($subcategories as $subcategory)
-                        <tr class="hover:bg-gray-100">
-                            <td class="py-2 px-4 border">{{ $subcategory->id }}</td>
-                            <td class="py-2 px-4 border">{{ $subcategory->category_id }}</td>
-                            <td class="py-2 px-4 border">{{ $subcategory->name }}</td>
-                            <td class="py-2 px-4 border">{{ $subcategory->price }}</td>
-                            <td class="py-2 px-4 border">{{ $subcategory->created_at }}</td>
-                            <td class="py-2 px-4 border">{{ $subcategory->updated_at }}</td>
+                    @forelse($subcategories as $sub)
+                        <tr class="border-b hover:bg-gray-50">
+                            <td class="p-3 border">{{ $sub->id }}</td>
+                            <td class="p-3 border">{{ $sub->category->name ?? 'N/A' }}</td>
+                            <td class="p-3 border">{{ $sub->name }}</td>
+                            <td class="p-3 border">₦{{ number_format($sub->price, 2) }}</td>
+                            <td class="p-3 border">
+                                <form action="{{ route('subcategories.destroy', $sub->id) }}" method="POST" 
+                                      onsubmit="return confirm('Are you sure you want to delete this subcategory?');">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button type="submit" 
+                                            class="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700 transition">
+                                        Delete
+                                    </button>
+                                </form>
+                            </td>
                         </tr>
-                    @endforeach
+                    @empty
+                        <tr>
+                            <td colspan="5" class="p-3 text-center text-gray-500">No subcategories found.</td>
+                        </tr>
+                    @endforelse
                 </tbody>
             </table>
         </div>
     </div>
+
 </body>
 </html>
