@@ -15,7 +15,7 @@
         </div>
     @endif
 
-    <form action="{{ route('subcategories.store') }}" method="POST" class="space-y-4">
+    <form action="@isset($school){{ route('school.subcategories.store', ['school' => $school->slug]) }}@else{{ route('subcategories.store') }}@endisset" method="POST" class="space-y-4">
         @csrf
 
         <!-- Category dropdown -->
@@ -43,7 +43,7 @@
 
         <div class="flex space-x-2">
             <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded">Save</button>
-            <a href="{{ route('subcategories.index') }}" class="bg-gray-500 text-white px-4 py-2 rounded">Cancel</a>
+            <a href="@isset($school){{ route('school.subcategories.index', ['school' => $school->slug]) }}@else{{ route('subcategories.index') }}@endisset" class="bg-gray-500 text-white px-4 py-2 rounded">Cancel</a>
         </div>
     </form>
 </div>

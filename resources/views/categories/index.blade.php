@@ -9,9 +9,15 @@
 
     <!-- Navbar -->
     <nav class="bg-blue-600 p-4 text-white flex space-x-6">
-        <a href="{{ route('categories.index') }}" class="hover:underline">Categories</a>
-        <a href="{{ route('subcategories.index') }}" class="hover:underline">Subcategories</a>
-        <a href="{{ route('transactions.index') }}" class="hover:underline">Transactions</a>
+        @isset($school)
+            <a href="{{ route('school.categories.index', ['school' => $school->slug]) }}" class="hover:underline">Categories</a>
+            <a href="{{ route('school.subcategories.index', ['school' => $school->slug]) }}" class="hover:underline">Subcategories</a>
+            <a href="{{ route('school.transactions.index', ['school' => $school->slug]) }}" class="hover:underline">Transactions</a>
+        @else
+            <a href="{{ route('categories.index') }}" class="hover:underline">Categories</a>
+            <a href="{{ route('subcategories.index') }}" class="hover:underline">Subcategories</a>
+            <a href="{{ route('transactions.index') }}" class="hover:underline">Transactions</a>
+        @endisset
     </nav>
 
     <div class="max-w-5xl mx-auto mt-8">
@@ -27,7 +33,7 @@
         <!-- Add Category -->
         <div class="bg-white p-6 rounded-lg shadow mb-6">
             <h2 class="text-xl font-semibold mb-4">Add Category</h2>
-            <form method="POST" action="{{ route('categories.store') }}" class="space-y-4">
+            <form method="POST" action="@isset($school){{ route('school.categories.store', ['school' => $school->slug]) }}@else{{ route('categories.store') }}@endisset" class="space-y-4">
                 @csrf
                 <input type="text" name="name" placeholder="Category Name"
                        class="w-full border rounded p-2 focus:outline-none focus:ring focus:ring-blue-300">
