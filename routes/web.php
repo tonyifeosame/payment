@@ -8,8 +8,8 @@ use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\RegistrationController;
 use App\Http\Controllers\SchoolAuthController;
 use App\Http\Controllers\PaystackController;
-use App\Models\School;
 use Illuminate\Support\Facades\Mail;
+use App\Models\School;
 use Illuminate\Http\Request;
 use App\Http\Middleware\EnsureSchoolAdmin;
 
@@ -36,6 +36,35 @@ Route::post('/registration', [RegistrationController::class, 'store'])->name('re
 // Paystack helper routes (server-side; uses secret key)
 Route::get('/api/banks', [PaystackController::class, 'banks'])->name('api.banks');
 Route::get('/api/resolve-account', [PaystackController::class, 'resolveAccount'])->name('api.resolve-account');
+
+// Contact routes
+Route::get('/contact', function () {
+    return view('contact');
+})->name('contact.show');
+
+Route::post('/contact', function (\Illuminate\Http\Request $request) {
+    $data = $request->validate([
+        'name' => 'required|string|max:255',
+        'email' => 'required|email|max:255',
+        'subject' => 'required|string|max:255',
+        'message' => 'required|string|max:5000',
+    ]);
+
+    $to = config('mail.from.address');
+    try {
+        Mail::raw(
+            "From: {$data['name']} <{$data['email']}>\n\n" . $data['message'],
+            function ($m) use ($to, $data) {
+                $m->to($to)->subject('[Contact] ' . $data['subject']);
+                $m->replyTo($data['email'], $data['name']);
+            }
+        );
+    } catch (\Throwable $e) {
+        return back()->withInput()->with('error', 'Unable to send your message. Please try again later.');
+    }
+
+    return redirect()->route('contact.show')->with('success', 'Your message has been sent. We will get back to you shortly.');
+})->name('contact.send');
 
 // Admin auth routes (school-level)
 Route::get('/admin/login', [SchoolAuthController::class, 'showLogin'])->name('admin.login');

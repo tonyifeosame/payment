@@ -11,9 +11,7 @@
     <!-- Navbar -->
     <nav class="bg-blue-600 p-4 text-white">
         <div class="max-w-6xl mx-auto flex flex-wrap items-center gap-4">
-            <a href="{{ url('/categories') }}" class="hover:underline">Categories</a>
-            <a href="{{ url('/subcategories') }}" class="hover:underline">Subcategories</a>
-            <a href="{{ url('/transactions') }}" class="hover:underline">Transactions</a>
+            <!-- Navbar intentionally left blank. Category/Subcategory/Transaction pages render their own navbars. -->
         </div>
     </nav>
 

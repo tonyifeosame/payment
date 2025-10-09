@@ -10,16 +10,21 @@
 
     <!-- Navbar -->
     <nav class="bg-blue-600 p-4 text-white shadow">
-        <div class="max-w-6xl mx-auto flex flex-wrap items-center gap-4">
-            @isset($school)
-                <a href="{{ route('school.categories.index', ['school' => $school->slug]) }}" class="hover:underline">Categories</a>
-                <a href="{{ route('school.subcategories.index', ['school' => $school->slug]) }}" class="hover:underline font-semibold">Subcategories</a>
-                <a href="{{ route('school.transactions.index', ['school' => $school->slug]) }}" class="hover:underline">Transactions</a>
-            @else
-                <a href="{{ route('categories.index') }}" class="hover:underline">Categories</a>
-                <a href="{{ route('subcategories.index') }}" class="hover:underline font-semibold">Subcategories</a>
-                <a href="{{ route('transactions.index') }}" class="hover:underline">Transactions</a>
-            @endisset
+        <div class="max-w-6xl mx-auto flex items-center justify-between gap-4">
+            <div class="flex flex-wrap items-center gap-4">
+                @isset($school)
+                    <a href="{{ route('school.categories.index', ['school' => $school->slug]) }}" class="hover:underline">Categories</a>
+                    <a href="{{ route('school.subcategories.index', ['school' => $school->slug]) }}" class="hover:underline font-semibold">Subcategories</a>
+                    <a href="{{ route('school.transactions.index', ['school' => $school->slug]) }}" class="hover:underline">Transactions</a>
+                @else
+                    <a href="{{ route('categories.index') }}" class="hover:underline">Categories</a>
+                    <a href="{{ route('subcategories.index') }}" class="hover:underline font-semibold">Subcategories</a>
+                    <a href="{{ route('transactions.index') }}" class="hover:underline">Transactions</a>
+                @endisset
+            </div>
+            <div>
+                <a href="{{ route('contact.show') }}" class="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-md">Contact</a>
+            </div>
         </div>
     </nav>
 
