@@ -2,16 +2,30 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Categories</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100 text-gray-800">
 
     <!-- Navbar -->
-    <nav class="bg-blue-600 p-4 text-white flex space-x-6">
-        <a href="{{ route('categories.index') }}" class="hover:underline">Categories</a>
-        <a href="{{ route('subcategories.index') }}" class="hover:underline">Subcategories</a>
-        <a href="{{ route('transactions.index') }}" class="hover:underline">Transactions</a>
+    <nav class="bg-blue-600 p-4 text-white">
+        <div class="flex items-center justify-between max-w-6xl mx-auto">
+            <div class="flex gap-6">
+                @isset($school)
+                    <a href="{{ route('school.categories.index', ['school' => $school->slug]) }}" class="hover:underline">Categories</a>
+                    <a href="{{ route('school.subcategories.index', ['school' => $school->slug]) }}" class="hover:underline">Subcategories</a>
+                    <a href="{{ route('school.transactions.index', ['school' => $school->slug]) }}" class="hover:underline">Transactions</a>
+                @else
+                    <a href="{{ route('categories.index') }}" class="hover:underline">Categories</a>
+                    <a href="{{ route('subcategories.index') }}" class="hover:underline">Subcategories</a>
+                    <a href="{{ route('transactions.index') }}" class="hover:underline">Transactions</a>
+                @endisset
+            </div>
+            <div>
+                <a href="{{ route('contact.show') }}" class="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-md">Contact</a>
+            </div>
+        </div>
     </nav>
 
     <div class="max-w-5xl mx-auto mt-8">
@@ -27,7 +41,7 @@
         <!-- Add Category -->
         <div class="bg-white p-6 rounded-lg shadow mb-6">
             <h2 class="text-xl font-semibold mb-4">Add Category</h2>
-            <form method="POST" action="{{ route('categories.store') }}" class="space-y-4">
+            <form method="POST" action="@isset($school){{ route('school.categories.store', ['school' => $school->slug]) }}@else{{ route('categories.store') }}@endisset" class="space-y-4">
                 @csrf
                 <input type="text" name="name" placeholder="Category Name"
                        class="w-full border rounded p-2 focus:outline-none focus:ring focus:ring-blue-300">

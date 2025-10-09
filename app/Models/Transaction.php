@@ -8,17 +8,18 @@ class Transaction extends Model
 {
     protected $fillable = [
         'reference',
+        'paystack_reference',
         'category_id',
         'subcategory_id',
         'category_name',
         'subcategory_name',
-        'admission_number',
         'email',
         'name',
         'amount',
         'status',
         'payment_method',
         'meta_data',
+        'school_id',
     ];
 
     protected $casts = [
@@ -33,5 +34,10 @@ class Transaction extends Model
     public function subcategory()
     {
         return $this->belongsTo(Subcategory::class);
+    }
+
+    public function school()
+    {
+        return $this->belongsTo(School::class);
     }
 }
