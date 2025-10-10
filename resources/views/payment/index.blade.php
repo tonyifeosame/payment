@@ -497,6 +497,20 @@
         console.error('Initialization error:', e);
     }
 
+    // Submit loading state: disable button, show spinner, change text
+    (function(){
+        const form = document.getElementById('paymentForm');
+        if (!form || !submitBtn || !spinner || !submitText) return;
+        form.addEventListener('submit', function(){
+            // Prevent multiple clicks
+            submitBtn.setAttribute('disabled', 'disabled');
+            submitBtn.classList.add('opacity-70', 'cursor-not-allowed');
+            spinner.classList.remove('hidden');
+            submitText.textContent = 'Redirecting...';
+            submitBtn.setAttribute('aria-busy', 'true');
+        });
+    })();
+
 </script>
 
 </body>
