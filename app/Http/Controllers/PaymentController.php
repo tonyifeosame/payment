@@ -267,13 +267,25 @@ class PaymentController extends Controller
                 session(['last_transaction_id' => $txnId]);
             }
 
+            // Send receipt email
+            if ($txnId) {
+                $transaction = Transaction::find($txnId);
+                if ($transaction && $transaction->email) {
+                    try {
+                        \Mail::to($transaction->email)->send(new \App\Mail\PaymentReceiptMail($transaction));
+                    } catch (\Throwable $e) {
+                        // Log or ignore email errors
+                    }
+                }
+            }
+
             // If school context present, redirect to the school's payment page
             $schoolSlug = $data['data']['metadata']['school_slug'] ?? null;
             if ($schoolSlug) {
                 return redirect()->route('school.payment.index', ['school' => $schoolSlug])
-                                 ->with('success', 'Payment successful! You can now download your receipt.');
+                                 ->with('success', 'Payment successful! A receipt has been sent to your email. You can also download it here.');
             }
-            return redirect()->route('payment.index')->with('success', 'Payment successful! You can now download your receipt.');
+            return redirect()->route('payment.index')->with('success', 'Payment successful! A receipt has been sent to your email. You can also download it here.');
         }
 
         return redirect()->route('payment.index')->with('error', 'Payment failed!');
