@@ -189,6 +189,41 @@
 
                         <!-- Personal Info -->
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                            @if (!isset($school))
+                            <div class="group">
+                                <label for="account_number" class="block text-sm font-bold text-slate-700 mb-2 uppercase tracking-wide">Account Number</label>
+                                <div class="relative">
+                                    <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                                        <svg class="w-5 h-5 text-slate-400 group-focus-within:text-blue-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2 12h20M12 2v20"></path>
+                                        </svg>
+                                    </div>
+                                    <input type="text" id="account_number" name="account_number" maxlength="10" pattern="\d{10}" value="{{ old('account_number') }}" autocomplete="off"
+                                           class="w-full pl-12 pr-4 py-3.5 border-2 border-slate-200 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all duration-200 font-medium" required placeholder="Enter 10-digit account number">
+                                </div>
+                                @error('account_number') <span class="text-red-600 text-sm mt-1 flex items-center gap-1">{{ $message }}</span> @enderror
+                            </div>
+                            <div class="group">
+                                <label for="bank" class="block text-sm font-bold text-slate-700 mb-2 uppercase tracking-wide">Bank</label>
+                                <div class="relative">
+                                    <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                                        <svg class="w-5 h-5 text-slate-400 group-focus-within:text-blue-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7h18M3 12h18M3 17h18"></path>
+                                        </svg>
+                                    </div>
+                                    <select id="bank" name="bank" class="w-full pl-12 pr-4 py-3.5 border-2 border-slate-200 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all duration-200 font-medium" required>
+                                        <option value="">-- Select Bank --</option>
+                                        <option value="access">Access Bank</option>
+                                        <option value="gtb">GTBank</option>
+                                        <option value="zenith">Zenith Bank</option>
+                                        <option value="uba">UBA</option>
+                                        <option value="first">First Bank</option>
+                                        <!-- Add more banks as needed -->
+                                    </select>
+                                </div>
+                                @error('bank') <span class="text-red-600 text-sm mt-1 flex items-center gap-1">{{ $message }}</span> @enderror
+                            </div>
+                            @endif
                             <div class="group">
                                 <label for="name" class="block text-sm font-bold text-slate-700 mb-2 uppercase tracking-wide">Full Name</label>
                                 <div class="relative">
@@ -496,6 +531,20 @@
     } catch (e) {
         console.error('Initialization error:', e);
     }
+
+    // Submit loading state: disable button, show spinner, change text
+    (function(){
+        const form = document.getElementById('paymentForm');
+        if (!form || !submitBtn || !spinner || !submitText) return;
+        form.addEventListener('submit', function(){
+            // Prevent multiple clicks
+            submitBtn.setAttribute('disabled', 'disabled');
+            submitBtn.classList.add('opacity-70', 'cursor-not-allowed');
+            spinner.classList.remove('hidden');
+            submitText.textContent = 'Redirecting...';
+            submitBtn.setAttribute('aria-busy', 'true');
+        });
+    })();
 
 </script>
 

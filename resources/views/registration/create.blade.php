@@ -104,20 +104,58 @@
                         const res = await fetch('{{ route('api.banks') }}');
                         const json = await res.json();
                         if (!json.ok) throw new Error('Failed to load banks');
-                        bankSelect.innerHTML = '<option value="">-- Select Bank --</option>';
-                        (json.banks || []).forEach(b => {
+                        bankSelect.innerHTML = '';
+
+                        // Prioritize likely Nigerian banks (Paystack codes)
+                        const popularCodes = ['044','058','057','011','033']; // Access, GTB, Zenith, First Bank, UBA
+                        const banks = Array.isArray(json.banks) ? json.banks : [];
+                        const byCode = new Map(banks.map(b => [String(b.code), b]));
+
+                        const popular = [];
+                        popularCodes.forEach(c => { const b = byCode.get(String(c)); if (b) popular.push(b); });
+
+                        const popularCodesSet = new Set(popular.map(b => String(b.code)));
+                        const others = banks.filter(b => !popularCodesSet.has(String(b.code)));
+
+                        // Build Popular group (first 5 likely banks)
+                        const optPopular = document.createElement('optgroup');
+                        optPopular.label = 'Popular Banks';
+                        popular.forEach(b => {
                             const opt = document.createElement('option');
                             opt.value = b.name;
                             opt.dataset.code = b.code;
                             opt.textContent = b.name;
-                            bankSelect.appendChild(opt);
+                            optPopular.appendChild(opt);
                         });
+
+                        // Build All Banks group
+                        const optAll = document.createElement('optgroup');
+                        optAll.label = 'All Banks';
+                        others.forEach(b => {
+                            const opt = document.createElement('option');
+                            opt.value = b.name;
+                            opt.dataset.code = b.code;
+                            opt.textContent = b.name;
+                            optAll.appendChild(opt);
+                        });
+
+                        // Placeholder option
+                        const placeholder = document.createElement('option');
+                        placeholder.value = '';
+                        placeholder.textContent = '-- Select Bank --';
+                        placeholder.selected = true;
+                        placeholder.disabled = true;
+                        bankSelect.appendChild(placeholder);
+                        if (popular.length) bankSelect.appendChild(optPopular);
+                        if (others.length) bankSelect.appendChild(optAll);
                         // Restore old selection if present
                         const oldBank = @json(old('bank'));
                         if (oldBank) {
-                            bankSelect.value = oldBank;
-                            const sel = bankSelect.options[bankSelect.selectedIndex];
-                            bankCodeEl.value = sel ? sel.dataset.code || '' : '';
+                            // Find matching option across groups
+                            const opts = bankSelect.querySelectorAll('option');
+                            for (const o of opts) {
+                                if (o.value === oldBank) { bankSelect.value = oldBank; bankCodeEl.value = o.dataset.code || ''; break; }
+                            }
                         }
                     } catch (e) {
                         bankSelect.innerHTML = '<option value="">Unable to load banks</option>';
