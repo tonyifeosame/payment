@@ -22,7 +22,7 @@
                 @endisset
             </div>
             <div>
-                <a href="mailto:{{ config('mail.from.address', 'support@example.com') }}" class="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-md">Contact</a>
+                <a href="{{ route('contact.show') }}" class="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-md">Contact</a>
             </div>
         </div>
     </nav>

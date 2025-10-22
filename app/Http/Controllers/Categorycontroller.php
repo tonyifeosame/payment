@@ -28,6 +28,24 @@ class CategoryController extends Controller
         return redirect('/categories')->with('success', 'Category created successfully!');
     }
 
+    public function edit(Category $category)
+    {
+        return view('categories.edit', compact('category'));
+    }
+
+    public function update(Request $request, Category $category)
+    {
+        $request->validate([
+            'name' => 'required|string|max:255'
+        ]);
+
+        $category->update([
+            'name' => $request->name
+        ]);
+
+        return redirect()->route('categories.index')->with('success', 'Category updated successfully!');
+    }
+
     public function destroy(Category $category)
     {
         $category->delete();
@@ -65,5 +83,42 @@ class CategoryController extends Controller
 
         return redirect()->route('school.categories.index', ['school' => $school->slug])
                          ->with('success', 'Category created successfully!');
+    }
+
+    public function editSchool(School $school, Category $category)
+    {
+        return view('categories.edit', compact('school', 'category'));
+    }
+
+    public function updateSchool(Request $request, School $school, Category $category)
+    {
+        $request->validate([
+            'name' => 'required|string|max:255',
+        ]);
+
+        // Ensure the category belongs to the school
+        if ($category->school_id !== $school->id) {
+            abort(403);
+        }
+
+        $category->update([
+            'name' => $request->name,
+        ]);
+
+        return redirect()->route('school.categories.index', ['school' => $school->slug])
+                         ->with('success', 'Category updated successfully!');
+    }
+
+    public function destroySchool(School $school, Category $category)
+    {
+        // Ensure the category belongs to the school
+        if ($category->school_id !== $school->id) {
+            abort(403);
+        }
+
+        $category->delete();
+
+        return redirect()->route('school.categories.index', ['school' => $school->slug])
+                         ->with('success', 'Category deleted successfully.');
     }
 }

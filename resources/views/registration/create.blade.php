@@ -17,7 +17,7 @@
             </div>
         @endif
 
-        <form action="{{ route('registration.store') }}" method="POST" class="mt-6 space-y-5">
+        <form id="registration_form" action="{{ route('registration.store') }}" method="POST" class="mt-6 space-y-5">
             @csrf
             <div>
                 <label class="block text-sm font-medium text-slate-700" for="name">School Name</label>
@@ -60,10 +60,11 @@
                     <input id="account_number" name="account_number" type="text" value="{{ old('account_number') }}" required
                            class="mt-1 w-full rounded-md border-slate-300 focus:border-blue-500 focus:ring-blue-500" />
                 </div>
-                <div>
+                <div class="relative">
                     <label class="block text-sm font-medium text-slate-700" for="account_name">Account Name (auto)</label>
                     <input id="account_name" name="account_name" type="text" value="{{ old('account_name') }}" readonly
                            class="mt-1 w-full rounded-md border-slate-300 bg-slate-50 focus:border-blue-500 focus:ring-blue-500" />
+                    <div id="account_name_status" class="absolute inset-y-0 right-0 flex items-center pr-3"></div>
                 </div>
             </div>
             <div>
@@ -74,7 +75,10 @@
 
             <div class="pt-2 flex items-center gap-3">
                 <a href="{{ route('home') }}" class="px-4 py-2 rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50">Back</a>
-                <button type="submit" class="px-5 py-2.5 rounded-md bg-blue-600 text-white hover:bg-blue-700">Register School</button>
+                <button id="register_button" type="submit" class="px-5 py-2.5 rounded-md bg-blue-600 text-white hover:bg-blue-700 flex items-center">
+                    <span id="register_button_text">Register School</span>
+                    <i id="register_spinner" class="fas fa-spinner fa-spin ml-2 hidden"></i>
+                </button>
                 <a href="{{ route('admin.login') }}" class="px-4 py-2 rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50">Admin Login</a>
             </div>
         </form>
@@ -98,6 +102,7 @@
                 const bankCodeEl = document.getElementById('bank_code');
                 const acctNumEl = document.getElementById('account_number');
                 const acctNameEl = document.getElementById('account_name');
+                const acctNameStatus = document.getElementById('account_name_status');
 
                 async function loadBanks(){
                     try {
@@ -164,9 +169,13 @@
 
                 async function resolveAccount(){
                     acctNameEl.value = '';
+                    acctNameStatus.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
                     const bankCode = bankCodeEl.value;
                     const acct = (acctNumEl.value || '').trim();
-                    if (!bankCode || acct.length < 10) return;
+                    if (!bankCode || acct.length < 10) {
+                        acctNameStatus.innerHTML = '';
+                        return;
+                    }
                     try {
                         const u = new URL('{{ route('api.resolve-account') }}', window.location.origin);
                         u.searchParams.set('bank_code', bankCode);
@@ -175,8 +184,13 @@
                         const json = await res.json();
                         if (json.ok && json.account_name) {
                             acctNameEl.value = json.account_name;
+                            acctNameStatus.innerHTML = '<i class="fas fa-check-circle text-green-500"></i>';
+                        } else {
+                            acctNameStatus.innerHTML = '<i class="fas fa-times-circle text-red-500"></i> <span class="text-red-500 text-xs">Account does not exist</span>';
                         }
-                    } catch (e) { /* ignore */ }
+                    } catch (e) { 
+                        acctNameStatus.innerHTML = '<i class="fas fa-times-circle text-red-500"></i> <span class="text-red-500 text-xs">Error</span>';
+                    }
                 }
 
                 bankSelect?.addEventListener('change', function(){
@@ -191,6 +205,17 @@
                 });
 
                 loadBanks();
+
+                const form = document.getElementById('registration_form');
+                const registerButton = document.getElementById('register_button');
+                const registerButtonText = document.getElementById('register_button_text');
+                const registerSpinner = document.getElementById('register_spinner');
+
+                form?.addEventListener('submit', function() {
+                    registerButton.disabled = true;
+                    registerButtonText.textContent = 'Registering...';
+                    registerSpinner.classList.remove('hidden');
+                });
             })();
         </script>
     </div>

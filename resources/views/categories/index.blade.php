@@ -16,6 +16,7 @@
                     <a href="{{ route('school.categories.index', ['school' => $school->slug]) }}" class="hover:underline">Categories</a>
                     <a href="{{ route('school.subcategories.index', ['school' => $school->slug]) }}" class="hover:underline">Subcategories</a>
                     <a href="{{ route('school.transactions.index', ['school' => $school->slug]) }}" class="hover:underline">Transactions</a>
+                    <a href="{{ route('school.payment.index', ['school' => $school->slug]) }}" class="hover:underline">Payment Page</a>
                 @else
                     <a href="{{ route('categories.index') }}" class="hover:underline">Categories</a>
                     <a href="{{ route('subcategories.index') }}" class="hover:underline">Subcategories</a>
@@ -72,14 +73,19 @@
                             <td class="p-3 border">{{ $category->created_at->format('Y-m-d H:i') }}</td>
                             <td class="p-3 border">{{ $category->updated_at->format('Y-m-d H:i') }}</td>
                             <td class="p-3 border">
-                                <form action="{{ route('categories.destroy', $category->id) }}" method="POST"
-                                      onsubmit="return confirm('Are you sure you want to delete this category?');">
-                                    @csrf
-                                    @method('DELETE')
-                                    <button type="submit" class="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700">
-                                        Delete
-                                    </button>
-                                </form>
+                                <div class="flex gap-2">
+                                    <a href="@isset($school){{ route('school.categories.edit', ['school' => $school->slug, 'category' => $category->id]) }}@else{{ route('categories.edit', $category->id) }}@endisset" class="bg-yellow-500 text-white px-3 py-1 rounded hover:bg-yellow-600">
+                                        Edit
+                                    </a>
+                                    <form action="@isset($school){{ route('school.categories.destroy', ['school' => $school->slug, 'category' => $category->id]) }}@else{{ route('categories.destroy', $category->id) }}@endisset" method="POST"
+                                          onsubmit="return confirm('Are you sure you want to delete this category?');">
+                                        @csrf
+                                        @method('DELETE')
+                                        <button type="submit" class="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700">
+                                            Delete
+                                        </button>
+                                    </form>
+                                </div>
                             </td>
                         </tr>
                     @empty

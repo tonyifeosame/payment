@@ -16,6 +16,7 @@
                     <a href="{{ route('school.categories.index', ['school' => $school->slug]) }}" class="hover:underline">Categories</a>
                     <a href="{{ route('school.subcategories.index', ['school' => $school->slug]) }}" class="hover:underline font-semibold">Subcategories</a>
                     <a href="{{ route('school.transactions.index', ['school' => $school->slug]) }}" class="hover:underline">Transactions</a>
+                    <a href="{{ route('school.payment.index', ['school' => $school->slug]) }}" class="hover:underline">Payment Page</a>
                 @else
                     <a href="{{ route('categories.index') }}" class="hover:underline">Categories</a>
                     <a href="{{ route('subcategories.index') }}" class="hover:underline font-semibold">Subcategories</a>
@@ -75,7 +76,10 @@
                             <td class="p-3 align-top text-right font-medium text-slate-900">₦{{ number_format($sub->price, 2) }}</td>
                             <td class="p-3 align-top">
                                 <div class="flex justify-end gap-2">
-                                    <form action="{{ route('subcategories.destroy', $sub->id) }}" method="POST" onsubmit="return confirm('Are you sure you want to delete this subcategory?');">
+                                    <a href="@isset($school){{ route('school.subcategories.edit', ['school' => $school->slug, 'subcategory' => $sub->id]) }}@else{{ route('subcategories.edit', $sub->id) }}@endisset" class="inline-flex items-center gap-1 bg-yellow-500 text-white px-3 py-1.5 rounded-md hover:bg-yellow-600">
+                                        Edit
+                                    </a>
+                                    <form action="@isset($school){{ route('school.subcategories.destroy', ['school' => $school->slug, 'subcategory' => $sub->id]) }}@else{{ route('subcategories.destroy', $sub->id) }}@endisset" method="POST" onsubmit="return confirm('Are you sure you want to delete this subcategory?');">
                                         @csrf
                                         @method('DELETE')
                                         <button type="submit" class="inline-flex items-center gap-1 bg-red-600 text-white px-3 py-1.5 rounded-md hover:bg-red-700">

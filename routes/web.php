@@ -13,9 +13,34 @@ use App\Models\School;
 use Illuminate\Http\Request;
 use App\Http\Middleware\EnsureSchoolAdmin;
 
+use Illuminate\Support\Facades\Session;
+
 Route::get('/', function () {
-    return view('home');
+    if (Session::get('password_protected_auth')) {
+        return view('home');
+    }
+    return view('login');
 })->name('home');
+
+Route::post('/', function (Request $request) {
+    $request->validate([
+        'username' => 'required',
+        'password' => 'required',
+    ]);
+
+    if ($request->username === 'Tonyifeosame' && $request->password === 'tony12345$t') {
+        Session::put('password_protected_auth', true);
+        return redirect()->route('home');
+    }
+
+    return back()->withErrors(['username' => 'Invalid credentials.']);
+});
+
+Route::get('/logout', function () {
+    Session::forget('password_protected_auth');
+    return redirect()->route('home');
+})->name('logout');
+
 
 Route::resource('categories', CategoryController::class);
 Route::resource('subcategories', SubcategoryController::class);
@@ -60,6 +85,7 @@ Route::post('/contact', function (\Illuminate\Http\Request $request) {
             }
         );
     } catch (\Throwable $e) {
+        report($e);
         return back()->withInput()->with('error', 'Unable to send your message. Please try again later.');
     }
 
@@ -87,6 +113,14 @@ Route::prefix('s/{school:slug}')->group(function () {
         Route::post('/subcategories', [SubcategoryController::class, 'storeSchool'])->name('school.subcategories.store');
 
         Route::get('/transactions', [TransactionController::class, 'indexSchool'])->name('school.transactions.index');
+
+        Route::get('/categories/{category}/edit', [CategoryController::class, 'editSchool'])->name('school.categories.edit');
+        Route::put('/categories/{category}', [CategoryController::class, 'updateSchool'])->name('school.categories.update');
+        Route::delete('/categories/{category}', [CategoryController::class, 'destroySchool'])->name('school.categories.destroy');
+
+        Route::get('/subcategories/{subcategory}/edit', [SubcategoryController::class, 'editSchool'])->name('school.subcategories.edit');
+        Route::put('/subcategories/{subcategory}', [SubcategoryController::class, 'updateSchool'])->name('school.subcategories.update');
+        Route::delete('/subcategories/{subcategory}', [SubcategoryController::class, 'destroySchool'])->name('school.subcategories.destroy');
     });
 });
 
