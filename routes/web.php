@@ -16,38 +16,16 @@ use App\Http\Middleware\EnsureSchoolAdmin;
 use Illuminate\Support\Facades\Session;
 
 Route::get('/', function () {
-    if (Session::get('password_protected_auth')) {
-        return view('home');
-    }
-    return view('login');
+    return view('home');
 })->name('home');
 
-Route::post('/', function (Request $request) {
-    $request->validate([
-        'username' => 'required',
-        'password' => 'required',
-    ]);
 
-    if ($request->username === 'Tonyifeosame' && $request->password === 'tony12345$t') {
-        Session::put('password_protected_auth', true);
-        return redirect()->route('home');
-    }
-
-    return back()->withErrors(['username' => 'Invalid credentials.']);
+Route::middleware(EnsureSchoolAdmin::class)->group(function () {
+    Route::resource('categories', CategoryController::class);
+    Route::resource('subcategories', SubcategoryController::class);
+    Route::resource('transactions', TransactionController::class);
+    Route::get('/payment', [PaymentController::class, 'index'])->name('payment.index');
 });
-
-Route::get('/logout', function () {
-    Session::forget('password_protected_auth');
-    return redirect()->route('home');
-})->name('logout');
-
-
-Route::resource('categories', CategoryController::class);
-Route::resource('subcategories', SubcategoryController::class);
-Route::resource('transactions', TransactionController::class);
-
-// Payment routes - cleaned up and organized
-Route::get('/payment', [PaymentController::class, 'index'])->name('payment.index');
 Route::post('/payment/initialize', [PaymentController::class, 'initialize'])->name('payment.initialize');
 Route::get('/payment/callback', [PaymentController::class, 'callback'])->name('payment.callback');
 // Receipt routes

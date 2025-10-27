@@ -153,43 +153,51 @@
             <p class="text-slate-600 text-lg">Three simple steps to transform your school's payment system</p>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div class="group relative glass-effect rounded-2xl shadow-lg hover:shadow-2xl p-8 transition-all duration-300 hover:-translate-y-2 border border-blue-100">
-                <div class="absolute -top-4 left-8 w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg text-white font-black text-xl">1</div>
-                <div class="mt-4">
-                    <div class="w-14 h-14 bg-blue-100 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                        <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                        </svg>
-                    </div>
-                    <h3 class="text-xl font-bold text-slate-900 mb-3">Register Your School</h3>
-                    <p class="text-slate-600 leading-relaxed">Add bank details; account name is auto-verified. Create categories and fee types with ease.</p>
-                </div>
-            </div>
+        <div class="relative rounded-3xl shadow-2xl overflow-hidden">
+            <img src="{{ asset('images/ChatGPT Image Oct 27, 2025, 08_45_40 AM.png') }}" 
+                 alt="A person pointing at a screen" 
+                 class="w-full h-auto object-cover">
 
-            <div class="group relative glass-effect rounded-2xl shadow-lg hover:shadow-2xl p-8 transition-all duration-300 hover:-translate-y-2 border border-purple-100">
-                <div class="absolute -top-4 left-8 w-12 h-12 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg text-white font-black text-xl">2</div>
-                <div class="mt-4">
-                    <div class="w-14 h-14 bg-purple-100 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                        <svg class="w-8 h-8 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path>
-                        </svg>
+            <div class="absolute top-0 right-0 h-full w-full md:w-1/2 flex items-center p-8 md:p-12">
+                <div class="flex flex-col gap-6">
+                    <div class="group relative glass-effect rounded-2xl shadow-lg hover:shadow-2xl p-8 transition-all duration-300 hover:-translate-y-2 border border-blue-100">
+                        <div class="absolute -top-4 left-8 w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg text-white font-black text-xl">1</div>
+                        <div class="mt-4">
+                            <div class="w-14 h-14 bg-blue-100 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                                <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                </svg>
+                            </div>
+                            <h3 class="text-xl font-bold text-slate-900 mb-3">Register Your School</h3>
+                            <p class="text-slate-600 leading-relaxed">Add bank details; account name is auto-verified. Create categories and fee types with ease.</p>
+                        </div>
                     </div>
-                    <h3 class="text-xl font-bold text-slate-900 mb-3">Share Payment Link</h3>
-                    <p class="text-slate-600 leading-relaxed">Parents/students pay securely via Paystack. Receipts are generated automatically for every transaction.</p>
-                </div>
-            </div>
 
-            <div class="group relative glass-effect rounded-2xl shadow-lg hover:shadow-2xl p-8 transition-all duration-300 hover:-translate-y-2 border border-emerald-100">
-                <div class="absolute -top-4 left-8 w-12 h-12 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg text-white font-black text-xl">3</div>
-                <div class="mt-4">
-                    <div class="w-14 h-14 bg-emerald-100 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                        <svg class="w-8 h-8 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                        </svg>
+                    <div class="group relative glass-effect rounded-2xl shadow-lg hover:shadow-2xl p-8 transition-all duration-300 hover:-translate-y-2 border border-purple-100">
+                        <div class="absolute -top-4 left-8 w-12 h-12 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg text-white font-black text-xl">2</div>
+                        <div class="mt-4">
+                            <div class="w-14 h-14 bg-purple-100 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                                <svg class="w-8 h-8 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path>
+                                </svg>
+                            </div>
+                            <h3 class="text-xl font-bold text-slate-900 mb-3">Share Payment Link</h3>
+                            <p class="text-slate-600 leading-relaxed">Parents/students pay securely via Paystack. Receipts are generated automatically for every transaction.</p>
+                        </div>
                     </div>
-                    <h3 class="text-xl font-bold text-slate-900 mb-3">Get Paid Daily</h3>
-                    <p class="text-slate-600 leading-relaxed">Daily 9AM payouts transfer previous day's collections directly to your school account.</p>
+
+                    <div class="group relative glass-effect rounded-2xl shadow-lg hover:shadow-2xl p-8 transition-all duration-300 hover:-translate-y-2 border border-emerald-100">
+                        <div class="absolute -top-4 left-8 w-12 h-12 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg text-white font-black text-xl">3</div>
+                        <div class="mt-4">
+                            <div class="w-14 h-14 bg-emerald-100 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                                <svg class="w-8 h-8 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                            </div>
+                            <h3 class="text-xl font-bold text-slate-900 mb-3">Get Paid Daily</h3>
+                            <p class="text-slate-600 leading-relaxed">Daily 9AM payouts transfer previous day's collections directly to your school account.</p>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -202,41 +210,49 @@
             <p class="text-slate-600 text-lg">Built specifically for educational institutions</p>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div class="group glass-effect rounded-2xl shadow-lg hover:shadow-2xl p-8 transition-all duration-300 border border-slate-200 hover:border-blue-300">
-                <div class="flex items-center gap-4 mb-4">
-                    <div class="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-xl flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
-                        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
-                        </svg>
-                    </div>
-                    <h3 class="text-xl font-bold text-slate-900">Secure Payments</h3>
-                </div>
-                <p class="text-slate-600 leading-relaxed">Powered by Paystack with SSL encryption. All references and receipts are securely stored and accessible.</p>
-            </div>
+        <div class="relative rounded-3xl shadow-2xl overflow-hidden">
+            <img src="{{ asset('images/ChatGPT Image Oct 27, 2025, 08_00_09 AM.png') }}" 
+                 alt="A friendly student smiling" 
+                 class="w-full h-auto object-cover">
 
-            <div class="group glass-effect rounded-2xl shadow-lg hover:shadow-2xl p-8 transition-all duration-300 border border-slate-200 hover:border-purple-300">
-                <div class="flex items-center gap-4 mb-4">
-                    <div class="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
-                        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
-                        </svg>
+            <div class="absolute top-0 left-0 h-full w-full md:w-1/2 flex items-center p-8 md:p-12">
+                <div class="flex flex-col gap-6">
+                    <div class="group glass-effect rounded-2xl shadow-lg hover:shadow-2xl p-8 transition-all duration-300 border border-slate-200 hover:border-blue-300">
+                        <div class="flex items-center gap-4 mb-4">
+                            <div class="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-xl flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
+                                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
+                                </svg>
+                            </div>
+                            <h3 class="text-xl font-bold text-slate-900">Secure Payments</h3>
+                        </div>
+                        <p class="text-slate-600 leading-relaxed">Powered by Paystack with SSL encryption. All references and receipts are securely stored and accessible.</p>
                     </div>
-                    <h3 class="text-xl font-bold text-slate-900">Admin Dashboard</h3>
-                </div>
-                <p class="text-slate-600 leading-relaxed">Manage categories, fee types, and view all transactions. Everything is school-scoped for your privacy.</p>
-            </div>
 
-            <div class="group glass-effect rounded-2xl shadow-lg hover:shadow-2xl p-8 transition-all duration-300 border border-slate-200 hover:border-emerald-300">
-                <div class="flex items-center gap-4 mb-4">
-                    <div class="w-12 h-12 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-xl flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
-                        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path>
-                        </svg>
+                    <div class="group glass-effect rounded-2xl shadow-lg hover:shadow-2xl p-8 transition-all duration-300 border border-slate-200 hover:border-purple-300">
+                        <div class="flex items-center gap-4 mb-4">
+                            <div class="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
+                                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                                </svg>
+                            </div>
+                            <h3 class="text-xl font-bold text-slate-900">Admin Dashboard</h3>
+                        </div>
+                        <p class="text-slate-600 leading-relaxed">Manage categories, fee types, and view all transactions. Everything is school-scoped for your privacy.</p>
                     </div>
-                    <h3 class="text-xl font-bold text-slate-900">Auto Bank Verify</h3>
+
+                    <div class="group glass-effect rounded-2xl shadow-lg hover:shadow-2xl p-8 transition-all duration-300 border border-slate-200 hover:border-emerald-300">
+                        <div class="flex items-center gap-4 mb-4">
+                            <div class="w-12 h-12 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-xl flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
+                                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path>
+                                </svg>
+                            </div>
+                            <h3 class="text-xl font-bold text-slate-900">Auto Bank Verify</h3>
+                        </div>
+                        <p class="text-slate-600 leading-relaxed">Banks fetched from Paystack; account name is resolved automatically for added security and convenience.</p>
+                    </div>
                 </div>
-                <p class="text-slate-600 leading-relaxed">Banks fetched from Paystack; account name is resolved automatically for added security and convenience.</p>
             </div>
         </div>
     </section>

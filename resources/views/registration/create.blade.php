@@ -1,223 +1,378 @@
 @extends('layouts.app')
 
 @section('content')
-<div class="max-w-3xl mx-auto">
-    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-8">
-        <h1 class="text-2xl font-bold text-slate-800">School Registration</h1>
-        <p class="text-slate-600 mt-1">Provide your school details to generate your payment page.</p>
+<style>
+    @keyframes fadeInUp {
+        from { opacity: 0; transform: translateY(30px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes slideInRight {
+        from { opacity: 0; transform: translateX(20px); }
+        to { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+    .animate-fade-in-up {
+        animation: fadeInUp 0.6s ease-out;
+    }
+    .animate-slide-in-right {
+        animation: slideInRight 0.6s ease-out;
+    }
+    .gradient-text {
+        background: linear-gradient(135deg, #1e40af 0%, #7c3aed 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+    .glass-card {
+        backdrop-filter: blur(20px);
+        background: rgba(255, 255, 255, 0.98);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+    }
+    .input-modern {
+        @apply w-full px-4 py-3 rounded-lg border-2 border-slate-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-50 transition-all duration-200 font-medium;
+    }
+    .input-modern:disabled, .input-modern:read-only {
+        @apply bg-slate-50 text-slate-600;
+    }
+    .step-badge {
+        @apply w-8 h-8 rounded-lg flex items-center justify-center text-sm font-black shadow-lg;
+    }
+</style>
 
-        @if ($errors->any())
-            <div class="mt-4 mb-4 rounded-md border border-red-200 bg-red-50 p-3">
-                <p class="font-medium text-red-800 mb-1">There were some problems with your input:</p>
-                <ul class="list-disc list-inside text-red-700 text-sm">
-                    @foreach ($errors->all() as $error)
-                        <li>{{ $error }}</li>
-                    @endforeach
-                </ul>
-            </div>
-        @endif
-
-        <form id="registration_form" action="{{ route('registration.store') }}" method="POST" class="mt-6 space-y-5">
-            @csrf
-            <div>
-                <label class="block text-sm font-medium text-slate-700" for="name">School Name</label>
-                <input id="name" name="name" type="text" value="{{ old('name') }}" required
-                       class="mt-1 w-full rounded-md border-slate-300 focus:border-blue-500 focus:ring-blue-500" />
-            </div>
-            <div>
-                <label class="block text-sm font-medium text-slate-700" for="email">School Email</label>
-                <input id="email" name="email" type="email" value="{{ old('email') }}" required
-                       class="mt-1 w-full rounded-md border-slate-300 focus:border-blue-500 focus:ring-blue-500" />
-            </div>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                    <label class="block text-sm font-medium text-slate-700" for="admin_password">Admin Password</label>
-                    <input id="admin_password" name="admin_password" type="password" required
-                           class="mt-1 w-full rounded-md border-slate-300 focus:border-blue-500 focus:ring-blue-500" />
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-slate-700" for="admin_password_confirmation">Confirm Password</label>
-                    <input id="admin_password_confirmation" name="admin_password_confirmation" type="password" required
-                           class="mt-1 w-full rounded-md border-slate-300 focus:border-blue-500 focus:ring-blue-500" />
-                </div>
-            </div>
-            <div class="flex items-center gap-2">
-                <input id="toggle_admin_pw" type="checkbox" class="rounded border-slate-300" />
-                <label for="toggle_admin_pw" class="text-sm text-slate-700 select-none">Show passwords</label>
-            </div>
-            <div>
-                <label class="block text-sm font-medium text-slate-700" for="bank">School Bank</label>
-                <select id="bank" name="bank" required
-                        class="mt-1 w-full rounded-md border-slate-300 focus:border-blue-500 focus:ring-blue-500 bg-white">
-                    <option value="">Loading banks...</option>
-                </select>
-                <input type="hidden" id="bank_code" name="bank_code" value="{{ old('bank_code') }}" />
-                @error('bank_code')<div class="text-sm text-red-600 mt-1">{{ $message }}</div>@enderror
-            </div>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                    <label class="block text-sm font-medium text-slate-700" for="account_number">School Account Number</label>
-                    <input id="account_number" name="account_number" type="text" value="{{ old('account_number') }}" required
-                           class="mt-1 w-full rounded-md border-slate-300 focus:border-blue-500 focus:ring-blue-500" />
-                </div>
-                <div class="relative">
-                    <label class="block text-sm font-medium text-slate-700" for="account_name">Account Name (auto)</label>
-                    <input id="account_name" name="account_name" type="text" value="{{ old('account_name') }}" readonly
-                           class="mt-1 w-full rounded-md border-slate-300 bg-slate-50 focus:border-blue-500 focus:ring-blue-500" />
-                    <div id="account_name_status" class="absolute inset-y-0 right-0 flex items-center pr-3"></div>
-                </div>
-            </div>
-            <div>
-                <label class="block text-sm font-medium text-slate-700" for="address">School Address (optional)</label>
-                <input id="address" name="address" type="text" value="{{ old('address') }}"
-                       class="mt-1 w-full rounded-md border-slate-300 focus:border-blue-500 focus:ring-blue-500" />
-            </div>
-
-            <div class="pt-2 flex items-center gap-3">
-                <a href="{{ route('home') }}" class="px-4 py-2 rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50">Back</a>
-                <button id="register_button" type="submit" class="px-5 py-2.5 rounded-md bg-blue-600 text-white hover:bg-blue-700 flex items-center">
-                    <span id="register_button_text">Register School</span>
-                    <i id="register_spinner" class="fas fa-spinner fa-spin ml-2 hidden"></i>
-                </button>
-                <a href="{{ route('admin.login') }}" class="px-4 py-2 rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50">Admin Login</a>
-            </div>
-        </form>
-        <script>
-            (function(){
-                const cb = document.getElementById('toggle_admin_pw');
-                const pw1 = document.getElementById('admin_password');
-                const pw2 = document.getElementById('admin_password_confirmation');
-                if (cb && pw1 && pw2) {
-                    cb.addEventListener('change', function(){
-                        const t = this.checked ? 'text' : 'password';
-                        pw1.type = t;
-                        pw2.type = t;
-                    });
-                }
-            })();
-
-            // Load banks and wire up auto-resolve
-            (function(){
-                const bankSelect = document.getElementById('bank');
-                const bankCodeEl = document.getElementById('bank_code');
-                const acctNumEl = document.getElementById('account_number');
-                const acctNameEl = document.getElementById('account_name');
-                const acctNameStatus = document.getElementById('account_name_status');
-
-                async function loadBanks(){
-                    try {
-                        const res = await fetch('{{ route('api.banks') }}');
-                        const json = await res.json();
-                        if (!json.ok) throw new Error('Failed to load banks');
-                        bankSelect.innerHTML = '';
-
-                        // Prioritize likely Nigerian banks (Paystack codes)
-                        const popularCodes = ['044','058','057','011','033']; // Access, GTB, Zenith, First Bank, UBA
-                        const banks = Array.isArray(json.banks) ? json.banks : [];
-                        const byCode = new Map(banks.map(b => [String(b.code), b]));
-
-                        const popular = [];
-                        popularCodes.forEach(c => { const b = byCode.get(String(c)); if (b) popular.push(b); });
-
-                        const popularCodesSet = new Set(popular.map(b => String(b.code)));
-                        const others = banks.filter(b => !popularCodesSet.has(String(b.code)));
-
-                        // Build Popular group (first 5 likely banks)
-                        const optPopular = document.createElement('optgroup');
-                        optPopular.label = 'Popular Banks';
-                        popular.forEach(b => {
-                            const opt = document.createElement('option');
-                            opt.value = b.name;
-                            opt.dataset.code = b.code;
-                            opt.textContent = b.name;
-                            optPopular.appendChild(opt);
-                        });
-
-                        // Build All Banks group
-                        const optAll = document.createElement('optgroup');
-                        optAll.label = 'All Banks';
-                        others.forEach(b => {
-                            const opt = document.createElement('option');
-                            opt.value = b.name;
-                            opt.dataset.code = b.code;
-                            opt.textContent = b.name;
-                            optAll.appendChild(opt);
-                        });
-
-                        // Placeholder option
-                        const placeholder = document.createElement('option');
-                        placeholder.value = '';
-                        placeholder.textContent = '-- Select Bank --';
-                        placeholder.selected = true;
-                        placeholder.disabled = true;
-                        bankSelect.appendChild(placeholder);
-                        if (popular.length) bankSelect.appendChild(optPopular);
-                        if (others.length) bankSelect.appendChild(optAll);
-                        // Restore old selection if present
-                        const oldBank = @json(old('bank'));
-                        if (oldBank) {
-                            // Find matching option across groups
-                            const opts = bankSelect.querySelectorAll('option');
-                            for (const o of opts) {
-                                if (o.value === oldBank) { bankSelect.value = oldBank; bankCodeEl.value = o.dataset.code || ''; break; }
-                            }
-                        }
-                    } catch (e) {
-                        bankSelect.innerHTML = '<option value="">Unable to load banks</option>';
-                    }
-                }
-
-                async function resolveAccount(){
-                    acctNameEl.value = '';
-                    acctNameStatus.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-                    const bankCode = bankCodeEl.value;
-                    const acct = (acctNumEl.value || '').trim();
-                    if (!bankCode || acct.length < 10) {
-                        acctNameStatus.innerHTML = '';
-                        return;
-                    }
-                    try {
-                        const u = new URL('{{ route('api.resolve-account') }}', window.location.origin);
-                        u.searchParams.set('bank_code', bankCode);
-                        u.searchParams.set('account_number', acct);
-                        const res = await fetch(u.toString());
-                        const json = await res.json();
-                        if (json.ok && json.account_name) {
-                            acctNameEl.value = json.account_name;
-                            acctNameStatus.innerHTML = '<i class="fas fa-check-circle text-green-500"></i>';
-                        } else {
-                            acctNameStatus.innerHTML = '<i class="fas fa-times-circle text-red-500"></i> <span class="text-red-500 text-xs">Account does not exist</span>';
-                        }
-                    } catch (e) { 
-                        acctNameStatus.innerHTML = '<i class="fas fa-times-circle text-red-500"></i> <span class="text-red-500 text-xs">Error</span>';
-                    }
-                }
-
-                bankSelect?.addEventListener('change', function(){
-                    const sel = this.options[this.selectedIndex];
-                    bankCodeEl.value = sel ? (sel.dataset.code || '') : '';
-                    resolveAccount();
-                });
-                acctNumEl?.addEventListener('input', function(){
-                    // debounce
-                    clearTimeout(this._t);
-                    this._t = setTimeout(resolveAccount, 500);
-                });
-
-                loadBanks();
-
-                const form = document.getElementById('registration_form');
-                const registerButton = document.getElementById('register_button');
-                const registerButtonText = document.getElementById('register_button_text');
-                const registerSpinner = document.getElementById('register_spinner');
-
-                form?.addEventListener('submit', function() {
-                    registerButton.disabled = true;
-                    registerButtonText.textContent = 'Registering...';
-                    registerSpinner.classList.remove('hidden');
-                });
-            })();
-        </script>
+<div class="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 py-12 px-4 sm:px-6 lg:px-8">
+    <!-- Background Decorative Elements -->
+    <div class="fixed inset-0 overflow-hidden pointer-events-none opacity-30">
+        <div class="absolute top-20 left-1/4 w-96 h-96 bg-blue-200 rounded-full mix-blend-multiply filter blur-3xl"></div>
+        <div class="absolute bottom-20 right-1/4 w-96 h-96 bg-purple-200 rounded-full mix-blend-multiply filter blur-3xl"></div>
     </div>
-</div>
-@endsection
+
+    <div class="max-w-4xl mx-auto relative">
+        <!-- Header Section -->
+        <div class="text-center mb-8 animate-fade-in-up">
+            <div class="flex justify-center mb-4">
+                <div class="w-16 h-16 bg-gradient-to-br from-blue-600 to-purple-600 rounded-2xl flex items-center justify-center shadow-2xl">
+                    <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
+                    </svg>
+                </div>
+            </div>
+            <h1 class="text-4xl md:text-5xl font-black text-slate-900 mb-3">
+                <span class="gradient-text">School Registration</span>
+            </h1>
+            <p class="text-slate-600 text-lg font-medium">Get started in minutes with your custom payment portal</p>
+        </div>
+
+        <!-- Main Form Card -->
+        <div class="glass-card rounded-2xl p-8 md:p-10 animate-fade-in-up" style="animation-delay: 0.1s;">
+            <!-- Progress Steps -->
+            <div class="mb-8 pb-6 border-b-2 border-slate-100">
+                <div class="flex items-center justify-between max-w-2xl mx-auto">
+                    <div class="flex flex-col items-center flex-1">
+                        <div class="step-badge bg-gradient-to-br from-blue-500 to-blue-600 text-white">1</div>
+                        <span class="text-xs font-bold text-slate-700 mt-2">School Info</span>
+                    </div>
+                    <div class="w-full h-1 bg-slate-200 -mt-8 flex-1 max-w-[100px]"></div>
+                    <div class="flex flex-col items-center flex-1">
+                        <div class="step-badge bg-gradient-to-br from-purple-500 to-purple-600 text-white">2</div>
+                        <span class="text-xs font-bold text-slate-700 mt-2">Bank Details</span>
+                    </div>
+                    <div class="w-full h-1 bg-slate-200 -mt-8 flex-1 max-w-[100px]"></div>
+                    <div class="flex flex-col items-center flex-1">
+                        <div class="step-badge bg-gradient-to-br from-emerald-500 to-emerald-600 text-white">3</div>
+                        <span class="text-xs font-bold text-slate-700 mt-2">Complete</span>
+                    </div>
+                </div>
+            </div>
+
+            @if ($errors->any())
+                <div class="mb-6 rounded-xl border-2 border-red-200 bg-red-50 p-5 animate-slide-in-right">
+                    <div class="flex items-start gap-3">
+                        <div class="w-6 h-6 bg-red-500 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </div>
+                        <div class="flex-1">
+                            <p class="font-bold text-red-800 mb-2">Please fix the following errors:</p>
+                            <ul class="space-y-1 text-red-700 text-sm">
+                                @foreach ($errors->all() as $error)
+                                    <li class="flex items-start gap-2">
+                                        <span class="text-red-500 mt-1">•</span>
+                                        <span>{{ $error }}</span>
+                                    </li>
+                                @endforeach
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            @endif
+
+            <form id="registration_form" action="{{ route('registration.store') }}" method="POST" class="space-y-8">
+                @csrf
+
+                <!-- Section 1: School Information -->
+                <div class="space-y-5">
+                    <div class="flex items-center gap-3 mb-6">
+                        <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg">
+                            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
+                            </svg>
+                        </div>
+                        <div>
+                            <h2 class="text-xl font-bold text-slate-900">School Information</h2>
+                            <p class="text-slate-600 text-sm">Basic details about your institution</p>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        <div class="md:col-span-2">
+                            <label class="block text-sm font-bold text-slate-700 mb-2" for="name">
+                                School Name *
+                            </label>
+                            <div class="relative">
+                                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
+                                    </svg>
+                                </div>
+                                <input id="name" name="name" type="text" value="{{ old('name') }}" required
+                                       class="input-modern pl-11" placeholder="e.g., Springfield Academy" />
+                            </div>
+                        </div>
+
+                        <div class="md:col-span-2">
+                            <label class="block text-sm font-bold text-slate-700 mb-2" for="email">
+                                School Email *
+                            </label>
+                            <div class="relative">
+                                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+                                    </svg>
+                                </div>
+                                <input id="email" name="email" type="email" value="{{ old('email') }}" required
+                                       class="input-modern pl-11" placeholder="admin@springfieldacademy.edu" />
+                            </div>
+                            <p class="mt-1.5 text-xs text-slate-500 flex items-center gap-1">
+                                <svg class="w-3.5 h-3.5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                                Login credentials will be sent to this email
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        <div>
+                            <label class="block text-sm font-bold text-slate-700 mb-2" for="admin_password">
+                                Admin Password *
+                            </label>
+                            <div class="relative">
+                                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+                                    </svg>
+                                </div>
+                                <input id="admin_password" name="admin_password" type="password" required
+                                       class="input-modern pl-11" placeholder="••••••••" />
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold text-slate-700 mb-2" for="admin_password_confirmation">
+                                Confirm Password *
+                            </label>
+                            <div class="relative">
+                                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
+                                    </svg>
+                                </div>
+                                <input id="admin_password_confirmation" name="admin_password_confirmation" type="password" required
+                                       class="input-modern pl-11" placeholder="••••••••" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-2 p-3 bg-blue-50 rounded-lg border border-blue-100">
+                        <input id="toggle_admin_pw" type="checkbox" class="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4" />
+                        <label for="toggle_admin_pw" class="text-sm font-medium text-slate-700 select-none cursor-pointer">
+                            Show passwords
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Divider -->
+                <div class="border-t-2 border-slate-100"></div>
+
+                <!-- Section 2: Bank Details -->
+                <div class="space-y-5">
+                    <div class="flex items-center gap-3 mb-6">
+                        <div class="w-10 h-10 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
+                            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path>
+                            </svg>
+                        </div>
+                        <div>
+                            <h2 class="text-xl font-bold text-slate-900">Bank Account Details</h2>
+                            <p class="text-slate-600 text-sm">Where you'll receive payments</p>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-bold text-slate-700 mb-2" for="bank">
+                            School Bank *
+                        </label>
+                        <div class="relative">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
+                                </svg>
+                            </div>
+                            <select id="bank" name="bank" required
+                                    class="input-modern pl-11 appearance-none bg-white">
+                                <option value="">Loading banks...</option>
+                            </select>
+                            <div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                                <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                </svg>
+                            </div>
+                        </div>
+                        <input type="hidden" id="bank_code" name="bank_code" value="{{ old('bank_code') }}" />
+                        @error('bank_code')
+                            <div class="mt-1.5 text-sm text-red-600 flex items-center gap-1">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                                {{ $message }}
+                            </div>
+                        @enderror
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        <div>
+                            <label class="block text-sm font-bold text-slate-700 mb-2" for="account_number">
+                                Account Number *
+                            </label>
+                            <div class="relative">
+                                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"></path>
+                                    </svg>
+                                </div>
+                                <input id="account_number" name="account_number" type="text" value="{{ old('account_number') }}" required
+                                       class="input-modern pl-11" placeholder="0123456789" maxlength="10" />
+                            </div>
+                            <p class="mt-1.5 text-xs text-slate-500">10-digit account number</p>
+                        </div>
+
+                        <div class="relative">
+                            <label class="block text-sm font-bold text-slate-700 mb-2" for="account_name">
+                                Account Name (Auto-verified)
+                            </label>
+                            <div class="relative">
+                                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                                    </svg>
+                                </div>
+                                <input id="account_name" name="account_name" type="text" value="{{ old('account_name') }}" readonly
+                                       class="input-modern pl-11 pr-10" placeholder="Verifying..." />
+                                <div id="account_name_status" class="absolute inset-y-0 right-0 pr-3 flex items-center"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="p-4 bg-purple-50 rounded-xl border border-purple-100">
+                        <div class="flex items-start gap-3">
+                            <div class="w-5 h-5 bg-purple-500 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+                                <svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                            </div>
+                            <div>
+                                <p class="text-sm font-bold text-purple-900 mb-1">Automatic Verification</p>
+                                <p class="text-sm text-purple-700">We'll verify your account name automatically when you enter your account number. This ensures payments go to the correct account.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Divider -->
+                <div class="border-t-2 border-slate-100"></div>
+
+                <!-- Section 3: Additional Details -->
+                <div class="space-y-5">
+                    <div class="flex items-center gap-3 mb-6">
+                        <div class="w-10 h-10 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg">
+                            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                            </svg>
+                        </div>
+                        <div>
+                            <h2 class="text-xl font-bold text-slate-900">Additional Information</h2>
+                            <p class="text-slate-600 text-sm">Optional details (can be added later)</p>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-bold text-slate-700 mb-2" for="address">
+                            School Address
+                            <span class="text-slate-400 font-normal">(Optional)</span>
+                        </label>
+                        <div class="relative">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                </svg>
+                            </div>
+                            <input id="address" name="address" type="text" value="{{ old('address') }}"
+                                   class="input-modern pl-11" placeholder="123 Education Street, City, State" />
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="pt-6 border-t-2 border-slate-100">
+                    <div class="flex flex-col sm:flex-row gap-3 justify-between items-center">
+                        <a href="{{ route('home') }}" 
+                           class="inline-flex items-center gap-2 px-5 py-3 rounded-lg border-2 border-slate-300 text-slate-700 hover:bg-slate-50 font-bold transition-all duration-200 w-full sm:w-auto justify-center">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                            </svg>
+                            Back to Home
+                        </a>
+
+                        <button id="register_button" type="submit" 
+                                class="group inline-flex items-center justify-center gap-2 px-8 py-3.5 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold shadow-xl hover:shadow-2xl transform hover:-translate-y-0.5 transition-all duration-200 w-full sm:w-auto">
+                            <svg class="w-5 h-5 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            <span id="register_button_text">Complete Registration</span>
+                            <i id="register_spinner" class="fas fa-spinner fa-spin hidden"></i>
+                        </button>
+
+                        <a href="{{ route('admin.login') }}" 
+                           class="inline-flex items-center gap-2 px-5 py-3 rounded-lg border-2 border-slate-300 text-slate-700 hover:bg-slate-50 font-bold transition-all duration-200 w-full sm:w-auto justify-center">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"></path>
+                            </svg>
+                            Admin Login
+                        </a>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <!-- Help Card -->
+        <div class="mt-6 glass-card rounded-2xl p-6 text-center animate-fade-in-up" style="animation-delay: 0.2s;">
+            <div class="flex justify-center mb-3">
+                <div class="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-500 rounded-xl flex items-center justify-center shadow-lg">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0

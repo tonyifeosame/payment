@@ -56,12 +56,6 @@ class SubcategoryController extends Controller
                          ->with('success', 'Subcategory updated successfully.');
     }
 
-    public function destroyCategory(Category $category)
-    {
-        $category->delete();
-        return redirect()->route('categories.index')->with('success', 'Category deleted successfully.');
-    }
-
     public function destroy(Subcategory $subcategory)
     {
         $subcategory->delete();

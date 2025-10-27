@@ -52,12 +52,6 @@ class CategoryController extends Controller
         return redirect()->route('categories.index')->with('success', 'Category deleted successfully.');
     }
 
-    public function destroySubcategory(Subcategory $subcategory)
-    {
-        $subcategory->delete();
-        return redirect()->route('subcategories.index')->with('success', 'Subcategory deleted successfully.');
-    }
-
     /**
      * Tenant-aware listing for a given school.
      */
