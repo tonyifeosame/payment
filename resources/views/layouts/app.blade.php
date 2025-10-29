@@ -12,8 +12,11 @@
     <!-- Navbar -->
     <nav class="bg-blue-600 p-4 text-white">
         <div class="max-w-6xl mx-auto flex flex-wrap items-center gap-4">
-            @if(Session::get('password_protected_auth'))
-                <a href="{{ route('logout') }}" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">Logout</a>
+            @if(session('school_admin_id'))
+                <form method="POST" action="{{ route('admin.logout') }}">
+                    @csrf
+                    <button type="submit" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">Logout</button>
+                </form>
             @endif
         </div>
     </nav>

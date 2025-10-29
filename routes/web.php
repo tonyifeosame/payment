@@ -19,6 +19,7 @@ Route::get('/', function () {
     return view('home');
 })->name('home');
 
+Route::redirect('/login', '/admin/login');
 
 Route::middleware(EnsureSchoolAdmin::class)->group(function () {
     Route::resource('categories', CategoryController::class);
@@ -74,6 +75,10 @@ Route::post('/contact', function (\Illuminate\Http\Request $request) {
 Route::get('/admin/login', [SchoolAuthController::class, 'showLogin'])->name('admin.login');
 Route::post('/admin/login', [SchoolAuthController::class, 'login'])->name('admin.login.post');
 Route::post('/admin/logout', [SchoolAuthController::class, 'logout'])->name('admin.logout');
+Route::get('admin/forgot-password', [SchoolAuthController::class, 'showLinkRequestForm'])->name('admin.password.request');
+Route::post('admin/forgot-password', [SchoolAuthController::class, 'sendResetLinkEmail'])->name('admin.password.email');
+Route::get('admin/reset-password/{token}', [SchoolAuthController::class, 'showResetForm'])->name('admin.password.reset');
+Route::post('admin/reset-password', [SchoolAuthController::class, 'reset'])->name('admin.password.update');
 
 // Tenant-aware public payment routes per school
 Route::prefix('s/{school:slug}')->group(function () {
