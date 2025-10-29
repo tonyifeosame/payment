@@ -3,9 +3,12 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Contracts\Auth\CanResetPassword;
+use Illuminate\Auth\Passwords\CanResetPassword as CanResetPasswordTrait;
 
-class School extends Model
+class School extends Model implements CanResetPassword
 {
+    use CanResetPasswordTrait;
     protected $fillable = [
         'name',
         'slug',

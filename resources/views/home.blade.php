@@ -42,7 +42,7 @@
     </div>
 
     <!-- Hero Section -->
-    <section class="glass-effect rounded-3xl shadow-2xl p-8 md:p-16 text-center mb-8 relative overflow-hidden animate-fade-in-up border border-blue-100">
+    <section class="glass-effect rounded-3xl shadow-2xl p-8 md:p-16 text-center mb-8 relative overflow-hidden animate-fade-in-up border border-blue-100" style="background-image: url('/images/ChatGPT Image Oct 29, 2025, 08_12_44 PM.png'); background-size: cover;">
         <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-600 via-purple-600 to-emerald-600"></div>
         
         <!-- Icon -->

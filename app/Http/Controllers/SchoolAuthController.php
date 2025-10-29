@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\Hash;
 use App\Models\School;
 
 use Illuminate\Support\Facades\Password;
-use App\Mail\SchoolLinksMail;
+use App\Mail\SchoolPasswordResetMail;
 use Illuminate\Support\Facades\Mail;
 
 class SchoolAuthController extends Controller
@@ -55,7 +55,7 @@ class SchoolAuthController extends Controller
             $token = Password::createToken($school);
             $resetLink = url("/admin/reset-password/{$token}?email=" . urlencode($request->email));
 
-            Mail::to($request->email)->send(new SchoolLinksMail($school, $resetLink));
+            Mail::to($request->email)->send(new SchoolPasswordResetMail($school, $resetLink));
         }
 
         return back()->with('status', 'If your email is in our system, you will receive a password reset link.');
