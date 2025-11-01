@@ -57,6 +57,9 @@ class RegistrationController extends Controller
 
         $school = School::create($data);
 
+        // Automatically log in the new school admin
+        session(['school_admin_id' => $school->id]);
+
         // Build tenant-aware links and email them to the school admin
         $links = [
             'payment'       => route('school.payment.index', ['school' => $school->slug]),
@@ -76,7 +79,7 @@ class RegistrationController extends Controller
         }
 
         return redirect()
-            ->route('admin.login')
-            ->with('success', 'School registered. Please log in to manage your school.');
+            ->route('school.categories.index', ['school' => $school->slug])
+            ->with('success', 'School registered and you are now logged in. Get started by adding your first category.');
     }
 }

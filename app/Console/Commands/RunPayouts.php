@@ -26,40 +26,32 @@ class RunPayouts extends Command
         $this->info("Running payouts for date: {$date->toDateString()} ({$start} - {$end})");
 
         // Sum base amounts per school from successful transactions in the window
-        $rows = Transaction::select('school_id', DB::raw('COUNT(*) as cnt'))
+        $rows = Transaction::select(
+            'school_id',
+            DB::raw('COUNT(*) as cnt'),
+            DB::raw('SUM(amount) as total_amount')
+        )
             ->where('status', 'success')
             ->whereBetween('created_at', [$start, $end])
             ->whereNotNull('school_id')
-            ->get()
-            ->pluck('cnt', 'school_id');
+            ->groupBy('school_id')
+            ->get();
 
         if ($rows->isEmpty()) {
             $this->info('No successful transactions found for the period.');
             return Command::SUCCESS;
         }
 
-        foreach ($rows as $schoolId => $count) {
-            $school = School::find($schoolId);
+        foreach ($rows as $row) {
+            $school = School::find($row->school_id);
             if (!$school) { continue; }
 
-            // Compute total base amount for this school
-            $transactions = Transaction::where('status', 'success')
-                ->where('school_id', $schoolId)
-                ->whereBetween('created_at', [$start, $end])
-                ->get();
-
-            $totalBase = 0.0;
-            foreach ($transactions as $t) {
-                $meta = $t->meta_data;
-                if (is_string($meta)) { $meta = json_decode($meta, true); }
-                $base = is_array($meta) ? ($meta['base_amount'] ?? $t->amount) : $t->amount;
-                $totalBase += (float) $base;
-            }
-            $totalBase = round($totalBase, 2);
+            $totalBase = round((float) $row->total_amount, 2);
+            $count = $row->cnt;
 
             // Create payout record first
             $payout = Payout::create([
-                'school_id' => $schoolId,
+                'school_id' => $row->school_id,
                 'amount' => $totalBase,
                 'currency' => 'NGN',
                 'payout_date' => $date->toDateString(),
