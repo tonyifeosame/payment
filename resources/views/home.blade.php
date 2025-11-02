@@ -1,35 +1,32 @@
 @extends('layouts.app')
 
+@push('head')
+    @vite('resources/css/app.css')
+@endpush
+
 @section('content')
 <style>
-    @keyframes fadeInUp {
-        from { opacity: 0; transform: translateY(30px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
-    @keyframes float {
-        0%, 100% { transform: translateY(0px); }
-        50% { transform: translateY(-20px); }
-    }
-    @keyframes pulse-glow {
-        0%, 100% { box-shadow: 0 0 20px rgba(59, 130, 246, 0.4); }
-        50% { box-shadow: 0 0 40px rgba(59, 130, 246, 0.6); }
-    }
-    .animate-fade-in-up {
-        animation: fadeInUp 0.8s ease-out;
-    }
-    .animate-float {
-        animation: float 6s ease-in-out infinite;
-    }
-    .gradient-text {
-        background: linear-gradient(135deg, #1e40af 0%, #7c3aed 50%, #059669 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-    }
-    .glass-effect {
-        backdrop-filter: blur(20px);
-        background: rgba(255, 255, 255, 0.9);
-        border: 1px solid rgba(255, 255, 255, 0.2);
+    @layer utilities {
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; translateY(0); }
+        }
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-20px); }
+        }
+        .animate-fade-in-up {
+            animation: fadeInUp 0.8s ease-out forwards;
+        }
+        .animate-float {
+            animation: float 6s ease-in-out infinite;
+        }
+        .gradient-text {
+            @apply bg-gradient-to-r from-blue-800 via-purple-600 to-emerald-600 bg-clip-text text-transparent;
+        }
+        .glass-effect {
+            @apply backdrop-blur-xl bg-white/90 border border-white/20;
+        }
     }
 </style>
 
@@ -42,7 +39,7 @@
     </div>
 
     <!-- Hero Section -->
-    <section class="glass-effect rounded-3xl shadow-2xl p-8 md:p-16 text-center mb-8 relative overflow-hidden animate-fade-in-up border border-blue-100" style="background-image: url('/images/ChatGPT Image Oct 29, 2025, 08_12_44 PM.png'); background-size: cover;">
+    <section class="glass-effect rounded-3xl shadow-2xl p-8 md:p-16 text-center mb-8 relative overflow-hidden animate-fade-in-up border border-blue-100" style="background-image: url('{{ asset('images/ChatGPT Image Oct 29, 2025, 08_12_44 PM.png') }}'); background-size: cover;">
         <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-600 via-purple-600 to-emerald-600"></div>
         
         <!-- Icon -->
@@ -154,7 +151,7 @@
         </div>
 
         <div class="relative rounded-3xl shadow-2xl overflow-hidden">
-            <img src="{{ asset('images/ChatGPT Image Oct 27, 2025, 08_45_40 AM.png') }}" 
+            <img src="{{ asset('images/ChatGPT Image Oct 27, 2025, 08_45_40 AM.png') }}"
                  alt="A person pointing at a screen" 
                  class="w-full h-auto object-cover">
 
@@ -211,7 +208,7 @@
         </div>
 
         <div class="relative rounded-3xl shadow-2xl overflow-hidden">
-            <img src="{{ asset('images/ChatGPT Image Oct 27, 2025, 08_00_09 AM.png') }}" 
+            <img src="{{ asset('images/ChatGPT Image Oct 27, 2025, 08_00_09 AM.png') }}"
                  alt="A friendly student smiling" 
                  class="w-full h-auto object-cover">
 
