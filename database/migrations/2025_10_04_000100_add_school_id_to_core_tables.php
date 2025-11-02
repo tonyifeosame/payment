@@ -50,5 +50,8 @@ return new class extends Migration {
         Schema::table('categories', function (Blueprint $table) {
             $table->dropConstrainedForeignId('school_id');
         });
+
+        // Drop the schools table
+        Schema::dropIfExists('schools');
     }
 };

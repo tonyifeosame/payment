@@ -1,11 +1,11 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Transactions Dashboard</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
+@extends('layouts.app')
+
+@push('head')
+    @vite('resources/css/app.css')
+@endpush
+
+@section('content')
+<style>
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(20px); }
             to { opacity: 1; transform: translateY(0); }
@@ -33,68 +33,8 @@
         .table-row-hover {
             @apply transition-all duration-200 hover:bg-blue-50 hover:shadow-md;
         }
-    </style>
-</head>
-<body class="bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 min-h-screen">
-    <!-- Modern Navbar -->
-    <nav class="gradient-bg shadow-xl sticky top-0 z-50">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex items-center justify-between h-16">
-                <!-- Logo & Navigation -->
-                <div class="flex items-center space-x-8">
-                    <div class="flex items-center gap-2">
-                        <div class="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center backdrop-blur-sm">
-                            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
-                            </svg>
-                        </div>
-                        <span class="text-white font-bold text-lg hidden sm:block">School Portal</span>
-                    </div>
-                    
-                    <div class="hidden md:flex space-x-1">
-                        @isset($school)
-                            <a href="{{ route('school.categories.index', ['school' => $school->slug]) }}" 
-                               class="px-4 py-2 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-all duration-200 font-medium">
-                                Categories
-                            </a>
-                            <a href="{{ route('school.subcategories.index', ['school' => $school->slug]) }}" 
-                               class="px-4 py-2 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-all duration-200 font-medium">
-                                Subcategories
-                            </a>
-                            <a href="{{ route('school.transactions.index', ['school' => $school->slug]) }}" 
-                               class="px-4 py-2 rounded-lg bg-white/20 text-white font-bold backdrop-blur-sm">
-                                Transactions
-                            </a>
-                        @else
-                            <a href="{{ route('categories.index') }}" 
-                               class="px-4 py-2 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-all duration-200 font-medium">
-                                Categories
-                            </a>
-                            <a href="{{ route('subcategories.index') }}" 
-                               class="px-4 py-2 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-all duration-200 font-medium">
-                                Subcategories
-                            </a>
-                            <a href="{{ route('transactions.index') }}" 
-                               class="px-4 py-2 rounded-lg bg-white/20 text-white font-bold backdrop-blur-sm">
-                                Transactions
-                            </a>
-                        @endisset
-                    </div>
-                </div>
-
-                <!-- Contact Button -->
-                <a href="{{ route('contact.show') }}" 
-                   class="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg font-medium transition-all duration-200 backdrop-blur-sm">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
-                    </svg>
-                    <span class="hidden sm:inline">Contact</span>
-                </a>
-            </div>
-        </div>
-    </nav>
-
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+</style>
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <!-- Header Section -->
         <div class="mb-8 animate-fade-in">
             <div class="flex items-center justify-between mb-4">
@@ -374,6 +314,5 @@
                 </div>
             </div>
         </div>
-    </div>
-</body>
-</html>
+</div>
+@endsection
