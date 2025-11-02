@@ -3,7 +3,8 @@ services:
     name: laravel-app
     env: docker
     plan: free
-    dockerfilePath: ./Dockerfile
+    buildCommand: ""
+    startCommand: ""
     envVars:
       - key: APP_ENV
         value: production
@@ -17,7 +18,6 @@ services:
         fromDatabase:
           name: database
           property: connectionString
-
 databases:
   - name: database
     plan: free
