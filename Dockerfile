@@ -23,6 +23,10 @@ COPY . /var/www/html
 RUN chown -R www-data:www-data /var/www/html
 RUN chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
 
+RUN chmod -R 777 /var/www/html/storage /var/www/html/bootstrap/cache
+
+# Install Node.js and NPM
+
 # Set Apache to serve Laravel from /public
 RUN echo "<VirtualHost *:80>\n\
     DocumentRoot /var/www/html/public\n\
@@ -41,6 +45,7 @@ RUN php artisan key:generate || true
 
 # Expose port 80
 EXPOSE 80
+RUN php artisan key:generate --force
 
 # Start Apache
 CMD ["apache2-foreground"]
