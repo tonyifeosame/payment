@@ -1,7 +1,7 @@
 services:
   - type: web
     name: laravel-app
-    runtime: php
+    env: php
     plan: free
     buildCommand: |
       composer install --no-dev --no-interaction --optimize-autoloader
@@ -22,6 +22,7 @@ services:
       - key: DATABASE_URL
         fromDatabase:
           name: database
+          property: connectionString
 
 databases:
   - name: database
