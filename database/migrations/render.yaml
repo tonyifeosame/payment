@@ -1,0 +1,56 @@
+services:
+  # Laravel Web Service
+  - type: web
+    name: laravel-app # You can change this name
+    env: php
+    plan: free # Or your preferred plan
+    buildCommand: |
+      composer install --no-dev --no-interaction --optimize-autoloader
+      npm install
+      npm run build
+      php artisan migrate --force
+    startCommand: php artisan serve --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: APP_URL
+        fromService:
+          type: web
+          name: laravel-app # Must match the name of this service
+          property: url
+      - key: APP_KEY
+        generateValue: true # Render will generate a key for you
+      - key: APP_ENV
+        value: production
+      - key: DB_CONNECTION
+        value: pgsql
+      - key: DB_HOST
+        fromService:
+          type: pserv
+          name: database # Must match the name of the database service
+          property: host
+      - key: DB_PORT
+        fromService:
+          type: pserv
+          name: database
+          property: port
+      - key: DB_DATABASE
+        fromService:
+          type: pserv
+          name: database
+          property: database
+      - key: DB_USERNAME
+        fromService:
+          type: pserv
+          name: database
+          property: user
+      - key: DB_PASSWORD
+        fromService:
+          type: pserv
+          name: database
+          property: password
+
+  # PostgreSQL Database
+  - type: pserv
+    name: database # You can change this name
+    databaseName: laravel_db # You can change this name
+    user: laravel_user # You can change this name
+    plan: free # Or your preferred plan
