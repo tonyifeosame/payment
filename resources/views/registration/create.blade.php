@@ -370,9 +370,145 @@
             </form>
         </div>
 
-        <!-- Help Card -->
         <div class="mt-6 glass-card rounded-2xl p-6 text-center animate-fade-in-up" style="animation-delay: 0.2s;">
-            <div class="flex justify-center mb-3">
-                <div class="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-500 rounded-xl flex items-center justify-center shadow-lg">
-                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0
+            <div class="flex items-center justify-center gap-3">
+                <svg class="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <p class="text-slate-600 font-medium">Need help? Contact support@example.com</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const bankSelect = document.getElementById('bank');
+    const bankCodeInput = document.getElementById('bank_code');
+    const accountNumberInput = document.getElementById('account_number');
+    const accountNameInput = document.getElementById('account_name');
+    const accountNameStatus = document.getElementById('account_name_status');
+    const toggleAdminPw = document.getElementById('toggle_admin_pw');
+    const adminPassword = document.getElementById('admin_password');
+    const adminPasswordConfirm = document.getElementById('admin_password_confirmation');
+    const registerButton = document.getElementById('register_button');
+    const registerButtonText = document.getElementById('register_button_text');
+    const registerSpinner = document.getElementById('register_spinner');
+
+    let verifyController = null;
+
+    async function loadBanks() {
+        try {
+            const response = await fetch('/api/banks?country=nigeria');
+            const data = await response.json();
+
+            if (data.ok && data.banks) {
+                bankSelect.innerHTML = '<option value="">Select your bank</option>';
+                data.banks.forEach(bank => {
+                    const option = document.createElement('option');
+                    option.value = bank.name;
+                    option.textContent = bank.name;
+                    option.dataset.code = bank.code;
+                    bankSelect.appendChild(option);
+                });
+            } else {
+                bankSelect.innerHTML = '<option value="">Failed to load banks</option>';
+            }
+        } catch (error) {
+            console.error('Error loading banks:', error);
+            bankSelect.innerHTML = '<option value="">Error loading banks</option>';
+        }
+    }
+
+    bankSelect.addEventListener('change', function() {
+        const selectedOption = bankSelect.options[bankSelect.selectedIndex];
+        if (selectedOption && selectedOption.dataset.code) {
+            bankCodeInput.value = selectedOption.dataset.code;
+        } else {
+            bankCodeInput.value = '';
+        }
+        verifyAccount();
+    });
+
+    accountNumberInput.addEventListener('input', function() {
+        this.value = this.value.replace(/\D/g, '').slice(0, 10);
+        if (this.value.length === 10) {
+            verifyAccount();
+        } else {
+            accountNameInput.value = '';
+            accountNameStatus.innerHTML = '';
+        }
+    });
+
+    async function verifyAccount() {
+        const accountNumber = accountNumberInput.value;
+        const bankCode = bankCodeInput.value;
+
+        if (accountNumber.length !== 10 || !bankCode) {
+            return;
+        }
+
+        if (verifyController) {
+            verifyController.abort();
+        }
+
+        verifyController = new AbortController();
+
+        accountNameInput.value = '';
+        accountNameStatus.innerHTML = `
+            <svg class="w-5 h-5 text-blue-500 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+            </svg>
+        `;
+
+        try {
+            const response = await fetch(`/api/resolve-account?account_number=${accountNumber}&bank_code=${bankCode}`, {
+                signal: verifyController.signal
+            });
+
+            const data = await response.json();
+
+            if (data.ok && data.account_name) {
+                accountNameInput.value = data.account_name;
+                accountNameStatus.innerHTML = `
+                    <svg class="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                `;
+            } else {
+                accountNameStatus.innerHTML = `
+                    <svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                `;
+                accountNameInput.placeholder = data.error || 'Verification failed';
+            }
+        } catch (error) {
+            if (error.name !== 'AbortError') {
+                console.error('Error verifying account:', error);
+                accountNameStatus.innerHTML = `
+                    <svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                `;
+            }
+        }
+    }
+
+    toggleAdminPw.addEventListener('change', function() {
+        const type = this.checked ? 'text' : 'password';
+        adminPassword.type = type;
+        adminPasswordConfirm.type = type;
+    });
+
+    document.getElementById('registration_form').addEventListener('submit', function() {
+        registerButton.disabled = true;
+        registerButtonText.classList.add('hidden');
+        registerSpinner.classList.remove('hidden');
+    });
+
+    loadBanks();
+});
+</script>
+
+@endsection
