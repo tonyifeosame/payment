@@ -77,7 +77,7 @@ class PaystackController extends Controller
             $resp = Http::withToken(config('services.paystack.secret_key'))
                 ->retry(3, 200)
                 ->connectTimeout(10)
-                ->timeout(25)
+                ->timeout(40) // Increased timeout
                 ->get(config('services.paystack.payment_url').'/bank/resolve', [
                     'account_number' => $validated['account_number'],
                     'bank_code' => $validated['bank_code'],
@@ -88,7 +88,8 @@ class PaystackController extends Controller
                     'status' => $resp->status(),
                     'body' => $resp->body(),
                 ]);
-                return response()->json(['ok' => false, 'error' => 'Failed to verify account'], 502);
+                $error = $resp->json('message') ?? 'Could not connect to verification service.';
+                return response()->json(['ok' => false, 'error' => $error], $resp->status());
             }
 
             $json = $resp->json();
@@ -102,9 +103,12 @@ class PaystackController extends Controller
                 'account_number' => $json['data']['account_number'] ?? null,
             ]);
         } catch (\Exception $e) {
-            Log::error('Exception resolving account', ['message' => $e->getMessage()]);
-            return response()->json(['ok' => false, 'error' => 'Failed to verify account'], 500);
+            Log::error('Exception resolving account', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            $errorMessage = $e instanceof \Illuminate\Http\Client\ConnectionException ? 'Connection to verification service timed out.' : 'Failed to verify account.';
+            return response()->json(['ok' => false, 'error' => $errorMessage], 500);
         }
     }
 }
-

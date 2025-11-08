@@ -6,9 +6,9 @@ use Illuminate\Http\Request;
 use App\Models\School;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Mail;
-use App\Mail\SchoolLinksMail;
+use App\Mail\SchoolLinksMail; // This seems unused, but I'll leave it.
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Http;
+use App\Services\PaystackService;
 
 class RegistrationController extends Controller
 {
@@ -17,7 +17,7 @@ class RegistrationController extends Controller
         return view('registration.create');
     }
 
-    public function store(Request $request)
+    public function store(Request $request, PaystackService $paystack)
     {
         $data = $request->validate([
             'name'            => 'required|string|max:255',
@@ -40,17 +40,12 @@ class RegistrationController extends Controller
         $data['slug'] = $slug;
 
         // Resolve account name server-side to ensure integrity
-        $resolve = Http::withToken(config('services.paystack.secret_key'))
-            ->get(config('services.paystack.payment_url').'/bank/resolve', [
-                'account_number' => $data['account_number'],
-                'bank_code' => $data['bank_code'],
-            ])->json();
-
-        if (!($resolve['status'] ?? false)) {
-            return back()->withInput()->withErrors(['account_number' => $resolve['message'] ?? 'Unable to verify account details']);
+        $resolve = $paystack->resolveAccount($data['account_number'], $data['bank_code']);
+        if (!$resolve['ok']) {
+            return back()->withInput()->withErrors(['account_number' => $resolve['message'] ?? 'Unable to verify account details.']);
         }
 
-        $data['account_name'] = $resolve['data']['account_name'] ?? null;
+        $data['account_name'] = $resolve['account_name'] ?? null;
 
         // Hash password before save
         $data['admin_password'] = Hash::make($data['admin_password']);

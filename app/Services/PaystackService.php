@@ -24,6 +24,36 @@ class PaystackService
             ->timeout(30);
     }
 
+    public function resolveAccount(string $accountNumber, string $bankCode): array
+    {
+        if (empty($this->secret)) {
+            return ['ok' => false, 'message' => 'Paystack secret key is not configured'];
+        }
+
+        try {
+            $resp = $this->client()->get($this->baseUrl . '/bank/resolve', [
+                'account_number' => $accountNumber,
+                'bank_code' => $bankCode,
+            ]);
+
+            $json = $resp->json();
+
+            if (!($json['status'] ?? false)) {
+                return ['ok' => false, 'message' => $json['message'] ?? 'Resolve failed'];
+            }
+
+            return [
+                'ok' => true,
+                'account_name' => $json['data']['account_name'] ?? null,
+                'account_number' => $json['data']['account_number'] ?? null,
+            ];
+        } catch (\Exception $e) {
+            report($e); // Log the exception
+            $errorMessage = $e instanceof \Illuminate\Http\Client\ConnectionException ? 'Connection to verification service timed out.' : 'Failed to verify account.';
+            return ['ok' => false, 'message' => $errorMessage];
+        }
+    }
+
     public function ensureRecipientForSchool(School $school): ?string
     {
         if ($school->paystack_recipient_code) {
