@@ -1,9 +1,5 @@
 @extends('layouts.app')
 
-@push('head')
-    @vite('resources/css/app.css')
-@endpush
-
 @section('content')
 <div class="max-w-4xl mx-auto py-8 px-4">
     <h1 class="text-3xl font-bold text-slate-900 mb-6">Categories</h1>

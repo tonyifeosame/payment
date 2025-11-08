@@ -1,9 +1,5 @@
 @extends('layouts.app')
 
-@push('head')
-    @vite('resources/css/app.css')
-@endpush
-
 @section('content')
 <div class="max-w-3xl mx-auto">
     <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-8">

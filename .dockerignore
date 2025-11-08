@@ -1,0 +1,11 @@
+.idea
+.github
+vendor
+node_modules
+.composer/cache
+.git
+*.pem
+composer.lock
+package-lock.json
+.env
+frankenphp
