@@ -14,14 +14,12 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // User::factory(10)->create();
-
-        User::factory()->create([
+        User::create([
             'name' => 'Test User',
             'email' => 'test@example.com',
+            'password' => bcrypt('password'),
         ]);
 
-        // Seed categories and subcategories for payment flow
         $this->call(CategorySeeder::class);
     }
 }

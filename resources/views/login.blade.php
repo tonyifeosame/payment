@@ -1,9 +1,5 @@
 @extends('layouts.app')
 
-@push('head')
-    @vite('resources/css/app.css')
-@endpush
-
 @section('content')
 <div class="min-h-screen relative overflow-hidden flex items-center justify-center px-4 py-12">
     <!-- Dynamic Background -->

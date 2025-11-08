@@ -1,9 +1,5 @@
 @extends('layouts.app')
 
-@push('head')
-    @vite('resources/css/app.css')
-@endpush
-
 @section('content')
 <style>
         @keyframes fadeIn {
