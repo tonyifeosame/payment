@@ -18,10 +18,10 @@ services:
         fromDatabase:
           name: database
           property: connectionString
-databases:
-  - name: database
-    plan: free
       - key: SESSION_DRIVER
         value: database
       - key: SESSION_DOMAIN
         value: .${RENDER_EXTERNAL_URL_WITHOUT_SCHEME}
+databases:
+  - name: database
+    plan: free
