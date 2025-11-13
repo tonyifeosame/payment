@@ -2,11 +2,11 @@
 
 namespace App\Console\Commands;
 
-use Illuminate\Console\Command;
-use App\Models\Transaction;
-use App\Models\School;
 use App\Models\Payout;
+use App\Models\School;
+use App\Models\Transaction;
 use App\Services\PaystackService;
+use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -39,12 +39,15 @@ class RunPayouts extends Command
 
         if ($rows->isEmpty()) {
             $this->info('No successful transactions found for the period.');
+
             return Command::SUCCESS;
         }
 
         foreach ($rows as $row) {
             $school = School::find($row->school_id);
-            if (!$school) { continue; }
+            if (! $school) {
+                continue;
+            }
 
             $totalBase = round((float) $row->total_amount, 2);
             $count = $row->cnt;
@@ -64,6 +67,7 @@ class RunPayouts extends Command
 
             if ($this->option('dry-run')) {
                 $this->line('Dry run: skipping actual transfer.');
+
                 continue;
             }
 
@@ -74,17 +78,19 @@ class RunPayouts extends Command
                 $payout->status = 'failed';
                 $payout->response = ['message' => 'Zero amount'];
                 $payout->save();
+
                 continue;
             }
 
-            $reason = 'Daily payout for ' . $date->toDateString();
+            $reason = 'Daily payout for '.$date->toDateString();
             $result = $paystack->initiateTransferToSchool($school, $amountKobo, $reason);
 
-            if (!($result['ok'] ?? false)) {
-                $this->error('Transfer failed: ' . ($result['message'] ?? 'unknown'));
+            if (! ($result['ok'] ?? false)) {
+                $this->error('Transfer failed: '.($result['message'] ?? 'unknown'));
                 $payout->status = 'failed';
                 $payout->response = $result['response'] ?? $result;
                 $payout->save();
+
                 continue;
             }
 
@@ -98,6 +104,7 @@ class RunPayouts extends Command
         }
 
         $this->info('Payouts completed.');
+
         return Command::SUCCESS;
     }
 }

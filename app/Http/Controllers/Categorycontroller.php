@@ -2,27 +2,27 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
 use App\Models\Category;
-use App\Models\Subcategory;
 use App\Models\School;
+use Illuminate\Http\Request;
 
 class CategoryController extends Controller
 {
     public function index()
     {
         $categories = Category::all();
+
         return view('categories.index', compact('categories'));
     }
 
     public function store(Request $request)
     {
         $request->validate([
-            'name' => 'required|string|max:255'
+            'name' => 'required|string|max:255',
         ]);
 
         Category::create([
-            'name' => $request->name
+            'name' => $request->name,
         ]);
 
         return redirect('/categories')->with('success', 'Category created successfully!');
@@ -36,11 +36,11 @@ class CategoryController extends Controller
     public function update(Request $request, Category $category)
     {
         $request->validate([
-            'name' => 'required|string|max:255'
+            'name' => 'required|string|max:255',
         ]);
 
         $category->update([
-            'name' => $request->name
+            'name' => $request->name,
         ]);
 
         return redirect()->route('categories.index')->with('success', 'Category updated successfully!');
@@ -49,6 +49,7 @@ class CategoryController extends Controller
     public function destroy(Category $category)
     {
         $category->delete();
+
         return redirect()->route('categories.index')->with('success', 'Category deleted successfully.');
     }
 
@@ -58,6 +59,7 @@ class CategoryController extends Controller
     public function indexSchool(School $school)
     {
         $categories = Category::where('school_id', $school->id)->get();
+
         return view('categories.index', compact('categories', 'school'));
     }
 
@@ -76,7 +78,7 @@ class CategoryController extends Controller
         ]);
 
         return redirect()->route('school.categories.index', ['school' => $school->slug])
-                         ->with('success', 'Category created successfully!');
+            ->with('success', 'Category created successfully!');
     }
 
     public function editSchool(School $school, Category $category)
@@ -100,7 +102,7 @@ class CategoryController extends Controller
         ]);
 
         return redirect()->route('school.categories.index', ['school' => $school->slug])
-                         ->with('success', 'Category updated successfully!');
+            ->with('success', 'Category updated successfully!');
     }
 
     public function destroySchool(School $school, Category $category)
@@ -113,6 +115,6 @@ class CategoryController extends Controller
         $category->delete();
 
         return redirect()->route('school.categories.index', ['school' => $school->slug])
-                         ->with('success', 'Category deleted successfully.');
+            ->with('success', 'Category deleted successfully.');
     }
 }

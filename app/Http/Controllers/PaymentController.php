@@ -2,15 +2,15 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
 use App\Models\Category;
+use App\Models\School;
 use App\Models\Subcategory;
 use App\Models\Transaction;
-use App\Models\School;
-use Illuminate\Support\Str;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Response;
 use Illuminate\Support\Facades\View;
+use Illuminate\Support\Str;
 
 class PaymentController extends Controller
 {
@@ -33,6 +33,7 @@ class PaymentController extends Controller
         })->values();
 
         $markupPercent = (float) config('fees.markup_percent', 2.5);
+
         return view('payment.index', compact('categories', 'categoriesForJs', 'markupPercent'));
     }
 
@@ -60,6 +61,7 @@ class PaymentController extends Controller
         })->values();
 
         $markupPercent = (float) config('fees.markup_percent', 2.5);
+
         return view('payment.index', compact('categories', 'categoriesForJs', 'school', 'markupPercent'));
     }
 
@@ -67,15 +69,15 @@ class PaymentController extends Controller
     public function initialize(Request $request)
     {
         $validated = $request->validate([
-            'email'            => 'required|email',
-            'subcategory_id'   => 'required|exists:subcategories,id',
-            'category_id'      => 'required|exists:categories,id',
-            'quantity'         => 'required|integer|min:1',
+            'email' => 'required|email',
+            'subcategory_id' => 'required|exists:subcategories,id',
+            'category_id' => 'required|exists:categories,id',
+            'quantity' => 'required|integer|min:1',
         ]);
 
         // Load models
         $subcategory = Subcategory::findOrFail($validated['subcategory_id']);
-        $category   = Category::findOrFail($validated['category_id']);
+        $category = Category::findOrFail($validated['category_id']);
 
         // Ensure the selected subcategory belongs to the selected category
         if ((int) $subcategory->category_id !== (int) $category->id) {
@@ -92,7 +94,7 @@ class PaymentController extends Controller
 
         $baseAmount = (float) $subcategory->price * (int) $validated['quantity']; // in Naira
         $markupPercent = (float) config('fees.markup_percent', 2.5);
-        $markupAmount = round($baseAmount * ($markupPercent/100), 2);
+        $markupAmount = round($baseAmount * ($markupPercent / 100), 2);
         $amount = $baseAmount + $markupAmount;
 
         // Generate and persist a unique reference before insert
@@ -100,33 +102,33 @@ class PaymentController extends Controller
 
         // Create transaction (status pending)
         $transaction = Transaction::create([
-            'category_id'      => $category->id,
-            'subcategory_id'   => $subcategory->id,
-            'category_name'    => $category->name,        // ✅ save category name
+            'category_id' => $category->id,
+            'subcategory_id' => $subcategory->id,
+            'category_name' => $category->name,        // ✅ save category name
             'subcategory_name' => $subcategory->name,     // ✅ save subcategory name
-            'reference'        => $generatedRef,
-            'amount'           => $amount,
-            'status'           => 'pending',
-            'payment_method'   => 'paystack',
-            'email'            => $validated['email'],
-            'name'             => $request->name ?? null,
-            'meta_data'        => [
-                'quantity'       => (int) $validated['quantity'],
-                'base_amount'    => $baseAmount,
+            'reference' => $generatedRef,
+            'amount' => $amount,
+            'status' => 'pending',
+            'payment_method' => 'paystack',
+            'email' => $validated['email'],
+            'name' => $request->name ?? null,
+            'meta_data' => [
+                'quantity' => (int) $validated['quantity'],
+                'base_amount' => $baseAmount,
                 'markup_percent' => $markupPercent,
-                'markup_amount'  => $markupAmount,
-                'gross_amount'   => $amount,
+                'markup_amount' => $markupAmount,
+                'gross_amount' => $amount,
             ],
         ]);
 
         $paystack = [
-            "amount" => (int) round($amount * 100), // convert to Kobo
-            "email" => $validated['email'],
-            "reference" => $generatedRef,
-            "callback_url" => route('payment.callback'),
-            "metadata" => [
-                "transaction_id"   => $transaction->id,
-                "quantity"         => $validated['quantity'],
+            'amount' => (int) round($amount * 100), // convert to Kobo
+            'email' => $validated['email'],
+            'reference' => $generatedRef,
+            'callback_url' => route('payment.callback'),
+            'metadata' => [
+                'transaction_id' => $transaction->id,
+                'quantity' => $validated['quantity'],
             ],
         ];
 
@@ -134,7 +136,7 @@ class PaymentController extends Controller
             ->retry(3, 200)
             ->connectTimeout(10)
             ->timeout(25)
-            ->post(config('services.paystack.payment_url') . '/transaction/initialize', $paystack);
+            ->post(config('services.paystack.payment_url').'/transaction/initialize', $paystack);
 
         $resBody = $response->json();
 
@@ -151,15 +153,15 @@ class PaymentController extends Controller
     public function initializeSchool(Request $request, School $school)
     {
         $validated = $request->validate([
-            'email'            => 'required|email',
-            'subcategory_id'   => 'required|exists:subcategories,id',
-            'category_id'      => 'required|exists:categories,id',
-            'quantity'         => 'required|integer|min:1',
+            'email' => 'required|email',
+            'subcategory_id' => 'required|exists:subcategories,id',
+            'category_id' => 'required|exists:categories,id',
+            'quantity' => 'required|integer|min:1',
         ]);
 
         // Load models scoped to school
         $subcategory = Subcategory::where('school_id', $school->id)->findOrFail($validated['subcategory_id']);
-        $category   = Category::where('school_id', $school->id)->findOrFail($validated['category_id']);
+        $category = Category::where('school_id', $school->id)->findOrFail($validated['category_id']);
 
         // Ensure the selected subcategory belongs to the selected category
         if ((int) $subcategory->category_id !== (int) $category->id) {
@@ -176,30 +178,30 @@ class PaymentController extends Controller
 
         $baseAmount = (float) $subcategory->price * (int) $validated['quantity'];
         $markupPercent = (float) config('fees.markup_percent', 2.5);
-        $markupAmount = round($baseAmount * ($markupPercent/100), 2);
+        $markupAmount = round($baseAmount * ($markupPercent / 100), 2);
         $amount = $baseAmount + $markupAmount;
 
         // Generate and persist a unique reference before insert
         $generatedRef = Str::uuid()->toString();
 
         $transaction = Transaction::create([
-            'school_id'        => $school->id,
-            'category_id'      => $category->id,
-            'subcategory_id'   => $subcategory->id,
-            'category_name'    => $category->name,
+            'school_id' => $school->id,
+            'category_id' => $category->id,
+            'subcategory_id' => $subcategory->id,
+            'category_name' => $category->name,
             'subcategory_name' => $subcategory->name,
-            'reference'        => $generatedRef,
-            'amount'           => $amount,
-            'status'           => 'pending',
-            'payment_method'   => 'paystack',
-            'email'            => $validated['email'],
-            'name'             => $request->name ?? null,
-            'meta_data'        => [
-                'quantity'       => (int) $validated['quantity'],
-                'base_amount'    => $baseAmount,
+            'reference' => $generatedRef,
+            'amount' => $amount,
+            'status' => 'pending',
+            'payment_method' => 'paystack',
+            'email' => $validated['email'],
+            'name' => $request->name ?? null,
+            'meta_data' => [
+                'quantity' => (int) $validated['quantity'],
+                'base_amount' => $baseAmount,
                 'markup_percent' => $markupPercent,
-                'markup_amount'  => $markupAmount,
-                'gross_amount'   => $amount,
+                'markup_amount' => $markupAmount,
+                'gross_amount' => $amount,
             ],
         ]);
 
@@ -209,11 +211,11 @@ class PaymentController extends Controller
             'reference' => $generatedRef,
             'callback_url' => route('payment.callback'),
             'metadata' => [
-                'transaction_id'   => $transaction->id,
-                'quantity'         => $validated['quantity'],
-                'school_id'        => $school->id,
-                'school_slug'      => $school->slug,
-                'school_name'      => $school->name,
+                'transaction_id' => $transaction->id,
+                'quantity' => $validated['quantity'],
+                'school_id' => $school->id,
+                'school_slug' => $school->slug,
+                'school_name' => $school->name,
             ],
         ];
 
@@ -221,7 +223,7 @@ class PaymentController extends Controller
             ->retry(3, 200)
             ->connectTimeout(10)
             ->timeout(25)
-            ->post(config('services.paystack.payment_url') . '/transaction/initialize', $paystack);
+            ->post(config('services.paystack.payment_url').'/transaction/initialize', $paystack);
 
         $resBody = $response->json();
 
@@ -241,7 +243,7 @@ class PaymentController extends Controller
             ->retry(3, 200)
             ->connectTimeout(10)
             ->timeout(25)
-            ->get(config('services.paystack.payment_url') . "/transaction/verify/{$reference}");
+            ->get(config('services.paystack.payment_url')."/transaction/verify/{$reference}");
 
         $data = $response->json();
 
@@ -257,7 +259,7 @@ class PaymentController extends Controller
                 'payment_method' => $channel ?: 'paystack',
                 'paystack_reference' => $paystackReference,
             ];
-            if (!empty($reference)) {
+            if (! empty($reference)) {
                 $update['reference'] = $reference;
             }
             Transaction::where('id', $txnId)->update($update);
@@ -283,8 +285,9 @@ class PaymentController extends Controller
             $schoolSlug = $data['data']['metadata']['school_slug'] ?? null;
             if ($schoolSlug) {
                 return redirect()->route('school.payment.index', ['school' => $schoolSlug])
-                                 ->with('success', 'Payment successful! A receipt has been sent to your email. You can also download it here.');
+                    ->with('success', 'Payment successful! A receipt has been sent to your email. You can also download it here.');
             }
+
             return redirect()->route('payment.index')->with('success', 'Payment successful! A receipt has been sent to your email. You can also download it here.');
         }
 
@@ -310,6 +313,7 @@ class PaymentController extends Controller
         $html = View::make('payment.receipt', ['transaction' => $transaction, 'download' => true])->render();
 
         $filename = 'receipt-'.($transaction->id).'.html';
+
         return Response::make($html, 200, [
             'Content-Type' => 'text/html; charset=UTF-8',
             'Content-Disposition' => 'attachment; filename="'.$filename.'"',

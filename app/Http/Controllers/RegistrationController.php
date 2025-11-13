@@ -2,13 +2,13 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
+use App\Mail\SchoolLinksMail;
 use App\Models\School;
-use Illuminate\Support\Str;
-use Illuminate\Support\Facades\Mail;
-use App\Mail\SchoolLinksMail; // This seems unused, but I'll leave it.
-use Illuminate\Support\Facades\Hash;
 use App\Services\PaystackService;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash; // This seems unused, but I'll leave it.
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
 
 class RegistrationController extends Controller
 {
@@ -20,14 +20,14 @@ class RegistrationController extends Controller
     public function store(Request $request, PaystackService $paystack)
     {
         $data = $request->validate([
-            'name'            => 'required|string|max:255',
-            'email'           => 'required|email|max:255',
-            'account_number'  => 'required|string|min:10|max:12',
-            'bank'            => 'required|string|max:100',
-            'bank_code'       => 'required|string',
-            'account_name'    => 'nullable|string|max:255',
-            'address'         => 'nullable|string|max:255',
-            'admin_password'  => 'required|string|min:8|confirmed',
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|max:255',
+            'account_number' => 'required|string|min:10|max:12',
+            'bank' => 'required|string|max:100',
+            'bank_code' => 'required|string',
+            'account_name' => 'nullable|string|max:255',
+            'address' => 'nullable|string|max:255',
+            'admin_password' => 'required|string|min:8|confirmed',
         ]);
 
         // Generate unique slug from name
@@ -41,7 +41,7 @@ class RegistrationController extends Controller
 
         // Resolve account name server-side to ensure integrity
         $resolve = $paystack->resolveAccount($data['account_number'], $data['bank_code']);
-        if (!$resolve['ok']) {
+        if (! $resolve['ok']) {
             return back()->withInput()->withErrors(['account_number' => $resolve['message'] ?? 'Unable to verify account details.']);
         }
 
@@ -57,13 +57,13 @@ class RegistrationController extends Controller
 
         // Build tenant-aware links and email them to the school admin
         $links = [
-            'payment'       => route('school.payment.index', ['school' => $school->slug]),
-            'categories'    => route('school.categories.index', ['school' => $school->slug]),
+            'payment' => route('school.payment.index', ['school' => $school->slug]),
+            'categories' => route('school.categories.index', ['school' => $school->slug]),
             'subcategories' => route('school.subcategories.index', ['school' => $school->slug]),
-            'transactions'  => route('school.transactions.index', ['school' => $school->slug]),
+            'transactions' => route('school.transactions.index', ['school' => $school->slug]),
         ];
 
-        if (!empty($school->email)) {
+        if (! empty($school->email)) {
             try {
                 Mail::to($school->email)->send(new SchoolLinksMail($school, $links));
             } catch (\Throwable $e) {

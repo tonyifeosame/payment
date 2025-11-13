@@ -1,19 +1,17 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\CategoryController;
-use App\Http\Controllers\SubcategoryController;
-use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\PaymentController;
+use App\Http\Controllers\PaystackController;
 use App\Http\Controllers\RegistrationController;
 use App\Http\Controllers\SchoolAuthController;
-use App\Http\Controllers\PaystackController;
-use Illuminate\Support\Facades\Mail;
+use App\Http\Controllers\SubcategoryController;
+use App\Http\Controllers\TransactionController;
+use App\Http\Middleware\EnsureSchoolAdmin;
 use App\Models\School;
 use Illuminate\Http\Request;
-use App\Http\Middleware\EnsureSchoolAdmin;
-
-use Illuminate\Support\Facades\Session;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
     return view('home');
@@ -57,14 +55,15 @@ Route::post('/contact', function (\Illuminate\Http\Request $request) {
     $to = config('mail.from.address');
     try {
         Mail::raw(
-            "From: {$data['name']} <{$data['email']}>\n\n" . $data['message'],
+            "From: {$data['name']} <{$data['email']}>\n\n".$data['message'],
             function ($m) use ($to, $data) {
-                $m->to($to)->subject('[Contact] ' . $data['subject']);
+                $m->to($to)->subject('[Contact] '.$data['subject']);
                 $m->replyTo($data['email'], $data['name']);
             }
         );
     } catch (\Throwable $e) {
         report($e);
+
         return back()->withInput()->with('error', 'Unable to send your message. Please try again later.');
     }
 
@@ -119,16 +118,18 @@ Route::get('/payment/failed', function () {
 // TEMP: SMTP test route (remove in production)
 Route::get('/test-mail', function (Request $request) {
     $to = $request->query('to');
-    if (!$to) {
+    if (! $to) {
         return response()->json(['error' => 'Provide ?to=recipient@example.com'], 400);
     }
     try {
         Mail::raw('Test email from School Fees Portal. If you received this, SMTP is working.', function ($message) use ($to) {
             $message->to($to)->subject('SMTP Test');
         });
+
         return response()->json(['ok' => true, 'sent_to' => $to]);
     } catch (\Throwable $e) {
         report($e);
+
         return response()->json(['ok' => false, 'error' => $e->getMessage()], 500);
     }
 });

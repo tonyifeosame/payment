@@ -12,6 +12,7 @@ class SchoolLinksMail extends Mailable
     use Queueable, SerializesModels;
 
     public School $school;
+
     public array $links;
 
     /**

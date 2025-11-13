@@ -2,13 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Mail\SchoolPasswordResetMail;
+use App\Models\School;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
-use App\Models\School;
-
-use Illuminate\Support\Facades\Password;
-use App\Mail\SchoolPasswordResetMail;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Password;
 
 class SchoolAuthController extends Controller
 {
@@ -26,17 +25,19 @@ class SchoolAuthController extends Controller
 
         // Find school by name (case-insensitive)
         $school = School::whereRaw('LOWER(name) = LOWER(?)', [$credentials['name']])->first();
-        if (!$school || !$school->admin_password || !Hash::check($credentials['password'], $school->admin_password)) {
+        if (! $school || ! $school->admin_password || ! Hash::check($credentials['password'], $school->admin_password)) {
             return back()->withInput()->with('error', 'Invalid school name or password.');
         }
 
         session(['school_admin_id' => $school->id]);
+
         return redirect()->route('school.categories.index', ['school' => $school])->with('success', 'Logged in successfully.');
     }
 
     public function logout(Request $request)
     {
         $request->session()->forget('school_admin_id');
+
         return redirect()->route('admin.login')->with('success', 'Logged out.');
     }
 
@@ -53,13 +54,14 @@ class SchoolAuthController extends Controller
 
         if ($school) {
             $token = Password::createToken($school);
-            $resetLink = url("/admin/reset-password/{$token}?email=" . urlencode($request->email));
+            $resetLink = url("/admin/reset-password/{$token}?email=".urlencode($request->email));
 
             Mail::to($request->email)->send(new SchoolPasswordResetMail($school, $resetLink));
         }
 
         return back()->with('status', 'If your email is in our system, you will receive a password reset link.');
     }
+
     public function showResetForm(Request $request, $token)
     {
         return view('admin.password.reset', ['token' => $token, 'email' => $request->email]);
@@ -75,13 +77,13 @@ class SchoolAuthController extends Controller
 
         $school = School::where('email', $request->email)->first();
 
-        if (!$school) {
+        if (! $school) {
             return back()->withErrors(['email' => 'The provided email does not match our records.']);
         }
 
         $response = Password::broker()->tokenExists($school, $request->token);
 
-        if (!$response) {
+        if (! $response) {
             return back()->withErrors(['email' => 'The password reset token is invalid.']);
         }
 

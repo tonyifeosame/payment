@@ -11,15 +11,15 @@ return new class extends Migration
      */
     public function up(): void
     {
-      Schema::create('subcategories', function (Blueprint $table) {
-    $table->id();
-    $table->unsignedBigInteger('category_id');   // ← this is missing in your case
-    $table->string('name');
-    $table->decimal('price', 10, 2)->nullable();
-    $table->timestamps();
+        Schema::create('subcategories', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('category_id');   // ← this is missing in your case
+            $table->string('name');
+            $table->decimal('price', 10, 2)->nullable();
+            $table->timestamps();
 
-    $table->foreign('category_id')->references('id')->on('categories')->onDelete('cascade');
-});
+            $table->foreign('category_id')->references('id')->on('categories')->onDelete('cascade');
+        });
 
     }
 

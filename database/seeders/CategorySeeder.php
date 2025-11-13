@@ -2,9 +2,9 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Seeder;
 use App\Models\Category;
 use App\Models\Subcategory;
+use Illuminate\Database\Seeder;
 
 class CategorySeeder extends Seeder
 {

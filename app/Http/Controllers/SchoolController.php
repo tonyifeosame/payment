@@ -2,9 +2,9 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
-use App\Models\Subcategory;
 use App\Models\Category;
+use App\Models\Subcategory;
+use Illuminate\Http\Request;
 
 class SchoolController extends Controller
 {
@@ -12,6 +12,7 @@ class SchoolController extends Controller
     {
         $subcategories = Subcategory::with('category')->get();
         $categories = Category::all();
+
         return view('subcategories.index', compact('subcategories', 'categories'));
     }
 
@@ -20,16 +21,15 @@ class SchoolController extends Controller
         $request->validate([
             'category_id' => 'required|exists:categories,id',
             'name' => 'required|string|max:255',
-            'price' => 'required|numeric'
+            'price' => 'required|numeric',
         ]);
 
         Subcategory::create([
             'category_id' => $request->category_id,
             'name' => $request->name,
-            'price' => $request->price
+            'price' => $request->price,
         ]);
 
         return redirect('/subcategories')->with('success', 'Subcategory created successfully!');
     }
 }
-

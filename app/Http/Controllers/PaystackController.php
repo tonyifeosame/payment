@@ -42,21 +42,24 @@ class PaystackController extends Controller
                     'country' => $country,
                 ]);
 
-            if (!$resp->ok()) {
+            if (! $resp->ok()) {
                 Log::error('Paystack banks API error', [
                     'status' => $resp->status(),
                     'body' => $resp->body(),
                 ]);
+
                 return response()->json(['ok' => false, 'error' => 'Failed to fetch banks'], 502);
             }
 
             $data = $resp->json();
+
             return response()->json([
                 'ok' => true,
                 'banks' => $data['data'] ?? [],
             ]);
         } catch (\Exception $e) {
             Log::error('Exception fetching banks', ['message' => $e->getMessage()]);
+
             return response()->json(['ok' => false, 'error' => 'Failed to fetch banks'], 500);
         }
     }
@@ -83,17 +86,18 @@ class PaystackController extends Controller
                     'bank_code' => $validated['bank_code'],
                 ]);
 
-            if (!$resp->ok()) {
+            if (! $resp->ok()) {
                 Log::error('Paystack resolve account error', [
                     'status' => $resp->status(),
                     'body' => $resp->body(),
                 ]);
                 $error = $resp->json('message') ?? 'Could not connect to verification service.';
+
                 return response()->json(['ok' => false, 'error' => $error], $resp->status());
             }
 
             $json = $resp->json();
-            if (!($json['status'] ?? false)) {
+            if (! ($json['status'] ?? false)) {
                 return response()->json(['ok' => false, 'error' => $json['message'] ?? 'Resolve failed'], 422);
             }
 
@@ -108,6 +112,7 @@ class PaystackController extends Controller
                 'trace' => $e->getTraceAsString(),
             ]);
             $errorMessage = $e instanceof \Illuminate\Http\Client\ConnectionException ? 'Connection to verification service timed out.' : 'Failed to verify account.';
+
             return response()->json(['ok' => false, 'error' => $errorMessage], 500);
         }
     }

@@ -1,4 +1,5 @@
 <?php
+
 return [
     // Percentage markup added to the customer's payable amount.
     // Keep this higher than the Paystack percentage to cover fees.

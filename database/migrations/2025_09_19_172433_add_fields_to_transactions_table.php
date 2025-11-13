@@ -12,41 +12,41 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('transactions', function (Blueprint $table) {
-            if (!Schema::hasColumn('transactions', 'admission_number')) {
+            if (! Schema::hasColumn('transactions', 'admission_number')) {
                 $table->string('admission_number')->after('id');
             }
-            if (!Schema::hasColumn('transactions', 'amount')) {
+            if (! Schema::hasColumn('transactions', 'amount')) {
                 $table->decimal('amount', 10, 2)->after('admission_number');
             }
-            if (!Schema::hasColumn('transactions', 'status')) {
+            if (! Schema::hasColumn('transactions', 'status')) {
                 $table->string('status')->default('pending')->after('amount');
             }
-            if (!Schema::hasColumn('transactions', 'payment_method')) {
+            if (! Schema::hasColumn('transactions', 'payment_method')) {
                 $table->string('payment_method')->nullable()->after('status');
             }
-            if (!Schema::hasColumn('transactions', 'email')) {
+            if (! Schema::hasColumn('transactions', 'email')) {
                 $table->string('email')->nullable()->after('payment_method');
             }
-            if (!Schema::hasColumn('transactions', 'name')) {
+            if (! Schema::hasColumn('transactions', 'name')) {
                 $table->string('name')->nullable()->after('email');
             }
-            if (!Schema::hasColumn('transactions', 'category_id')) {
+            if (! Schema::hasColumn('transactions', 'category_id')) {
                 $table->foreignId('category_id')
-                      ->constrained()
-                      ->onDelete('cascade');
+                    ->constrained()
+                    ->onDelete('cascade');
             }
-            if (!Schema::hasColumn('transactions', 'subcategory_id')) {
+            if (! Schema::hasColumn('transactions', 'subcategory_id')) {
                 $table->foreignId('subcategory_id')
-                      ->constrained()
-                      ->onDelete('cascade');
+                    ->constrained()
+                    ->onDelete('cascade');
             }
-            if (!Schema::hasColumn('transactions', 'meta_data')) {
+            if (! Schema::hasColumn('transactions', 'meta_data')) {
                 $table->json('meta_data')->nullable()->after('subcategory_id');
             }
-            if (!Schema::hasColumn('transactions', 'category_name')) {
+            if (! Schema::hasColumn('transactions', 'category_name')) {
                 $table->string('category_name')->nullable()->after('category_id');
             }
-            if (!Schema::hasColumn('transactions', 'subcategory_name')) {
+            if (! Schema::hasColumn('transactions', 'subcategory_name')) {
                 $table->string('subcategory_name')->nullable()->after('subcategory_id');
             }
         });

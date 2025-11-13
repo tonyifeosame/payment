@@ -5,7 +5,8 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration {
+return new class extends Migration
+{
     public function up(): void
     {
         // Add school_id columns (nullable for now to avoid DBAL requirement on change())
@@ -21,7 +22,7 @@ return new class extends Migration {
 
         // Create a default school and backfill existing rows
         $exists = DB::table('schools')->where('slug', 'default-school')->exists();
-        if (!$exists) {
+        if (! $exists) {
             $defaultId = DB::table('schools')->insertGetId([
                 'name' => 'Default School',
                 'slug' => 'default-school',

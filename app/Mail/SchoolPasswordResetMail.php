@@ -12,6 +12,7 @@ class SchoolPasswordResetMail extends Mailable
     use Queueable, SerializesModels;
 
     public School $school;
+
     public string $resetLink;
 
     /**

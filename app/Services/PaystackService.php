@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Http;
 class PaystackService
 {
     protected string $baseUrl;
+
     protected string $secret;
 
     public function __construct()
@@ -31,14 +32,14 @@ class PaystackService
         }
 
         try {
-            $resp = $this->client()->get($this->baseUrl . '/bank/resolve', [
+            $resp = $this->client()->get($this->baseUrl.'/bank/resolve', [
                 'account_number' => $accountNumber,
                 'bank_code' => $bankCode,
             ]);
 
             $json = $resp->json();
 
-            if (!($json['status'] ?? false)) {
+            if (! ($json['status'] ?? false)) {
                 return ['ok' => false, 'message' => $json['message'] ?? 'Resolve failed'];
             }
 
@@ -50,6 +51,7 @@ class PaystackService
         } catch (\Exception $e) {
             report($e); // Log the exception
             $errorMessage = $e instanceof \Illuminate\Http\Client\ConnectionException ? 'Connection to verification service timed out.' : 'Failed to verify account.';
+
             return ['ok' => false, 'message' => $errorMessage];
         }
     }
@@ -59,7 +61,7 @@ class PaystackService
         if ($school->paystack_recipient_code) {
             return $school->paystack_recipient_code;
         }
-        if (!$school->bank_code || !$school->account_number || !$school->account_name) {
+        if (! $school->bank_code || ! $school->account_number || ! $school->account_name) {
             return null; // cannot create recipient without bank details
         }
         $payload = [
@@ -69,9 +71,9 @@ class PaystackService
             'bank_code' => $school->bank_code,
             'currency' => 'NGN',
         ];
-        $resp = $this->client()->post($this->baseUrl . '/transferrecipient', $payload);
+        $resp = $this->client()->post($this->baseUrl.'/transferrecipient', $payload);
         $json = $resp->json();
-        if (!($json['status'] ?? false)) {
+        if (! ($json['status'] ?? false)) {
             return null;
         }
         $code = $json['data']['recipient_code'] ?? null;
@@ -79,13 +81,14 @@ class PaystackService
             $school->paystack_recipient_code = $code;
             $school->save();
         }
+
         return $code;
     }
 
     public function initiateTransferToSchool(School $school, int $amountKobo, string $reason = ''): array
     {
         $recipient = $school->paystack_recipient_code ?: $this->ensureRecipientForSchool($school);
-        if (!$recipient) {
+        if (! $recipient) {
             return ['ok' => false, 'message' => 'Recipient not available'];
         }
         $payload = [
@@ -94,11 +97,12 @@ class PaystackService
             'recipient' => $recipient,
             'reason' => $reason,
         ];
-        $resp = $this->client()->post($this->baseUrl . '/transfer', $payload);
+        $resp = $this->client()->post($this->baseUrl.'/transfer', $payload);
         $json = $resp->json();
-        if (!($json['status'] ?? false)) {
+        if (! ($json['status'] ?? false)) {
             return ['ok' => false, 'message' => $json['message'] ?? 'Transfer failed', 'response' => $json];
         }
+
         return ['ok' => true, 'response' => $json];
     }
 }
