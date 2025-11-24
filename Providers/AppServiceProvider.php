@@ -12,6 +12,8 @@ class AppServiceProvider extends ServiceProvider
     {
         \Illuminate\Pagination\Paginator::useTailwind();
 
-        \Illuminate\Support\Facades\URL::forceScheme('https');
+        if ($this->app->environment('production')) {
+            \Illuminate\Support\Facades\URL::forceScheme('https');
+        }
     }
 }
