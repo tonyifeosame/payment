@@ -176,9 +176,10 @@
                                 </thead>
                                 <tbody class="divide-y divide-slate-100">
                                     @php
-                                        $qty = (int) ($transaction->meta_data['quantity'] ?? 1);
-                                        $baseTotal = (float) ($transaction->meta_data['base_amount'] ?? $transaction->amount ?? 0);
-                                        $unit = (float) ($baseTotal / max($qty,1));
+                                        $receipt = $transaction->receiptBreakdown();
+                                        $qty = $receipt['quantity'];
+                                        $unit = $receipt['unit_price'];
+                                        $baseTotal = $receipt['fee_subtotal'];
                                     @endphp
                                     <tr class="hover:bg-slate-50 transition-colors">
                                         <td class="py-5 px-6 text-slate-800 font-semibold">{{ $transaction->category_name ?? optional($transaction->category)->name }}</td>
@@ -189,13 +190,27 @@
                                     </tr>
                                 </tbody>
                                 <tfoot class="bg-gradient-to-r from-blue-50 to-purple-50 border-t-2 border-slate-200">
+                                    @if($receipt['has_service_fee'])
+                                        <tr>
+                                            <td colspan="4" class="py-3 px-6 text-right">
+                                                <span class="text-slate-600 font-semibold">Fee Subtotal</span>
+                                            </td>
+                                            <td class="py-3 px-6 text-right text-slate-800 font-semibold">₦{{ number_format($receipt['fee_subtotal'], 2) }}</td>
+                                        </tr>
+                                        <tr>
+                                            <td colspan="4" class="py-3 px-6 text-right">
+                                                <span class="text-slate-600 font-semibold">Service Fee</span>
+                                            </td>
+                                            <td class="py-3 px-6 text-right text-slate-800 font-semibold">₦{{ number_format($receipt['service_fee'], 2) }}</td>
+                                        </tr>
+                                    @endif
                                     <tr>
                                         <td colspan="4" class="py-5 px-6 text-right">
-                                            <span class="text-slate-700 font-bold text-lg uppercase tracking-wide">Total Amount</span>
+                                            <span class="text-slate-700 font-bold text-lg uppercase tracking-wide">Total Amount Paid</span>
                                         </td>
                                         <td class="py-5 px-6 text-right">
                                             <div class="inline-block bg-gradient-to-r from-blue-600 to-purple-600 text-white px-6 py-3 rounded-xl shadow-lg">
-                                                <span class="text-2xl font-black">₦{{ number_format($baseTotal, 2) }}</span>
+                                                <span class="text-2xl font-black">₦{{ number_format($receipt['total'], 2) }}</span>
                                             </div>
                                         </td>
                                     </tr>
@@ -222,7 +237,7 @@
             <!-- Action Buttons -->
             <div class="px-8 py-6 bg-gradient-to-r from-slate-50 to-slate-100 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4 no-print">
                 <div class="flex flex-wrap items-center justify-center gap-3">
-                    <a href="{{ route('payment.receipt.download', $transaction) }}" 
+                    <a href="{{ $downloadUrl }}" 
                        class="inline-flex items-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-6 py-3 rounded-xl font-bold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>

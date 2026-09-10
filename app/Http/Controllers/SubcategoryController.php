@@ -9,61 +9,25 @@ use Illuminate\Http\Request;
 
 class SubcategoryController extends Controller
 {
-    public function index()
+    /**
+     * Fail closed if a subcategory does not belong to the acting school.
+     * See CategoryController::assertBelongsToSchool() for why this backstop exists.
+     */
+    private function assertBelongsToSchool(School $school, Subcategory $subcategory): void
     {
-        $subcategories = Subcategory::with('category')->get();
-        $categories = Category::all();
-
-        return view('subcategories.index', compact('subcategories', 'categories'));
+        if ((int) $subcategory->school_id !== (int) $school->id) {
+            abort(404);
+        }
     }
 
-    public function create()
+    /**
+     * Resolve a category the acting school actually owns, or 404.
+     * Guards against a chosen category_id that passes `exists:categories,id`
+     * but belongs to another school.
+     */
+    private function resolveOwnedCategory(School $school, $categoryId): Category
     {
-        $categories = Category::all();
-
-        return view('subcategories.create', compact('categories'));
-    }
-
-    public function store(Request $request)
-    {
-        $request->validate([
-            'category_id' => 'required|exists:categories,id',
-            'name' => 'required|string|max:255',
-            'price' => 'nullable|numeric',
-        ]);
-
-        Subcategory::create($request->all());
-
-        return redirect()->route('subcategories.index')
-            ->with('success', 'Subcategory created successfully.');
-    }
-
-    public function edit(Subcategory $subcategory)
-    {
-        $categories = Category::all();
-
-        return view('subcategories.edit', compact('subcategory', 'categories'));
-    }
-
-    public function update(Request $request, Subcategory $subcategory)
-    {
-        $request->validate([
-            'category_id' => 'required|exists:categories,id',
-            'name' => 'required|string|max:255',
-            'price' => 'nullable|numeric',
-        ]);
-
-        $subcategory->update($request->all());
-
-        return redirect()->route('subcategories.index')
-            ->with('success', 'Subcategory updated successfully.');
-    }
-
-    public function destroy(Subcategory $subcategory)
-    {
-        $subcategory->delete();
-
-        return redirect()->route('subcategories.index')->with('success', 'Subcategory deleted successfully.');
+        return Category::where('school_id', $school->id)->findOrFail($categoryId);
     }
 
     /**
@@ -100,8 +64,7 @@ class SubcategoryController extends Controller
             'price' => 'nullable|numeric',
         ]);
 
-        // Ensure the chosen category belongs to this school
-        $category = Category::where('school_id', $school->id)->findOrFail($data['category_id']);
+        $category = $this->resolveOwnedCategory($school, $data['category_id']);
 
         Subcategory::create([
             'category_id' => $category->id,
@@ -116,6 +79,8 @@ class SubcategoryController extends Controller
 
     public function editSchool(School $school, Subcategory $subcategory)
     {
+        $this->assertBelongsToSchool($school, $subcategory);
+
         $categories = Category::where('school_id', $school->id)->get();
 
         return view('subcategories.edit', compact('school', 'subcategory', 'categories'));
@@ -123,19 +88,15 @@ class SubcategoryController extends Controller
 
     public function updateSchool(Request $request, School $school, Subcategory $subcategory)
     {
+        $this->assertBelongsToSchool($school, $subcategory);
+
         $data = $request->validate([
             'category_id' => 'required|exists:categories,id',
             'name' => 'required|string|max:255',
             'price' => 'nullable|numeric',
         ]);
 
-        // Ensure the chosen category belongs to this school
-        $category = Category::where('school_id', $school->id)->findOrFail($data['category_id']);
-
-        // Ensure the subcategory belongs to the school
-        if ($subcategory->school_id !== $school->id) {
-            abort(403);
-        }
+        $category = $this->resolveOwnedCategory($school, $data['category_id']);
 
         $subcategory->update([
             'category_id' => $category->id,
@@ -149,10 +110,7 @@ class SubcategoryController extends Controller
 
     public function destroySchool(School $school, Subcategory $subcategory)
     {
-        // Ensure the subcategory belongs to the school
-        if ($subcategory->school_id !== $school->id) {
-            abort(403);
-        }
+        $this->assertBelongsToSchool($school, $subcategory);
 
         $subcategory->delete();
 

@@ -2,109 +2,239 @@
 
 namespace App\Console\Commands;
 
+use App\Jobs\InitiateSchoolPayout;
 use App\Models\Payout;
-use App\Models\School;
 use App\Models\Transaction;
-use App\Services\PaystackService;
+use App\Services\PayoutService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
+/**
+ * Reconciliation / backfill for school payouts.
+ *
+ * Payouts are now created immediately when a payment settles (Model A, see
+ * PaymentSettlementService). This command is no longer the payout mechanism — it
+ * exists to catch settled payments that never got an obligation: those that
+ * completed before immediate payouts existed, or where scheduling failed.
+ *
+ * It deliberately does NOT transfer money itself. It records missing obligations
+ * and hands each one to InitiateSchoolPayout, so historical payments go through the
+ * exact same idempotent state machine as new ones. A transaction that already has a
+ * payout is skipped, so it can never create a duplicate transfer.
+ *
+ * Every transaction is handled independently: one school's failure is logged
+ * against that school and processing continues for all the others (E4b).
+ */
 class RunPayouts extends Command
 {
-    protected $signature = 'payouts:run {--date=} {--dry-run}';
+    protected $signature = 'payouts:run
+        {--date= : Only reconcile transactions settled on this date}
+        {--since= : Only reconcile transactions settled on or after this date}
+        {--limit=500 : Maximum transactions to reconcile in one run}
+        {--dispatch : Actually queue the transfers (otherwise obligations are only recorded)}
+        {--dry-run : Report what would happen and change nothing}';
 
-    protected $description = 'Aggregate yesterday\'s successful transactions per school and transfer to schools at 9AM';
+    protected $description = 'Reconcile settled payments that have no payout obligation, and queue their transfers';
 
-    public function handle(PaystackService $paystack)
+    public function handle(PayoutService $payouts): int
     {
-        $dateStr = $this->option('date');
-        $date = $dateStr ? Carbon::parse($dateStr)->startOfDay() : now()->subDay()->startOfDay();
-        $start = $date->copy();
-        $end = $date->copy()->endOfDay();
+        $dryRun = (bool) $this->option('dry-run');
+        $dispatch = (bool) $this->option('dispatch');
+        $limit = max((int) $this->option('limit'), 1);
 
-        $this->info("Running payouts for date: {$date->toDateString()} ({$start} - {$end})");
-
-        // Sum base amounts per school from successful transactions in the window
-        $rows = Transaction::select(
-            'school_id',
-            DB::raw('COUNT(*) as cnt'),
-            DB::raw('SUM(amount) as total_amount')
-        )
+        $query = Transaction::query()
             ->where('status', 'success')
-            ->whereBetween('created_at', [$start, $end])
             ->whereNotNull('school_id')
-            ->groupBy('school_id')
+            // The guard against double-paying: anything already owed is left alone.
+            ->whereDoesntHave('payout')
+            ->orderBy('id')
+            ->limit($limit);
+
+        if ($date = $this->option('date')) {
+            $day = Carbon::parse($date);
+            $query->whereBetween('created_at', [$day->copy()->startOfDay(), $day->copy()->endOfDay()]);
+        }
+
+        if ($since = $this->option('since')) {
+            $query->where('created_at', '>=', Carbon::parse($since)->startOfDay());
+        }
+
+        $transactions = $query->get();
+
+        // HIGH-3: obligations whose school share could not be separated from the
+        // platform fee are parked for a human. Surface them on every run so they
+        // cannot sit unnoticed.
+        $this->reportPayoutsNeedingReview();
+
+        // Obligations that were committed but never queued are recovered on every
+        // run, including runs where nothing else needs reconciling (MEDIUM-3).
+        $requeued = $dryRun ? 0 : $this->requeueStrandedObligations($dispatch);
+
+        if ($transactions->isEmpty()) {
+            $this->info('No settled payments are missing a payout obligation.');
+
+            if ($requeued > 0) {
+                $this->info("Re-queued {$requeued} stranded obligation(s).");
+            }
+
+            return self::SUCCESS;
+        }
+
+        $this->info("Found {$transactions->count()} settled payment(s) without a payout obligation.");
+
+        if ($dryRun) {
+            $this->table(
+                ['Transaction', 'School', 'Charged', 'School share', 'Attributable?'],
+                $transactions->map(function (Transaction $t) use ($payouts) {
+                    $attributable = $payouts->hasTrustworthyBreakdown($t);
+
+                    return [
+                        $t->reference,
+                        $t->school_id,
+                        number_format((float) $t->amount, 2),
+                        $attributable ? number_format($payouts->payoutAmountFor($t), 2) : 'UNKNOWN',
+                        $attributable ? 'yes' : 'NO - needs review',
+                    ];
+                })->all()
+            );
+            $this->comment('Dry run: nothing was written and nothing was queued.');
+
+            return self::SUCCESS;
+        }
+
+        $created = 0;
+        $review = 0;
+        $queued = 0;
+        $skipped = 0;
+        $failed = 0;
+
+        foreach ($transactions as $transaction) {
+            // E4b: each transaction stands alone. A failure here is recorded and the
+            // loop continues, so one school can never block another's payout.
+            try {
+                $payout = $payouts->recordObligationFor($transaction);
+
+                if (! $payout) {
+                    $skipped++;
+                    $this->warn("  skipped {$transaction->reference}: nothing payable");
+
+                    continue;
+                }
+
+                if ($payout->status === Payout::NEEDS_REVIEW) {
+                    $review++;
+                    $this->warn("  REVIEW {$transaction->reference}: {$payout->last_error}");
+
+                    continue;
+                }
+
+                $created++;
+
+                if ($dispatch && $payout->status === Payout::PENDING) {
+                    InitiateSchoolPayout::dispatch($payout->id);
+                    $queued++;
+                }
+
+                $this->line("  recorded {$transaction->reference} -> payout {$payout->reference} (NGN ".number_format((float) $payout->amount, 2).')');
+            } catch (\Throwable $e) {
+                $failed++;
+                report($e);
+
+                Log::error('Payout reconciliation failed for a transaction', [
+                    'transaction_id' => $transaction->id,
+                    'reference' => $transaction->reference,
+                    'school_id' => $transaction->school_id,
+                    'error' => $e->getMessage(),
+                ]);
+
+                $this->error("  FAILED {$transaction->reference}: {$e->getMessage()}");
+            }
+        }
+
+        $queued += $requeued;
+
+        $this->newLine();
+        $this->info("Obligations recorded: {$created}, transfers queued: {$queued}, needs review: {$review}, skipped: {$skipped}, failed: {$failed}");
+
+        if ($created > 0 && ! $dispatch) {
+            $this->comment('Re-run with --dispatch to queue the transfers for these obligations.');
+        }
+
+        return $failed > 0 ? self::FAILURE : self::SUCCESS;
+    }
+
+    /**
+     * MEDIUM-3: a payout obligation is committed with the payment, but its job can
+     * still fail to reach the queue. Such a payout sits at `pending` with no attempt
+     * recorded and would otherwise never be picked up, because the reconciliation
+     * query only looks for transactions with no payout at all.
+     *
+     * Re-dispatching is safe: the atomic pending -> initiating claim means a payout
+     * already in flight or finished cannot be sent again.
+     */
+    private function requeueStrandedObligations(bool $dispatch): int
+    {
+        $stranded = Payout::where('status', Payout::PENDING)
+            ->where('attempts', 0)
+            ->orderBy('id')
             ->get();
 
-        if ($rows->isEmpty()) {
-            $this->info('No successful transactions found for the period.');
-
-            return Command::SUCCESS;
+        if ($stranded->isEmpty()) {
+            return 0;
         }
 
-        foreach ($rows as $row) {
-            $school = School::find($row->school_id);
-            if (! $school) {
-                continue;
-            }
+        $this->newLine();
+        $this->info("{$stranded->count()} recorded obligation(s) have never been queued.");
 
-            $totalBase = round((float) $row->total_amount, 2);
-            $count = $row->cnt;
+        if (! $dispatch) {
+            $this->comment('Re-run with --dispatch to queue them.');
 
-            // Create payout record first
-            $payout = Payout::create([
-                'school_id' => $row->school_id,
-                'amount' => $totalBase,
-                'currency' => 'NGN',
-                'payout_date' => $date->toDateString(),
-                'start_at' => $start,
-                'end_at' => $end,
-                'status' => 'pending',
-            ]);
-
-            $this->info("School {$school->name} - count={$count} base_total=NGN {$totalBase}");
-
-            if ($this->option('dry-run')) {
-                $this->line('Dry run: skipping actual transfer.');
-
-                continue;
-            }
-
-            // Amount in Kobo
-            $amountKobo = (int) round($totalBase * 100);
-            if ($amountKobo <= 0) {
-                $this->warn('Amount is zero or negative. Skipping transfer.');
-                $payout->status = 'failed';
-                $payout->response = ['message' => 'Zero amount'];
-                $payout->save();
-
-                continue;
-            }
-
-            $reason = 'Daily payout for '.$date->toDateString();
-            $result = $paystack->initiateTransferToSchool($school, $amountKobo, $reason);
-
-            if (! ($result['ok'] ?? false)) {
-                $this->error('Transfer failed: '.($result['message'] ?? 'unknown'));
-                $payout->status = 'failed';
-                $payout->response = $result['response'] ?? $result;
-                $payout->save();
-
-                continue;
-            }
-
-            $resp = $result['response'] ?? [];
-            $data = $resp['data'] ?? [];
-            $payout->status = 'success';
-            $payout->transfer_code = $data['transfer_code'] ?? null;
-            $payout->transfer_id = isset($data['id']) ? (string) $data['id'] : null;
-            $payout->response = $resp;
-            $payout->save();
+            return 0;
         }
 
-        $this->info('Payouts completed.');
+        $queued = 0;
 
-        return Command::SUCCESS;
+        foreach ($stranded as $payout) {
+            // E4b: one school's dispatch problem must not stop the others.
+            try {
+                InitiateSchoolPayout::dispatch($payout->id);
+                $queued++;
+                $this->line("  queued {$payout->reference}");
+            } catch (\Throwable $e) {
+                report($e);
+                $this->error("  FAILED to queue {$payout->reference}: {$e->getMessage()}");
+            }
+        }
+
+        return $queued;
+    }
+
+    /**
+     * List payouts a human must resolve before any money can move.
+     */
+    private function reportPayoutsNeedingReview(): void
+    {
+        $review = Payout::with('transaction')
+            ->where('status', Payout::NEEDS_REVIEW)
+            ->orderBy('id')
+            ->get();
+
+        if ($review->isEmpty()) {
+            return;
+        }
+
+        $this->warn("{$review->count()} payout(s) need manual review before they can be transferred:");
+        $this->table(
+            ['Payout', 'School', 'Transaction', 'Charged', 'Reason'],
+            $review->map(fn (Payout $p) => [
+                $p->reference,
+                $p->school_id,
+                $p->transaction?->reference ?? '-',
+                number_format((float) ($p->transaction?->amount ?? 0), 2),
+                \Illuminate\Support\Str::limit((string) $p->last_error, 60),
+            ])->all()
+        );
+        $this->newLine();
     }
 }

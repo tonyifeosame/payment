@@ -19,21 +19,30 @@ Route::get('/', function () {
 
 Route::redirect('/login', '/admin/login');
 
+// Admin landing for the payment page. The un-scoped management routes that used to
+// live here (categories/subcategories/transactions resources) were removed: they were
+// guarded only by "is some school admin logged in" and therefore exposed and mutated
+// every school's data. All management now happens under the /s/{school} prefix below,
+// where the school is bound, ownership-checked and scoped.
 Route::middleware(EnsureSchoolAdmin::class)->group(function () {
-    Route::resource('categories', CategoryController::class);
-    Route::resource('subcategories', SubcategoryController::class);
-    Route::resource('transactions', TransactionController::class);
     Route::get('/payment', [PaymentController::class, 'index'])->name('payment.index');
 });
-Route::post('/payment/initialize', [PaymentController::class, 'initialize'])->name('payment.initialize');
+
 Route::get('/payment/callback', [PaymentController::class, 'callback'])->name('payment.callback');
-// Receipt routes
+
+// The Paystack webhook lives in routes/webhooks.php, registered without the web
+// middleware group so it starts no session and issues no cookies.
+
+// Receipt routes. Authorization happens in the controller (signed URL, paying session,
+// or the owning school admin) because these are reached from emails as well as the UI.
 Route::get('/payment/receipt/{transaction}', [PaymentController::class, 'receipt'])->name('payment.receipt');
 Route::get('/payment/receipt/{transaction}/download', [PaymentController::class, 'downloadReceipt'])->name('payment.receipt.download');
 
 // Registration routes
 Route::get('/registration/create', [RegistrationController::class, 'create'])->name('registration.create');
-Route::post('/registration', [RegistrationController::class, 'store'])->name('registration.store');
+Route::post('/registration', [RegistrationController::class, 'store'])
+    ->middleware('throttle:10,60')
+    ->name('registration.store');
 
 // Paystack helper routes (server-side; uses secret key)
 Route::get('/api/banks', [PaystackController::class, 'banks'])->name('api.banks');
@@ -85,8 +94,11 @@ Route::prefix('s/{school:slug}')->group(function () {
     Route::post('/payment/initialize', [PaymentController::class, 'initializeSchool'])->name('school.payment.initialize');
     // callback remains global (Paystack redirects there)
 
-    // Tenant-aware management pages (protected)
-    Route::middleware(EnsureSchoolAdmin::class)->group(function () {
+    // Tenant-aware management pages (protected).
+    // scopeBindings() makes {category}/{subcategory} resolve through the bound school's
+    // relationship, so a record belonging to another school 404s during route binding —
+    // before any controller code runs. Controllers additionally assert ownership.
+    Route::middleware(EnsureSchoolAdmin::class)->scopeBindings()->group(function () {
         Route::get('/categories', [CategoryController::class, 'indexSchool'])->name('school.categories.index');
         Route::post('/categories', [CategoryController::class, 'storeSchool'])->name('school.categories.store');
 

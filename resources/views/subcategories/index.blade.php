@@ -49,7 +49,6 @@
                     </div>
                     
                     <div class="hidden md:flex space-x-1">
-                        @isset($school)
                             <a href="{{ route('school.categories.index', ['school' => $school->slug]) }}" 
                                class="px-4 py-2 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-all duration-200 font-medium">
                                 Categories
@@ -62,20 +61,6 @@
                                class="px-4 py-2 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-all duration-200 font-medium">
                                 Transactions
                             </a>
-                        @else
-                            <a href="{{ route('categories.index') }}" 
-                               class="px-4 py-2 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-all duration-200 font-medium">
-                                Categories
-                            </a>
-                            <a href="{{ route('subcategories.index') }}" 
-                               class="px-4 py-2 rounded-lg bg-white/20 text-white font-bold backdrop-blur-sm">
-                                Subcategories
-                            </a>
-                            <a href="{{ route('transactions.index') }}" 
-                               class="px-4 py-2 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-all duration-200 font-medium">
-                                Transactions
-                            </a>
-                        @endisset
                     </div>
                 </div>
 
@@ -101,7 +86,7 @@
                     </h1>
                     <p class="text-slate-600 font-medium">Manage detailed payment subcategories</p>
                 </div>
-                <a href="@isset($school){{ route('school.subcategories.create', ['school' => $school->slug]) }}@else{{ route('subcategories.create') }}@endisset"
+                <a href="{{ route('school.subcategories.create', ['school' => $school->slug]) }}"
                    class="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
                     Add Subcategory
@@ -157,10 +142,10 @@
                                 </td>
                                 <td class="px-4 py-4 whitespace-nowrap text-right">
                                     <div class="flex justify-end gap-2">
-                                        <a href="@isset($school){{ route('school.subcategories.edit', ['school' => $school->slug, 'subcategory' => $sub->id]) }}@else{{ route('subcategories.edit', $sub->id) }}@endisset" class="inline-flex items-center gap-1 bg-yellow-100 text-yellow-800 px-3 py-1.5 rounded-md hover:bg-yellow-200 text-xs font-bold">
+                                        <a href="{{ route('school.subcategories.edit', ['school' => $school->slug, 'subcategory' => $sub->id]) }}" class="inline-flex items-center gap-1 bg-yellow-100 text-yellow-800 px-3 py-1.5 rounded-md hover:bg-yellow-200 text-xs font-bold">
                                             Edit
                                         </a>
-                                        <form action="@isset($school){{ route('school.subcategories.destroy', ['school' => $school->slug, 'subcategory' => $sub->id]) }}@else{{ route('subcategories.destroy', $sub->id) }}@endisset" method="POST" onsubmit="return confirm('Are you sure you want to delete this subcategory?');">
+                                        <form action="{{ route('school.subcategories.destroy', ['school' => $school->slug, 'subcategory' => $sub->id]) }}" method="POST" onsubmit="return confirm('Are you sure you want to delete this subcategory?');">
                                             @csrf
                                             @method('DELETE')
                                             <button type="submit" class="inline-flex items-center gap-1 bg-red-100 text-red-800 px-3 py-1.5 rounded-md hover:bg-red-200 text-xs font-bold">

@@ -49,7 +49,6 @@
                     </div>
                     
                     <div class="hidden md:flex space-x-1">
-                        @isset($school)
                             <a href="{{ route('school.categories.index', ['school' => $school->slug]) }}" 
                                class="px-4 py-2 rounded-lg bg-white/20 text-white font-bold backdrop-blur-sm">
                                 Categories
@@ -62,20 +61,6 @@
                                class="px-4 py-2 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-all duration-200 font-medium">
                                 Transactions
                             </a>
-                        @else
-                            <a href="{{ route('categories.index') }}" 
-                               class="px-4 py-2 rounded-lg bg-white/20 text-white font-bold backdrop-blur-sm">
-                                Categories
-                            </a>
-                            <a href="{{ route('subcategories.index') }}" 
-                               class="px-4 py-2 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-all duration-200 font-medium">
-                                Subcategories
-                            </a>
-                            <a href="{{ route('transactions.index') }}" 
-                               class="px-4 py-2 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-all duration-200 font-medium">
-                                Transactions
-                            </a>
-                        @endisset
                     </div>
                 </div>
 
@@ -122,7 +107,7 @@
 
         <!-- Add Category Form -->
         <div class="glass-effect rounded-2xl shadow-xl p-6 mb-6 border border-slate-200 animate-fade-in" style="animation-delay: 0.1s;">
-            <form method="POST" action="@isset($school){{ route('school.categories.store', ['school' => $school->slug]) }}@else{{ route('categories.store') }}@endisset" class="flex flex-col md:flex-row gap-4 items-end">
+            <form method="POST" action="{{ route('school.categories.store', ['school' => $school->slug]) }}" class="flex flex-col md:flex-row gap-4 items-end">
                 @csrf
                 <div class="flex-1">
                     <label class="block text-sm font-bold text-slate-700 mb-2">Add New Category</label>
@@ -173,10 +158,10 @@
                                 </td>
                                 <td class="px-4 py-4 whitespace-nowrap text-right">
                                     <div class="flex justify-end gap-2">
-                                        <a href="@isset($school){{ route('school.categories.edit', ['school' => $school->slug, 'category' => $category->id]) }}@else{{ route('categories.edit', $category->id) }}@endisset" class="inline-flex items-center gap-1 bg-yellow-100 text-yellow-800 px-3 py-1.5 rounded-md hover:bg-yellow-200 text-xs font-bold">
+                                        <a href="{{ route('school.categories.edit', ['school' => $school->slug, 'category' => $category->id]) }}" class="inline-flex items-center gap-1 bg-yellow-100 text-yellow-800 px-3 py-1.5 rounded-md hover:bg-yellow-200 text-xs font-bold">
                                             Edit
                                         </a>
-                                        <form action="@isset($school){{ route('school.categories.destroy', ['school' => $school->slug, 'category' => $category->id]) }}@else{{ route('categories.destroy', $category->id) }}@endisset" method="POST"
+                                        <form action="{{ route('school.categories.destroy', ['school' => $school->slug, 'category' => $category->id]) }}" method="POST"
                                               onsubmit="return confirm('Are you sure you want to delete this category?');">
                                             @csrf
                                             @method('DELETE')

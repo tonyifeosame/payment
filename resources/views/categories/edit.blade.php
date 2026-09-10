@@ -10,7 +10,7 @@
     <div class="max-w-lg mx-auto mt-10 bg-white p-8 rounded-lg shadow">
         <h1 class="text-2xl font-bold mb-6">Edit Category</h1>
 
-        <form action="@isset($school){{ route('school.categories.update', ['school' => $school->slug, 'category' => $category->id]) }}@else{{ route('categories.update', $category->id) }}@endisset" method="POST">
+        <form action="{{ route('school.categories.update', ['school' => $school->slug, 'category' => $category->id]) }}" method="POST">
             @csrf
             @method('PUT')
 
@@ -26,7 +26,7 @@
                 <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline">
                     Update Category
                 </button>
-                <a href="@isset($school){{ route('school.categories.index', ['school' => $school->slug]) }}@else{{ route('categories.index') }}@endisset" class="inline-block align-baseline font-bold text-sm text-blue-500 hover:text-blue-800">
+                <a href="{{ route('school.categories.index', ['school' => $school->slug]) }}" class="inline-block align-baseline font-bold text-sm text-blue-500 hover:text-blue-800">
                     Cancel
                 </a>
             </div>

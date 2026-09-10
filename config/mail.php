@@ -111,8 +111,11 @@ return [
     */
 
     'from' => [
-        'address' => env('MAIL_FROM_ADDRESS', 'hello@example.com'),
-        'name' => env('MAIL_FROM_NAME', 'Example'),
+        // `?:` rather than an env() default: a variable that is present but blank
+        // (as .env.example used to ship) would otherwise override the default with
+        // an empty string, and Symfony rejects any message without a From header.
+        'address' => env('MAIL_FROM_ADDRESS') ?: 'hello@example.com',
+        'name' => env('MAIL_FROM_NAME') ?: 'Example',
     ],
 
 ];
