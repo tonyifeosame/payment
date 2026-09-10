@@ -25,6 +25,12 @@ class PaymentReceiptMail extends Mailable
         // Those resolve only through Markdown::render(), which is what registers the `mail`
         // view namespace and converts the Markdown body to HTML. Rendering it with ->view()
         // instead threw "No hint path defined for [mail]" on every receipt.
+        // The template prints the school from the transaction's own school_id. On
+        // the queue, SerializesModels rehydrates the transaction without relations,
+        // so load it here rather than relying on a lazy load that a future
+        // Model::preventLazyLoading() would turn into an exception mid-send.
+        $this->transaction->loadMissing('school');
+
         return $this->subject('Your Payment Receipt')
             ->markdown('emails.payment_receipt')
             ->with([
