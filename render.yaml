@@ -2,7 +2,10 @@ services:
   - type: web
     name: laravel-app
     env: php
-    plan: free
+    # Not free: Render Free web services block outbound SMTP on ports 25/465/587,
+    # so PaymentReceiptMail would never leave the box. 'starter' is the legacy
+    # name for 0.5c-512mb and is still valid across Render tooling.
+    plan: starter
     publicDirectory: public
     # No asset build: every view loads Tailwind and Font Awesome from a CDN, and the
     # project has no package.json, vite config or resources/js|css. The previous
@@ -191,4 +194,12 @@ services:
         value: https://api.paystack.co
 databases:
   - name: database
-    plan: free
+    # NOT free: a Free Postgres expires after 30 days and gets neither logical
+    # backups nor point-in-time recovery, which is unacceptable for the ledger
+    # that payments and payouts are written to.
+    # NOT 'starter' either: unlike the service plans above, Postgres 'starter' is
+    # a legacy instance type Render no longer offers for new databases. This is
+    # its current-generation equivalent (0.1 CPU / 256 MB) and the smallest paid
+    # Postgres compute plan in the Blueprint spec. Every paid plan gets logical
+    # backups and PITR; size up in the dashboard as the ledger grows.
+    plan: 0.1c-256mb
