@@ -16,7 +16,18 @@ return [
     |
     */
 
-    'default' => env('DB_CONNECTION', 'sqlite'),
+    /*
+    | DB_CONNECTION selects the connection. `?:` rather than an env() default so a
+    | variable that is present but blank cannot override the fallback with ''.
+    |
+    | When a managed platform injects DATABASE_URL (Render, Heroku) but no explicit
+    | DB_CONNECTION, default to pgsql instead of sqlite: DATABASE_URL only populates
+    | the pgsql connection, so falling back to sqlite would silently ignore the
+    | provisioned database and quietly write to a local file. Local development,
+    | which has no DATABASE_URL, still defaults to sqlite.
+    */
+
+    'default' => env('DB_CONNECTION') ?: (env('DATABASE_URL') ? 'pgsql' : 'sqlite'),
 
     /*
     |--------------------------------------------------------------------------

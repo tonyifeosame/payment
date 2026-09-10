@@ -67,7 +67,7 @@
 
         <!-- Search and Filters Card -->
         <div class="glass-effect rounded-2xl shadow-xl p-6 mb-6 border border-slate-200 animate-fade-in" style="animation-delay: 0.1s;">
-            <form method="GET" action="{{ route('transactions.index') }}">
+            <form method="GET" action="{{ route('school.transactions.index', ['school' => $school->slug]) }}">
                 <div class="flex flex-col md:flex-row gap-4">
                     <div class="flex-1">
                         <label class="block text-sm font-bold text-slate-700 mb-2">Search Transactions</label>
@@ -91,7 +91,7 @@
                             Search
                         </button>
                         @if(!empty($q))
-                            <a href="{{ route('transactions.index') }}" 
+                            <a href="{{ route('school.transactions.index', ['school' => $school->slug]) }}" 
                                class="inline-flex items-center gap-2 px-6 py-3 rounded-lg border-2 border-slate-300 text-slate-700 hover:bg-slate-50 font-bold transition-all duration-200">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>

@@ -25,6 +25,21 @@ class PaystackService
             ->timeout(30);
     }
 
+    /**
+     * Client for money-moving requests.
+     *
+     * Deliberately NOT retrying: an automatic retry of POST /transfer can create a
+     * second transfer when the first one succeeded but the response was lost. Any
+     * re-attempt must go through the payout state machine, which looks the transfer
+     * up by reference first.
+     */
+    protected function transferClient()
+    {
+        return Http::withToken($this->secret)
+            ->connectTimeout(10)
+            ->timeout(30);
+    }
+
     public function resolveAccount(string $accountNumber, string $bankCode): array
     {
         if (empty($this->secret)) {
@@ -56,6 +71,47 @@ class PaystackService
         }
     }
 
+    /**
+     * Server-side verification of a charge, by the reference we generated.
+     *
+     * This is the only trustworthy source of a payment's status, amount and
+     * currency — never the browser's query string or Paystack's metadata echo.
+     * Returns a normalised shape so callers do not have to dig through the
+     * raw payload, and so the callback and the webhook agree on the result.
+     */
+    public function verifyTransaction(string $reference): array
+    {
+        if (empty($this->secret)) {
+            return ['ok' => false, 'message' => 'Paystack secret key is not configured'];
+        }
+
+        try {
+            $resp = $this->client()->get($this->baseUrl.'/transaction/verify/'.rawurlencode($reference));
+        } catch (\Throwable $e) {
+            report($e);
+
+            return ['ok' => false, 'message' => 'Could not reach the payment verification service.'];
+        }
+
+        $json = $resp->json();
+
+        if (! is_array($json) || ! ($json['status'] ?? false) || ! isset($json['data'])) {
+            return ['ok' => false, 'message' => is_array($json) ? ($json['message'] ?? 'Verification failed') : 'Verification failed'];
+        }
+
+        $data = $json['data'];
+
+        return [
+            'ok' => true,
+            'status' => $data['status'] ?? null,          // 'success' | 'failed' | 'abandoned' | ...
+            'amount' => isset($data['amount']) ? (int) $data['amount'] : null, // minor units (kobo)
+            'currency' => $data['currency'] ?? null,
+            'channel' => $data['channel'] ?? null,
+            'reference' => $data['reference'] ?? null,
+            'raw' => $data,
+        ];
+    }
+
     public function ensureRecipientForSchool(School $school): ?string
     {
         if ($school->paystack_recipient_code) {
@@ -85,24 +141,101 @@ class PaystackService
         return $code;
     }
 
-    public function initiateTransferToSchool(School $school, int $amountKobo, string $reason = ''): array
+    /**
+     * Initiate a transfer to a school, keyed by OUR reference.
+     *
+     * The reference is the idempotency key: re-sending the same one cannot create a
+     * second transfer at Paystack. The outcome is deliberately NOT flattened to a
+     * boolean — callers must distinguish "definitely not sent" from "unknown".
+     *
+     * @return array{outcome:string, message:?string, data:?array, response:?array}
+     *         outcome: 'accepted' | 'rejected' | 'unknown'
+     */
+    public function initiateTransfer(School $school, int $amountKobo, string $reference, string $reason = ''): array
     {
+        if (empty($this->secret)) {
+            return ['outcome' => 'rejected', 'message' => 'Paystack secret key is not configured', 'data' => null, 'response' => null];
+        }
+
         $recipient = $school->paystack_recipient_code ?: $this->ensureRecipientForSchool($school);
         if (! $recipient) {
-            return ['ok' => false, 'message' => 'Recipient not available'];
+            return ['outcome' => 'rejected', 'message' => 'Recipient not available', 'data' => null, 'response' => null];
         }
+
         $payload = [
             'source' => 'balance',
             'amount' => $amountKobo,
             'recipient' => $recipient,
             'reason' => $reason,
+            'reference' => $reference,
         ];
-        $resp = $this->client()->post($this->baseUrl.'/transfer', $payload);
-        $json = $resp->json();
-        if (! ($json['status'] ?? false)) {
-            return ['ok' => false, 'message' => $json['message'] ?? 'Transfer failed', 'response' => $json];
+
+        try {
+            $resp = $this->transferClient()->post($this->baseUrl.'/transfer', $payload);
+        } catch (\Throwable $e) {
+            report($e);
+
+            // The request may or may not have reached Paystack. This is the one
+            // case where we must never assume anything.
+            return ['outcome' => 'unknown', 'message' => 'Transfer request did not complete', 'data' => null, 'response' => null];
         }
 
-        return ['ok' => true, 'response' => $json];
+        $json = $resp->json();
+
+        if (! is_array($json)) {
+            return ['outcome' => 'unknown', 'message' => 'Unreadable response from Paystack', 'data' => null, 'response' => null];
+        }
+
+        if (! ($json['status'] ?? false)) {
+            // A 4xx with a decodable body is a definitive refusal; a 5xx is not.
+            $outcome = $resp->serverError() ? 'unknown' : 'rejected';
+
+            return ['outcome' => $outcome, 'message' => $json['message'] ?? 'Transfer failed', 'data' => null, 'response' => $json];
+        }
+
+        return ['outcome' => 'accepted', 'message' => $json['message'] ?? null, 'data' => $json['data'] ?? [], 'response' => $json];
+    }
+
+    /**
+     * Look a transfer up by the reference we issued.
+     *
+     * Used to resolve the ambiguous case before any re-attempt, so we never create a
+     * second transfer for money that may already be on its way.
+     *
+     * @return array{outcome:string, status:?string, data:?array, message:?string}
+     *         outcome: 'found' | 'absent' | 'unknown'
+     */
+    public function fetchTransfer(string $reference): array
+    {
+        if (empty($this->secret)) {
+            return ['outcome' => 'unknown', 'status' => null, 'data' => null, 'message' => 'Paystack secret key is not configured'];
+        }
+
+        try {
+            $resp = $this->transferClient()->get($this->baseUrl.'/transfer/verify/'.rawurlencode($reference));
+        } catch (\Throwable $e) {
+            report($e);
+
+            return ['outcome' => 'unknown', 'status' => null, 'data' => null, 'message' => 'Could not reach Paystack'];
+        }
+
+        $json = $resp->json();
+
+        if (is_array($json) && ($json['status'] ?? false) && isset($json['data'])) {
+            return [
+                'outcome' => 'found',
+                'status' => $json['data']['status'] ?? null,
+                'data' => $json['data'],
+                'message' => null,
+            ];
+        }
+
+        // Only a definitive 404 proves no such transfer exists. Anything else is
+        // unknown, and unknown must never release the payout for a re-send.
+        if ($resp->status() === 404) {
+            return ['outcome' => 'absent', 'status' => null, 'data' => null, 'message' => is_array($json) ? ($json['message'] ?? null) : null];
+        }
+
+        return ['outcome' => 'unknown', 'status' => null, 'data' => null, 'message' => is_array($json) ? ($json['message'] ?? null) : null];
     }
 }

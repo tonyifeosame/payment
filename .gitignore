@@ -30,3 +30,19 @@ frankenphp-worker.php
 **/caddy
 frankenphp
 frankenphp-worker.php
+# --- deployment hardening ---
+.env.*
+!.env.example
+*.sql
+*.sql.gz
+*.dump
+*.sqlite
+*.sqlite3
+/storage/logs/*
+!/storage/logs/.gitignore
+/storage/app/private/*
+!/storage/app/private/.gitignore
+Desktop.ini
+$RECYCLE.BIN/
+*.swp
+*~

@@ -4,24 +4,191 @@ services:
     env: php
     plan: free
     publicDirectory: public
-    buildCommand: "composer install --no-dev && npm install && npm run build && php artisan config:clear && php artisan config:cache && php artisan route:cache && php artisan view:cache && php artisan migrate --force"
+    # No asset build: every view loads Tailwind and Font Awesome from a CDN, and the
+    # project has no package.json, vite config or resources/js|css. The previous
+    # "npm install && npm run build" therefore exited 127 and failed the build.
+    buildCommand: "composer install --no-dev && php artisan config:clear && php artisan config:cache && php artisan route:cache && php artisan view:cache && php artisan migrate --force"
     envVars:
       - key: APP_ENV
         value: production
+      - key: APP_NAME
+        sync: false
       - key: APP_DEBUG
         value: false
+      # Set ONCE in the Render dashboard and never rotated: APP_KEY signs the
+      # receipt URLs we email out and encrypts session data. generateValue would
+      # mint a new key if the service were ever recreated, silently invalidating
+      # every previously issued receipt link. sync:false keeps it out of the repo.
       - key: APP_KEY
-        generateValue: true
+        sync: false
       - key: APP_URL
         value: ${RENDER_EXTERNAL_URL}
+      # Required: DATABASE_URL only populates the pgsql connection, so without an
+      # explicit DB_CONNECTION Laravel would default to sqlite and ignore it.
+      - key: DB_CONNECTION
+        value: pgsql
       - key: DATABASE_URL
         fromDatabase:
           name: database
           property: connectionString
       - key: SESSION_DRIVER
         value: database
-      - key: SESSION_DOMAIN
-        value: .${RENDER_EXTERNAL_URL_WITHOUT_SCHEME}
+      # SESSION_DOMAIN is deliberately absent. The previous value used
+      # ${RENDER_EXTERNAL_URL_WITHOUT_SCHEME}, which Render does not define, so the
+      # literal string became the cookie domain and browsers rejected it. Leaving it
+      # unset scopes the cookie to the exact host, which is what a single Render
+      # hostname needs.
+      - key: SESSION_SECURE_COOKIE
+        value: true
+      - key: QUEUE_CONNECTION
+        value: database
+      # Render's filesystem is ephemeral, so file logs vanish on restart. stderr is
+      # captured and retained by Render, which matters for the critical payout and
+      # financial-integrity events.
+      - key: LOG_CHANNEL
+        value: stderr
+
+      # ---- Paystack (HIGH-3) ------------------------------------------------
+      # Secrets: set in the Render dashboard, never in this file or the repo.
+      - key: PAYSTACK_SECRET_KEY
+        sync: false
+      # Declared for completeness. No application code reads it today — the
+      # checkout is a server-side redirect to Paystack's authorization_url, not an
+      # inline JS popup — but it is required if an inline flow is ever added.
+      - key: PAYSTACK_PUBLIC_KEY
+        sync: false
+      - key: PAYSTACK_PAYMENT_URL
+        value: https://api.paystack.co
+
+      # ---- Mail (HIGH-4) ----------------------------------------------------
+      # Without these, mail.default resolves to 'log' and no receipt is delivered.
+      - key: MAIL_MAILER
+        value: smtp
+      # Provider-specific; set in the dashboard so a blueprint re-sync cannot
+      # overwrite them. MAIL_SCHEME is smtp (STARTTLS/587) or smtps (TLS/465) —
+      # Laravel 12 builds the DSN from it; MAIL_ENCRYPTION is no longer read.
+      - key: MAIL_HOST
+        sync: false
+      - key: MAIL_PORT
+        sync: false
+      - key: MAIL_SCHEME
+        sync: false
+      - key: MAIL_USERNAME
+        sync: false
+      - key: MAIL_PASSWORD
+        sync: false
+      - key: MAIL_FROM_ADDRESS
+        sync: false
+      - key: MAIL_FROM_NAME
+        sync: false
+
+  # Payouts and receipts are queued jobs, so without a worker a settled payment
+  # would record its obligation and never transfer. This worker drains the same
+  # database queue the web service writes to.
+  - type: worker
+    name: laravel-queue-worker
+    env: php
+    plan: starter
+    buildCommand: "composer install --no-dev --optimize-autoloader && php artisan config:clear"
+    startCommand: "php artisan queue:work database --queue=default --sleep=3 --tries=3 --max-time=3600 --backoff=30"
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_NAME
+        sync: false
+      - key: APP_DEBUG
+        value: false
+      # Must be the SAME value as the web service's APP_KEY: the worker renders and
+      # signs the receipt links that the web service later has to validate. Paste
+      # the identical key into both services' dashboards.
+      - key: APP_KEY
+        sync: false
+      - key: APP_URL
+        value: ${RENDER_EXTERNAL_URL}
+      # Must resolve to the SAME PostgreSQL database as the web service: the
+      # database queue is what carries payout jobs between them.
+      - key: DB_CONNECTION
+        value: pgsql
+      - key: DATABASE_URL
+        fromDatabase:
+          name: database
+          property: connectionString
+      - key: QUEUE_CONNECTION
+        value: database
+      - key: LOG_CHANNEL
+        value: stderr
+
+      # ---- Paystack (HIGH-3) ------------------------------------------------
+      # The worker performs the school transfers, so it needs the secret key.
+      # It does not need the public key.
+      - key: PAYSTACK_SECRET_KEY
+        sync: false
+      - key: PAYSTACK_PAYMENT_URL
+        value: https://api.paystack.co
+
+      # ---- Mail (HIGH-4) ----------------------------------------------------
+      # The worker is what renders and sends PaymentReceiptMail, so it needs the
+      # full mail configuration too. Use the same values as the web service.
+      - key: MAIL_MAILER
+        value: smtp
+      - key: MAIL_HOST
+        sync: false
+      - key: MAIL_PORT
+        sync: false
+      - key: MAIL_SCHEME
+        sync: false
+      - key: MAIL_USERNAME
+        sync: false
+      - key: MAIL_PASSWORD
+        sync: false
+      - key: MAIL_FROM_ADDRESS
+        sync: false
+      - key: MAIL_FROM_NAME
+        sync: false
+  # Hourly reconciliation / recovery. This is NOT the payout mechanism — payouts are
+  # created and queued the moment a payment settles (Model A). This job only catches
+  # what settlement missed: a payment whose obligation was never recorded, or an
+  # obligation whose job never reached the queue. It records and enqueues; it never
+  # calls Paystack itself, so every transfer still goes through InitiateSchoolPayout,
+  # the atomic pending->initiating claim and the payout state machine. It is safe to
+  # run repeatedly: a payout that is initiating, processing, success, reversed,
+  # failed or needs_review is left untouched.
+  - type: cron
+    name: laravel-payout-reconciliation
+    env: php
+    plan: starter
+    schedule: "0 * * * *"
+    buildCommand: "composer install --no-dev --optimize-autoloader && php artisan config:clear"
+    command: "php artisan payouts:run --dispatch"
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_NAME
+        sync: false
+      - key: APP_DEBUG
+        value: false
+      - key: APP_KEY
+        sync: false
+      - key: APP_URL
+        value: ${RENDER_EXTERNAL_URL}
+      # Same PostgreSQL instance as the web service and worker.
+      - key: DB_CONNECTION
+        value: pgsql
+      - key: DATABASE_URL
+        fromDatabase:
+          name: database
+          property: connectionString
+      # Writes InitiateSchoolPayout jobs onto the same database queue the worker drains.
+      - key: QUEUE_CONNECTION
+        value: database
+      - key: LOG_CHANNEL
+        value: stderr
+      # Needed so a payout amount can be resolved and the queued job is well formed.
+      # The cron itself makes no Paystack call; the worker performs the transfer.
+      - key: PAYSTACK_SECRET_KEY
+        sync: false
+      - key: PAYSTACK_PAYMENT_URL
+        value: https://api.paystack.co
 databases:
   - name: database
     plan: free

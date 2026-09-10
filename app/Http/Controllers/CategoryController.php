@@ -8,49 +8,19 @@ use Illuminate\Http\Request;
 
 class CategoryController extends Controller
 {
-    public function index()
+    /**
+     * Fail closed if a category does not belong to the acting school.
+     *
+     * Route-level scopeBindings() already resolves categories through the school's
+     * own relationship, so this should never fire. It is kept as a deliberate
+     * backstop so a future route registered without scopeBindings cannot silently
+     * reintroduce cross-tenant access.
+     */
+    private function assertBelongsToSchool(School $school, Category $category): void
     {
-        $categories = Category::all();
-
-        return view('categories.index', compact('categories'));
-    }
-
-    public function store(Request $request)
-    {
-        $request->validate([
-            'name' => 'required|string|max:255',
-        ]);
-
-        Category::create([
-            'name' => $request->name,
-        ]);
-
-        return redirect('/categories')->with('success', 'Category created successfully!');
-    }
-
-    public function edit(Category $category)
-    {
-        return view('categories.edit', compact('category'));
-    }
-
-    public function update(Request $request, Category $category)
-    {
-        $request->validate([
-            'name' => 'required|string|max:255',
-        ]);
-
-        $category->update([
-            'name' => $request->name,
-        ]);
-
-        return redirect()->route('categories.index')->with('success', 'Category updated successfully!');
-    }
-
-    public function destroy(Category $category)
-    {
-        $category->delete();
-
-        return redirect()->route('categories.index')->with('success', 'Category deleted successfully.');
+        if ((int) $category->school_id !== (int) $school->id) {
+            abort(404);
+        }
     }
 
     /**
@@ -83,19 +53,18 @@ class CategoryController extends Controller
 
     public function editSchool(School $school, Category $category)
     {
+        $this->assertBelongsToSchool($school, $category);
+
         return view('categories.edit', compact('school', 'category'));
     }
 
     public function updateSchool(Request $request, School $school, Category $category)
     {
+        $this->assertBelongsToSchool($school, $category);
+
         $request->validate([
             'name' => 'required|string|max:255',
         ]);
-
-        // Ensure the category belongs to the school
-        if ($category->school_id !== $school->id) {
-            abort(403);
-        }
 
         $category->update([
             'name' => $request->name,
@@ -107,10 +76,7 @@ class CategoryController extends Controller
 
     public function destroySchool(School $school, Category $category)
     {
-        // Ensure the category belongs to the school
-        if ($category->school_id !== $school->id) {
-            abort(403);
-        }
+        $this->assertBelongsToSchool($school, $category);
 
         $category->delete();
 

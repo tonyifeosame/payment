@@ -26,12 +26,22 @@ Thank you for your payment. Here are your transaction details:
 - **Payment Method:** {{ $transaction->payment_method ?? '—' }}
 - **Status:** {{ ucfirst($transaction->status) }}
 
+@php
+	$receipt = $transaction->receiptBreakdown();
+@endphp
+
 ### Transaction
 | Category | Fee Type | Unit Price | Qty | Line Total |
 |---|---|---|---|---|
-| {{ $transaction->category_name ?? optional($transaction->category)->name }} | {{ $transaction->subcategory_name ?? optional($transaction->subcategory)->name }} | ₦{{ number_format((float)($transaction->meta_data['base_amount'] ?? $transaction->amount ?? 0) / max((int)($transaction->meta_data['quantity'] ?? 1),1), 2) }} | {{ (int)($transaction->meta_data['quantity'] ?? 1) }} | ₦{{ number_format((float)($transaction->meta_data['base_amount'] ?? $transaction->amount ?? 0), 2) }} |
+| {{ $transaction->category_name ?? optional($transaction->category)->name }} | {{ $transaction->subcategory_name ?? optional($transaction->subcategory)->name }} | ₦{{ number_format($receipt['unit_price'], 2) }} | {{ $receipt['quantity'] }} | ₦{{ number_format($receipt['fee_subtotal'], 2) }} |
 
-**Total Amount:** ₦{{ number_format((float)($transaction->meta_data['base_amount'] ?? $transaction->amount ?? 0), 2) }}
+@if($receipt['has_service_fee'])
+**Fee Subtotal:** ₦{{ number_format($receipt['fee_subtotal'], 2) }}
+
+**Service Fee:** ₦{{ number_format($receipt['service_fee'], 2) }}
+
+@endif
+**Total Amount Paid:** ₦{{ number_format($receipt['total'], 2) }}
 
 ---
 

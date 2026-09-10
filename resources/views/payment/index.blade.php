@@ -184,7 +184,7 @@
                         </div>
                     </div>
 
-                    <form id="paymentForm" action="@isset($school){{ route('school.payment.initialize', ['school' => $school->slug]) }}@else{{ route('payment.initialize') }}@endisset" method="POST" class="space-y-6">
+                    <form id="paymentForm" action="{{ route('school.payment.initialize', ['school' => $school->slug]) }}" method="POST" class="space-y-6">
                         @csrf
 
                         <!-- Personal Info -->
