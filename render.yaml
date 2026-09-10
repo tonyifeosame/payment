@@ -1,17 +1,58 @@
+####################################################################################
+# Render Blueprint — cheapest configuration that still runs the payment pipeline
+#
+#   Paystack payment -> webhook -> settlement -> durable payout obligation
+#     -> queued payout job -> worker -> Paystack transfer -> receipt
+#
+# Cost floor (Hobby workspace, $0/mo, no seat fees):
+#   web    0.5c-512mb   $7.00/mo   smallest paid plan; Free is disqualified below
+#   worker 0.5c-512mb   $7.00/mo   smallest plan offered — workers have no Free tier
+#   cron   0.5c-512mb   $1.00/mo   metered per second of runtime; $1/mo minimum
+#   pg     0.1c-256mb   $6.00/mo   smallest PAID Postgres; Free expires after 30 days
+#   pg disk 1 GB        $0.30/mo   $0.30/GB/mo; can be grown online, never shrunk
+#                       ---------
+#                       $21.30/mo
+#
+# Every line below is already at the cheapest option Render sells for that role.
+# See the notes on each service for why the next step down is not safe.
+####################################################################################
+
 services:
+  # ---------------------------------------------------------------------------
+  # Web: checkout, the Paystack webhook, and the signed receipt pages.
+  #
+  # runtime MUST be docker. Render's native runtimes are Node, Python, Ruby, Go,
+  # Rust and Elixir only — there is no PHP runtime, and no `publicDirectory`
+  # field in the Blueprint spec. This service previously declared `env: php`,
+  # which Render cannot build.
+  #
+  # NOT plan: free, for two independent reasons:
+  #   1. Free web services cannot open outbound connections on ports 25/465/587.
+  #      RegistrationController and SchoolAuthController call Mail::send()
+  #      synchronously from the request, so school onboarding and password reset
+  #      mail would fail outright on Free.
+  #   2. Free services sleep after 15 minutes of inactivity and take ~1 minute to
+  #      wake. The Paystack webhook is the settlement trigger; a cold start on
+  #      every low-traffic delivery risks timeouts and forces Paystack retries.
+  # ---------------------------------------------------------------------------
   - type: web
     name: laravel-app
-    env: php
-    # Not free: Render Free web services block outbound SMTP on ports 25/465/587,
-    # so PaymentReceiptMail would never leave the box. 'starter' is the legacy
-    # name for 0.5c-512mb and is still valid across Render tooling.
-    plan: starter
-    publicDirectory: public
-    # No asset build: every view loads Tailwind and Font Awesome from a CDN, and the
-    # project has no package.json, vite config or resources/js|css. The previous
-    # "npm install && npm run build" therefore exited 127 and failed the build.
-    buildCommand: "composer install --no-dev && php artisan config:clear && php artisan config:cache && php artisan route:cache && php artisan view:cache && php artisan migrate --force"
+    runtime: docker
+    dockerfilePath: ./docker/Dockerfile
+    dockerContext: .
+    plan: 0.5c-512mb
+    # Overrides the image's CMD (supervisord runs octane + a queue worker + a
+    # scheduler). On Render those extra processes would duplicate the dedicated
+    # worker and cron below and compete for 512 MB, so the web service runs the
+    # HTTP server only. --workers=1 keeps Octane inside the 512 MB plan.
+    dockerCommand: php artisan octane:start --server=frankenphp --host=0.0.0.0 --port=8000 --workers=1
+    healthCheckPath: /up
     envVars:
+      # Pins the port Render probes to the one Octane binds. Render's default is
+      # 10000, and its auto-detection could otherwise latch onto FrankenPHP's
+      # Caddy admin port instead of the HTTP port.
+      - key: PORT
+        value: 8000
       - key: APP_ENV
         value: production
       - key: APP_NAME
@@ -24,8 +65,14 @@ services:
       # every previously issued receipt link. sync:false keeps it out of the repo.
       - key: APP_KEY
         sync: false
+      # sync:false, NOT ${RENDER_EXTERNAL_URL}: Render does not interpolate
+      # variables inside Blueprint values, so that expression is stored as the
+      # literal string "${RENDER_EXTERNAL_URL}" — the same bug that already bit
+      # SESSION_DOMAIN. Paste the real https URL into all three services'
+      # dashboards; they must match, because the worker signs the receipt links
+      # this service has to validate.
       - key: APP_URL
-        value: ${RENDER_EXTERNAL_URL}
+        sync: false
       # Required: DATABASE_URL only populates the pgsql connection, so without an
       # explicit DB_CONNECTION Laravel would default to sqlite and ignore it.
       - key: DB_CONNECTION
@@ -44,6 +91,13 @@ services:
       - key: SESSION_SECURE_COOKIE
         value: true
       - key: QUEUE_CONNECTION
+        value: database
+      # InitiateSchoolPayout is ShouldBeUnique, which needs a cache lock. The
+      # database store is Laravel's default and the cache table is migrated, so
+      # the three services share one lock namespace with no Redis instance to pay
+      # for. Do not switch this to `array` or `file`: per-container caches would
+      # give each service its own lock.
+      - key: CACHE_STORE
         value: database
       # Render's filesystem is ephemeral, so file logs vanish on restart. stderr is
       # captured and retained by Render, which matters for the critical payout and
@@ -85,16 +139,35 @@ services:
       - key: MAIL_FROM_NAME
         sync: false
 
+  # ---------------------------------------------------------------------------
   # Payouts and receipts are queued jobs, so without a worker a settled payment
   # would record its obligation and never transfer. This worker drains the same
   # database queue the web service writes to.
+  #
+  # This is the one line item that CANNOT be cheapened. Background workers have no
+  # Free plan, so 0.5c-512mb is already Render's floor, and the alternatives that
+  # would remove the $7 are all worse:
+  #   - folding queue:work into the web container (the image's supervisord can do
+  #     it) ties payout processing to web deploys and autoscaling, and makes a
+  #     memory spike in the HTTP server kill an in-flight transfer;
+  #   - replacing it with a frequent cron running queue:work --stop-when-empty
+  #     buys a fixed money-movement path with a best-effort one: Render silently
+  #     skips a cron run that overlaps the previous one and does not retry a run
+  #     that fails, and per-minute container cold starts erase most of the saving.
+  # ---------------------------------------------------------------------------
   - type: worker
     name: laravel-queue-worker
-    env: php
-    plan: starter
-    buildCommand: "composer install --no-dev --optimize-autoloader && php artisan config:clear"
-    startCommand: "php artisan queue:work database --queue=default --sleep=3 --tries=3 --max-time=3600 --backoff=30"
+    runtime: docker
+    dockerfilePath: ./docker/Dockerfile
+    dockerContext: .
+    plan: 0.5c-512mb
+    dockerCommand: php artisan queue:work database --queue=default --sleep=3 --tries=3 --max-time=3600 --backoff=30
     envVars:
+      # Only the web service migrates. Three containers racing `migrate --force`
+      # against one Postgres on first deploy could half-apply a migration to the
+      # ledger; Render does not order Blueprint services.
+      - key: SKIP_MIGRATIONS
+        value: true
       - key: APP_ENV
         value: production
       - key: APP_NAME
@@ -106,8 +179,11 @@ services:
       # the identical key into both services' dashboards.
       - key: APP_KEY
         sync: false
+      # Must be the SAME value as the web service's APP_URL. RENDER_EXTERNAL_URL
+      # does not exist on workers at all, so this cannot be derived — set it by
+      # hand or the emailed receipt links point at http://localhost.
       - key: APP_URL
-        value: ${RENDER_EXTERNAL_URL}
+        sync: false
       # Must resolve to the SAME PostgreSQL database as the web service: the
       # database queue is what carries payout jobs between them.
       - key: DB_CONNECTION
@@ -117,6 +193,9 @@ services:
           name: database
           property: connectionString
       - key: QUEUE_CONNECTION
+        value: database
+      # Same shared lock namespace as the web service — see its CACHE_STORE note.
+      - key: CACHE_STORE
         value: database
       - key: LOG_CHANNEL
         value: stderr
@@ -148,6 +227,8 @@ services:
         sync: false
       - key: MAIL_FROM_NAME
         sync: false
+
+  # ---------------------------------------------------------------------------
   # Hourly reconciliation / recovery. This is NOT the payout mechanism — payouts are
   # created and queued the moment a payment settles (Model A). This job only catches
   # what settlement missed: a payment whose obligation was never recorded, or an
@@ -156,14 +237,27 @@ services:
   # the atomic pending->initiating claim and the payout state machine. It is safe to
   # run repeatedly: a payout that is initiating, processing, success, reversed,
   # failed or needs_review is left untouched.
+  #
+  # Cost note: cron jobs are the one Render service billed per second of actual
+  # runtime rather than as a monthly plan, subject to a $1/month minimum. An hourly
+  # run of a few seconds costs far less than the minimum, so this service is $1/mo
+  # on ANY plan — there is nothing to save by starving it, and 0.5c-512mb is the
+  # smallest plan offered regardless.
+  # ---------------------------------------------------------------------------
   - type: cron
     name: laravel-payout-reconciliation
-    env: php
-    plan: starter
+    runtime: docker
+    dockerfilePath: ./docker/Dockerfile
+    dockerContext: .
+    plan: 0.5c-512mb
     schedule: "0 * * * *"
-    buildCommand: "composer install --no-dev --optimize-autoloader && php artisan config:clear"
-    command: "php artisan payouts:run --dispatch"
+    # `command:` is not a Blueprint field. A Docker-runtime service overrides the
+    # image CMD with dockerCommand.
+    dockerCommand: php artisan payouts:run --dispatch
     envVars:
+      # See the worker's note: only the web service runs migrations.
+      - key: SKIP_MIGRATIONS
+        value: true
       - key: APP_ENV
         value: production
       - key: APP_NAME
@@ -172,8 +266,10 @@ services:
         value: false
       - key: APP_KEY
         sync: false
+      # Same value as the other two services; RENDER_EXTERNAL_URL is not available
+      # to cron jobs either.
       - key: APP_URL
-        value: ${RENDER_EXTERNAL_URL}
+        sync: false
       # Same PostgreSQL instance as the web service and worker.
       - key: DB_CONNECTION
         value: pgsql
@@ -184,6 +280,10 @@ services:
       # Writes InitiateSchoolPayout jobs onto the same database queue the worker drains.
       - key: QUEUE_CONNECTION
         value: database
+      # ShouldBeUnique is evaluated at dispatch time too, so the cron needs the same
+      # shared cache store as the worker.
+      - key: CACHE_STORE
+        value: database
       - key: LOG_CHANNEL
         value: stderr
       # Needed so a payout amount can be resolved and the queued job is well formed.
@@ -192,14 +292,21 @@ services:
         sync: false
       - key: PAYSTACK_PAYMENT_URL
         value: https://api.paystack.co
+
 databases:
   - name: database
-    # NOT free: a Free Postgres expires after 30 days and gets neither logical
-    # backups nor point-in-time recovery, which is unacceptable for the ledger
-    # that payments and payouts are written to.
+    # NOT free: a Free Postgres expires 30 days after creation and gets neither
+    # logical backups nor point-in-time recovery, which is unacceptable for the
+    # ledger that payments and payouts are written to.
     # NOT 'starter' either: unlike the service plans above, Postgres 'starter' is
-    # a legacy instance type Render no longer offers for new databases. This is
-    # its current-generation equivalent (0.1 CPU / 256 MB) and the smallest paid
-    # Postgres compute plan in the Blueprint spec. Every paid plan gets logical
-    # backups and PITR; size up in the dashboard as the ledger grows.
+    # a legacy instance type Render no longer offers for new databases.
+    # 0.1c-256mb (legacy name basic-256mb) is the smallest PAID Postgres plan and
+    # the cheapest one that gets logical backups plus point-in-time recovery — 3
+    # days of PITR on a Hobby workspace, 7 on Pro. Size up in the dashboard as the
+    # ledger grows; compute can be changed in both directions.
     plan: 0.1c-256mb
+    # Storage is billed separately from compute at $0.30/GB/mo, and Render lets you
+    # GROW a database's disk online but never shrink it — so the size chosen at
+    # creation is a floor on the bill forever. 1 GB is the minimum and is ample for
+    # this ledger; raise it in the dashboard (next step is 5 GB) before it fills.
+    diskSizeGB: 1
