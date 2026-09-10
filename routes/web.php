@@ -9,7 +9,6 @@ use App\Http\Controllers\SubcategoryController;
 use App\Http\Controllers\TransactionController;
 use App\Http\Middleware\EnsureSchoolAdmin;
 use App\Models\School;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Route;
 
@@ -127,21 +126,9 @@ Route::get('/payment/failed', function () {
     return redirect()->route('payment.index')->with('error', 'Payment failed!');
 })->name('payment.failed');
 
-// TEMP: SMTP test route (remove in production)
-Route::get('/test-mail', function (Request $request) {
-    $to = $request->query('to');
-    if (! $to) {
-        return response()->json(['error' => 'Provide ?to=recipient@example.com'], 400);
-    }
-    try {
-        Mail::raw('Test email from School Fees Portal. If you received this, SMTP is working.', function ($message) use ($to) {
-            $message->to($to)->subject('SMTP Test');
-        });
-
-        return response()->json(['ok' => true, 'sent_to' => $to]);
-    } catch (\Throwable $e) {
-        report($e);
-
-        return response()->json(['ok' => false, 'error' => $e->getMessage()], 500);
-    }
-});
+// The temporary /test-mail route was removed. It accepted an arbitrary ?to=
+// address with no authentication, throttling or ownership check, so anyone who
+// found it could send mail from this application's domain to any recipient —
+// an open relay for our sending reputation. SMTP is verified locally with
+// Mailpit (see README) and in production by an actual receipt delivery; neither
+// needs a public endpoint. Do not reintroduce an unauthenticated mail sender.
