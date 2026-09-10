@@ -73,6 +73,12 @@ A fourth, only if you want to show reconciliation (§8):
 php artisan payouts:run --dispatch
 ```
 
+> **Restart the worker after any `.env` change.** A long-running `queue:work`
+> holds the configuration it booted with, so a key you paste into `.env` mid-demo
+> is invisible to it. This bites in a way that looks like a bug: the payout fails
+> with "Paystack secret key is not configured" while the web service is using the
+> key perfectly well. Same reason production deploys restart the worker.
+
 ---
 
 ## 2. School / admin onboarding
@@ -201,14 +207,38 @@ repeatedly in front of an audience.
 
 ## 9. Receipt and email
 
-The worker sends `PaymentReceiptMail` with a **signed** receipt URL.
+The worker sends `PaymentReceiptMail`. Where to look:
 
 - Log driver: `tail -f storage/logs/laravel.log`
 - Mailpit: http://localhost:8025
 
-Click through to the receipt, and show the download button. Access requires one of
-three proofs — a valid URL signature, the paying browser session, or the owning
-school admin — so receipt IDs cannot be enumerated (`ReceiptAccessTest`).
+**The email is a complete, self-contained receipt — it carries no link back to the
+app.** It contains the payer's name and email, the reference, the payment method,
+the status, and an itemised table ending in fee subtotal, service fee and total.
+Verified output for the seeded Primary fee:
+
+```
+| School Fees | Primary - Term 1 | NGN 50,000.00 | 1 | NGN 50,000.00 |
+**Fee Subtotal:**     NGN 50,000.00
+**Service Fee:**      NGN  1,250.00
+**Total Amount Paid:** NGN 51,250.00
+```
+
+The **signed URL lives on the receipt page**, not in the email: the page's download
+button is a `URL::signedRoute` link that works anonymously and 404s if tampered
+with. Reach the receipt page during a demo either as the paying browser (the
+session carries `last_transaction_id` straight after payment) or as the owning
+school admin.
+
+Access requires one of three proofs — a valid URL signature, the paying browser
+session, or the owning school admin — so receipt IDs cannot be enumerated
+(`ReceiptAccessTest`). An anonymous, unsigned `/payment/receipt/{id}` returns 404,
+not 403, so it does not even confirm the id exists.
+
+Worth knowing if you demo a hand-made transaction: the email's school-name heading
+is derived from `category->school` / `subcategory->school`, not from
+`transaction->school_id`, so a transaction created without a category or
+subcategory renders the receipt without the school name.
 
 ---
 

@@ -142,13 +142,25 @@ class PaymentController extends Controller
             ],
         ];
 
-        $response = Http::withToken(config('services.paystack.secret_key'))
-            ->retry(3, 200)
-            ->connectTimeout(10)
-            ->timeout(25)
-            ->post(config('services.paystack.payment_url').'/transaction/initialize', $paystack);
+        // throw: false is what makes the graceful return below reachable. Without it
+        // retry() re-throws once the attempts are exhausted, so every Paystack-side
+        // failure — a bad key, a rate limit, an outage — reached the payer as a 500
+        // instead of the message this method is clearly written to return.
+        // The try/catch covers the other half: retry's flag only suppresses a failed
+        // *response*, while a DNS or TCP failure still raises ConnectionException.
+        try {
+            $response = Http::withToken(config('services.paystack.secret_key'))
+                ->retry(3, 200, throw: false)
+                ->connectTimeout(10)
+                ->timeout(25)
+                ->post(config('services.paystack.payment_url').'/transaction/initialize', $paystack);
 
-        $resBody = $response->json();
+            $resBody = $response->json();
+        } catch (\Throwable $e) {
+            report($e);
+
+            $resBody = null;
+        }
 
         if (($resBody['status'] ?? false) && isset($resBody['data']['authorization_url'])) {
             return redirect($resBody['data']['authorization_url']);
