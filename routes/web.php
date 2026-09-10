@@ -9,7 +9,6 @@ use App\Http\Controllers\SubcategoryController;
 use App\Http\Controllers\TransactionController;
 use App\Http\Middleware\EnsureSchoolAdmin;
 use App\Models\School;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Route;
 
@@ -77,7 +76,14 @@ Route::post('/contact', function (\Illuminate\Http\Request $request) {
     }
 
     return redirect()->route('contact.show')->with('success', 'Your message has been sent. We will get back to you shortly.');
-})->name('contact.send');
+})
+    // Unauthenticated and it sends mail, so it is rate limited like registration.
+    // The recipient is fixed to config('mail.from.address') and cannot be chosen by
+    // the sender, so the risk is flooding our own inbox and burning our sending
+    // reputation rather than relaying to third parties. Five an hour per IP is far
+    // above real use and well below what makes a useful flood.
+    ->middleware('throttle:5,60')
+    ->name('contact.send');
 
 // Admin auth routes (school-level)
 Route::get('/admin/login', [SchoolAuthController::class, 'showLogin'])->name('admin.login');
@@ -127,21 +133,9 @@ Route::get('/payment/failed', function () {
     return redirect()->route('payment.index')->with('error', 'Payment failed!');
 })->name('payment.failed');
 
-// TEMP: SMTP test route (remove in production)
-Route::get('/test-mail', function (Request $request) {
-    $to = $request->query('to');
-    if (! $to) {
-        return response()->json(['error' => 'Provide ?to=recipient@example.com'], 400);
-    }
-    try {
-        Mail::raw('Test email from School Fees Portal. If you received this, SMTP is working.', function ($message) use ($to) {
-            $message->to($to)->subject('SMTP Test');
-        });
-
-        return response()->json(['ok' => true, 'sent_to' => $to]);
-    } catch (\Throwable $e) {
-        report($e);
-
-        return response()->json(['ok' => false, 'error' => $e->getMessage()], 500);
-    }
-});
+// The temporary /test-mail route was removed. It accepted an arbitrary ?to=
+// address with no authentication, throttling or ownership check, so anyone who
+// found it could send mail from this application's domain to any recipient —
+// an open relay for our sending reputation. SMTP is verified locally with
+// Mailpit (see README) and in production by an actual receipt delivery; neither
+// needs a public endpoint. Do not reintroduce an unauthenticated mail sender.

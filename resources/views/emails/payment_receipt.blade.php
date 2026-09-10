@@ -43,6 +43,16 @@ Thank you for your payment. Here are your transaction details:
 @endif
 **Total Amount Paid:** ₦{{ number_format($receipt['total'], 2) }}
 
+@isset($receiptUrl)
+@component('mail::button', ['url' => $receiptUrl])
+View / Download Receipt
+@endcomponent
+
+{{-- Guarded so a missing URL costs the reader a button, never the whole receipt:
+     an undefined variable here would fail the send and the payer would get no
+     receipt at all. Its presence is asserted in ReceiptMailRenderingTest. --}}
+@endisset
+
 ---
 
 > This receipt serves as official proof of payment for the transaction detailed above. Please keep this for your records. For any queries, contact the school administration with your reference number.

@@ -19,6 +19,15 @@
     </source>
     <php>
         <env name="APP_ENV" value="testing"/>
+        <!--
+            Pinned so the suite does not inherit the developer's .env. Signed URLs
+            are signed over the full URL including any port, and TrustedProxyTest
+            rebuilds the returning request with parse_url(PHP_URL_HOST), which drops
+            it — so a local APP_URL of http://localhost:8000 (what `php artisan
+            serve` actually uses) made a passing test fail for environmental
+            reasons. Tests should not depend on how a machine happens to be set up.
+        -->
+        <env name="APP_URL" value="http://localhost"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="CACHE_STORE" value="array"/>
