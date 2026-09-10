@@ -2,9 +2,14 @@
 # Official Payment Receipt
 
 @php
-	$schoolName = optional(optional($transaction->category)->school)->name
-				  ?? optional($transaction->subcategory)->school->name
-				  ?? null;
+	// The transaction's own school_id is the authoritative source. This used to be
+	// derived through category->school and subcategory->school, which made the
+	// school's name on an ALREADY-ISSUED receipt depend on rows that outlive it:
+	// transactions.category_id and subcategory_id are nullOnDelete, so deleting a
+	// fee type silently stripped the school's branding from historical receipts,
+	// and a category repointed to another school would have printed that school's
+	// name on this school's receipt.
+	$schoolName = $transaction->school?->name;
 @endphp
 
 @if($schoolName)

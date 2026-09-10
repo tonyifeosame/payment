@@ -269,6 +269,97 @@ class ReceiptMailRenderingTest extends TestCase
     }
 
     // =====================================================================
+    // Whose school name appears on the receipt
+    //
+    // The heading used to be derived through category->school and
+    // subcategory->school. transactions.category_id and subcategory_id are
+    // nullOnDelete, so those rows outlive the receipt they described: deleting a
+    // fee type stripped the school's branding from receipts already issued, and a
+    // category pointing at another school would have printed the wrong name.
+    // transaction->school_id is the authoritative source.
+    // =====================================================================
+
+    public function test_the_receipt_names_the_school_the_transaction_belongs_to(): void
+    {
+        $text = strip_tags((new PaymentReceiptMail($this->transaction))->render());
+
+        $this->assertSame(
+            'Greenfield Academy',
+            School::find($this->transaction->school_id)->name,
+            'precondition: the transaction belongs to Greenfield Academy'
+        );
+        $this->assertStringContainsString('Greenfield Academy', $text);
+    }
+
+    public function test_deleting_the_fee_type_does_not_strip_the_school_from_a_historical_receipt(): void
+    {
+        Subcategory::findOrFail($this->transaction->subcategory_id)->delete();
+        Category::findOrFail($this->transaction->category_id)->delete();
+
+        $transaction = $this->transaction->fresh();
+
+        // The FKs really are gone — otherwise this test would pass for the wrong reason.
+        $this->assertNull($transaction->category_id);
+        $this->assertNull($transaction->subcategory_id);
+
+        $text = strip_tags((new PaymentReceiptMail($transaction))->render());
+
+        $this->assertStringContainsString(
+            'Greenfield Academy',
+            $text,
+            'the school name vanished from a receipt that was already issued'
+        );
+        // The itemised line survives too: it is denormalised onto the transaction.
+        $this->assertStringContainsString('School Fees', $text);
+    }
+
+    public function test_a_receipt_never_shows_another_schools_name_via_its_category(): void
+    {
+        $other = School::create([
+            'name' => 'Rival College', 'slug' => 'rival',
+            'email' => 'admin@rival.test', 'admin_password' => Hash::make('password123'),
+        ]);
+        $rivalCategory = Category::create(['name' => 'Rival Fees', 'school_id' => $other->id]);
+        $rivalSubcategory = Subcategory::create([
+            'category_id' => $rivalCategory->id, 'name' => 'Rival Term',
+            'price' => self::BASE, 'school_id' => $other->id,
+        ]);
+
+        // Point the fee relations at the other school while the transaction itself
+        // still belongs to Greenfield — the shape a repointed or mis-seeded
+        // category produces.
+        $this->transaction->update([
+            'category_id' => $rivalCategory->id,
+            'subcategory_id' => $rivalSubcategory->id,
+        ]);
+
+        $text = strip_tags((new PaymentReceiptMail($this->transaction->fresh()))->render());
+
+        $this->assertStringContainsString('Greenfield Academy', $text);
+        $this->assertStringNotContainsString(
+            'Rival College',
+            $text,
+            "the receipt leaked another school's name through the category relationship"
+        );
+    }
+
+    public function test_the_queue_worker_renders_the_school_name_too(): void
+    {
+        // SerializesModels rehydrates the transaction without relations, so this is
+        // the path where a missing eager load would silently blank the heading.
+        config(['queue.default' => 'database']);
+        $this->fakeSuccessfulVerify();
+
+        app(PaymentSettlementService::class)->settleByReference('greenfield-ref-001');
+        $this->drainQueue();
+
+        $this->assertSame(0, DB::table('failed_jobs')->count(), 'the receipt job failed');
+
+        $html = $this->sentMessages()[0]->getOriginalMessage()->getHtmlBody();
+        $this->assertStringContainsString('Greenfield Academy', strip_tags($html));
+    }
+
+    // =====================================================================
     // The "View / Download Receipt" link
     // =====================================================================
 
