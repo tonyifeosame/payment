@@ -76,7 +76,14 @@ Route::post('/contact', function (\Illuminate\Http\Request $request) {
     }
 
     return redirect()->route('contact.show')->with('success', 'Your message has been sent. We will get back to you shortly.');
-})->name('contact.send');
+})
+    // Unauthenticated and it sends mail, so it is rate limited like registration.
+    // The recipient is fixed to config('mail.from.address') and cannot be chosen by
+    // the sender, so the risk is flooding our own inbox and burning our sending
+    // reputation rather than relaying to third parties. Five an hour per IP is far
+    // above real use and well below what makes a useful flood.
+    ->middleware('throttle:5,60')
+    ->name('contact.send');
 
 // Admin auth routes (school-level)
 Route::get('/admin/login', [SchoolAuthController::class, 'showLogin'])->name('admin.login');

@@ -267,4 +267,105 @@ class ReceiptMailRenderingTest extends TestCase
         $this->assertStringContainsString('Service Fee: ₦1,250.00', $normalised);
         $this->assertStringContainsString('Total Amount Paid: ₦51,250.00', $normalised);
     }
+
+    // =====================================================================
+    // The "View / Download Receipt" link
+    // =====================================================================
+
+    /**
+     * Pull the receipt link out of the rendered email the way a mail client would.
+     */
+    private function receiptLinkFromEmail(): string
+    {
+        $html = (new PaymentReceiptMail($this->transaction))->render();
+
+        preg_match(
+            '~href="([^"]*/payment/receipt/'.$this->transaction->id.'\?[^"]*)"~',
+            $html,
+            $matches
+        );
+
+        $this->assertNotEmpty($matches, 'the receipt email rendered no link to the receipt');
+
+        return html_entity_decode($matches[1]);
+    }
+
+    public function test_the_receipt_email_links_to_the_receipt_and_the_link_is_signed(): void
+    {
+        $link = $this->receiptLinkFromEmail();
+
+        $this->assertStringContainsString('signature=', $link, 'the receipt link carries no signature');
+        $this->assertMatchesRegularExpression('~^https?://~', $link, 'the link must be absolute to work from an inbox');
+    }
+
+    public function test_the_email_never_exposes_an_unsigned_receipt_url(): void
+    {
+        $html = (new PaymentReceiptMail($this->transaction))->render();
+
+        // Every occurrence of the receipt path must carry a signature. A bare
+        // /payment/receipt/{id} would be an enumeration handle over other payers.
+        preg_match_all('~/payment/receipt/\d+[^"\s]*~', $html, $matches);
+
+        $this->assertNotEmpty($matches[0], 'expected at least one receipt URL in the email');
+
+        foreach ($matches[0] as $url) {
+            $this->assertStringContainsString(
+                'signature=',
+                html_entity_decode($url),
+                "unsigned receipt URL leaked into the email: {$url}"
+            );
+        }
+    }
+
+    public function test_the_emailed_link_opens_the_receipt_with_no_session_at_all(): void
+    {
+        $link = $this->receiptLinkFromEmail();
+
+        // No paying session, no admin session — exactly a click from an inbox.
+        $this->flushSession();
+
+        $this->get($link)
+            ->assertOk()
+            ->assertSee($this->transaction->reference);
+    }
+
+    public function test_tampering_with_the_emailed_link_is_rejected(): void
+    {
+        $link = $this->receiptLinkFromEmail();
+
+        $this->flushSession();
+
+        // A corrupted signature.
+        $this->get($link.'ff')->assertNotFound();
+
+        // And the same id with the signature stripped off entirely.
+        $this->get('/payment/receipt/'.$this->transaction->id)->assertNotFound();
+    }
+
+    public function test_the_emailed_link_does_not_grant_access_to_a_different_receipt(): void
+    {
+        $other = Transaction::create([
+            'school_id' => $this->transaction->school_id,
+            'reference' => 'greenfield-ref-002',
+            'amount' => self::GROSS,
+            'status' => 'success',
+            'email' => 'someone-else@example.test',
+            'name' => 'Other Payer',
+            'category_name' => 'School Fees',
+            'subcategory_name' => 'Primary',
+            'meta_data' => ['quantity' => 1, 'base_amount' => self::BASE, 'markup_amount' => 1250],
+        ]);
+
+        $link = $this->receiptLinkFromEmail();
+        $this->flushSession();
+
+        // Swapping the id invalidates the signature, which is signed over the URL.
+        $swapped = str_replace(
+            '/payment/receipt/'.$this->transaction->id.'?',
+            '/payment/receipt/'.$other->id.'?',
+            $link
+        );
+
+        $this->get($swapped)->assertNotFound();
+    }
 }
