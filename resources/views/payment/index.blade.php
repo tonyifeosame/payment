@@ -286,16 +286,44 @@
                             </div>
                             @endif
                             @if($requiresStudent)
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-                                <div class="group">
-                                    <label for="admission_number" class="block text-sm font-bold text-slate-700 mb-2 uppercase tracking-wide">Student Admission Number</label>
-                                    <input type="text" id="admission_number" name="admission_number" value="{{ old('admission_number') }}" autocomplete="off" autocapitalize="characters" required maxlength="50"
-                                           class="w-full px-4 py-3.5 border-2 border-slate-200 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all duration-200 font-mono font-medium" placeholder="As given by the school">
-                                    @error('admission_number') <span class="text-red-600 text-sm mt-1">{{ $message }}</span> @enderror
+                            <div class="space-y-4" id="studentPicker" data-old-student='@json($oldStudent)'>
+                                {{-- Only student_id is submitted. The server re-resolves it within this school;
+                                     the name/class/masked admission number shown here are for the parent, never for the server. --}}
+                                <input type="hidden" id="student_id" name="student_id" value="{{ $oldStudent['id'] ?? '' }}">
+
+                                <div class="group relative" id="studentSearchWrap">
+                                    <label for="student_query" class="block text-sm font-bold text-slate-700 mb-2 uppercase tracking-wide">Student Name</label>
+                                    <input type="text" id="student_query" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="search"
+                                           role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="studentSuggestions" aria-haspopup="listbox"
+                                           class="w-full px-4 py-3.5 border-2 border-slate-200 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all duration-200 font-medium"
+                                           placeholder="Start typing the student's name">
+                                    <p class="mt-1.5 text-xs text-slate-500">Type at least 2 letters of the name. You can also type the admission number.</p>
+                                    <ul id="studentSuggestions" role="listbox" aria-label="Matching students" hidden
+                                        class="absolute left-0 right-0 z-30 mt-1 max-h-72 overflow-y-auto rounded-xl border-2 border-slate-200 bg-white shadow-xl divide-y divide-slate-100"></ul>
+                                    <p id="studentSearchStatus" class="mt-1.5 text-sm text-slate-600" aria-live="polite"></p>
+                                    @error('student_id') <span class="text-red-600 text-sm mt-1 block">{{ $message }}</span> @enderror
                                 </div>
-                                <div>
-                                    <p class="block text-sm font-bold text-slate-700 mb-2 uppercase tracking-wide">Student</p>
-                                    <div id="studentResult" class="px-4 py-3.5 rounded-xl border-2 border-dashed border-slate-200 bg-white text-slate-500 text-sm min-h-[3.5rem]">Enter the admission number to confirm the student.</div>
+
+                                <div id="studentSelected" hidden class="rounded-xl border-2 border-green-300 bg-green-50 p-4">
+                                    <div class="flex items-start justify-between gap-3">
+                                        <div class="min-w-0">
+                                            <p class="text-xs font-bold text-green-700 uppercase tracking-wide">Selected student</p>
+                                            <p id="selectedStudentName" class="mt-0.5 text-lg font-extrabold text-slate-900 break-words"></p>
+                                        </div>
+                                        <button type="button" id="studentChange" class="shrink-0 px-3 py-2 text-sm font-semibold text-blue-700 bg-white border border-blue-200 rounded-lg hover:bg-blue-50">Change</button>
+                                    </div>
+                                    <div class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <div>
+                                            <label for="student_admission_display" class="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1">Admission Number</label>
+                                            <input type="text" id="student_admission_display" readonly tabindex="-1" aria-readonly="true"
+                                                   class="w-full px-3 py-2.5 rounded-lg border border-green-200 bg-white text-slate-800 font-mono font-medium">
+                                        </div>
+                                        <div>
+                                            <label for="student_class_display" class="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1">Class</label>
+                                            <input type="text" id="student_class_display" readonly tabindex="-1" aria-readonly="true"
+                                                   class="w-full px-3 py-2.5 rounded-lg border border-green-200 bg-white text-slate-800 font-medium">
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                             @endif
@@ -485,10 +513,9 @@
     const sessionSelect = document.getElementById('academic_session_id');
     const termSelect = document.getElementById('academic_term_id');
     const sTerm = document.getElementById('summaryTerm');
-    const admissionInput = document.getElementById('admission_number');
-    const studentResult = document.getElementById('studentResult');
     const sStudent = document.getElementById('summaryStudent');
-    const lookupUrl = {!! json_encode(route('school.payment.student-lookup', ['school' => $school->slug])) !!};
+    const studentSearchUrl = {!! json_encode(route('school.payment.student-search', ['school' => $school->slug])) !!};
+    const studentSearchLimit = {{ \App\Http\Controllers\PaymentController::STUDENT_SEARCH_LIMIT }};
 
     function selectedTermId() { return termSelect && termSelect.value ? Number(termSelect.value) : null; }
 
@@ -528,42 +555,175 @@
         populateSubcategories();
     });
 
-    // Student lookup by admission number. The server resolves it within THIS school
-    // only and returns just a name and class; the form still submits the admission
-    // number, never an id, so the server repeats the lookup on submit.
-    let lookupTimer = null, lookupController = null;
-    async function lookupStudent() {
-        if (!admissionInput || !studentResult) return;
-        const value = admissionInput.value.trim();
-        if (sStudent) sStudent.textContent = '—';
-        if (value === '') { studentResult.textContent = 'Enter the admission number to confirm the student.'; studentResult.className = studentResult.className.replace(/border-(green|red)-300/g, 'border-slate-200'); return; }
-        if (lookupController) lookupController.abort();
-        lookupController = new AbortController();
-        studentResult.textContent = 'Checking…';
-        try {
-            const r = await fetch(lookupUrl + '?admission_number=' + encodeURIComponent(value), { signal: lookupController.signal, headers: { 'Accept': 'application/json' } });
-            const d = await r.json().catch(() => ({}));
-            if (r.ok && d.found) {
-                studentResult.innerHTML = '';
-                const name = document.createElement('span'); name.className = 'font-bold text-slate-900 block'; name.textContent = d.full_name;
-                const cls = document.createElement('span'); cls.className = 'text-slate-600'; cls.textContent = d.class_name;
-                studentResult.appendChild(name); studentResult.appendChild(cls);
-                studentResult.classList.remove('border-slate-200', 'border-red-300'); studentResult.classList.add('border-green-300');
-                if (sStudent) sStudent.textContent = d.full_name;
-            } else if (r.status === 429) {
-                studentResult.textContent = 'Too many attempts. Please wait a moment and try again.';
-            } else {
-                studentResult.textContent = 'No student found with that admission number at this school.';
-                studentResult.classList.remove('border-slate-200', 'border-green-300'); studentResult.classList.add('border-red-300');
-            }
-        } catch (e) {
-            if (e.name !== 'AbortError') studentResult.textContent = 'Could not check right now. You can still continue.';
+    // Student picker. The parent searches by name (or admission number); the
+    // server answers with THIS school's matches only, and the form submits just
+    // the chosen id. The server re-resolves that id within the school on submit,
+    // so the admission number and class shown here are display-only.
+    (function () {
+        const picker = document.getElementById('studentPicker');
+        if (!picker) return;
+
+        const idInput = document.getElementById('student_id');
+        const queryInput = document.getElementById('student_query');
+        const list = document.getElementById('studentSuggestions');
+        const status = document.getElementById('studentSearchStatus');
+        const selectedBox = document.getElementById('studentSelected');
+        const selectedName = document.getElementById('selectedStudentName');
+        const admissionDisplay = document.getElementById('student_admission_display');
+        const classDisplay = document.getElementById('student_class_display');
+        const changeBtn = document.getElementById('studentChange');
+        const searchWrap = document.getElementById('studentSearchWrap');
+        const form = document.getElementById('paymentForm');
+
+        const MIN_CHARS = 2, DEBOUNCE_MS = 300;
+        let timer = null, controller = null, results = [], activeIndex = -1, lastQuery = '';
+
+        function setStatus(text, tone) {
+            status.textContent = text || '';
+            status.className = 'mt-1.5 text-sm ' + (tone === 'error' ? 'text-red-600' : 'text-slate-600');
         }
-    }
-    if (admissionInput) {
-        admissionInput.addEventListener('input', function () { clearTimeout(lookupTimer); lookupTimer = setTimeout(lookupStudent, 400); });
-        if (admissionInput.value) lookupStudent();
-    }
+
+        function closeList() {
+            list.hidden = true; list.innerHTML = ''; activeIndex = -1;
+            queryInput.setAttribute('aria-expanded', 'false');
+            queryInput.removeAttribute('aria-activedescendant');
+        }
+
+        function updateSubmitState() {
+            const ok = !!idInput.value;
+            if (submitBtn) {
+                submitBtn.disabled = !ok;
+                submitBtn.classList.toggle('opacity-60', !ok);
+                submitBtn.classList.toggle('cursor-not-allowed', !ok);
+                submitBtn.title = ok ? '' : 'Select the student first';
+            }
+        }
+
+        function clearSelection(keepQuery) {
+            idInput.value = '';
+            selectedBox.hidden = true;
+            searchWrap.hidden = false;
+            admissionDisplay.value = ''; classDisplay.value = '';
+            if (!keepQuery) queryInput.value = '';
+            if (sStudent) sStudent.textContent = '—';
+            updateSubmitState();
+        }
+
+        function select(student) {
+            idInput.value = String(student.id);
+            selectedName.textContent = student.full_name;
+            admissionDisplay.value = student.admission_number_masked || '';
+            classDisplay.value = student.class_name || '';
+            selectedBox.hidden = false;
+            searchWrap.hidden = true;           // one clear "this is who you are paying for"
+            queryInput.value = student.full_name;
+            lastQuery = student.full_name;
+            if (sStudent) sStudent.textContent = student.full_name + (student.class_name ? ' (' + student.class_name + ')' : '');
+            closeList(); setStatus('');
+            updateSubmitState();
+        }
+
+        function render() {
+            list.innerHTML = '';
+            if (results.length === 0) { closeList(); return; }
+            results.forEach((st, i) => {
+                const li = document.createElement('li');
+                li.id = 'studentOption' + i; li.setAttribute('role', 'option'); li.dataset.index = String(i);
+                li.className = 'px-4 py-3 cursor-pointer hover:bg-blue-50 select-none';
+                const name = document.createElement('div'); name.className = 'font-bold text-slate-900'; name.textContent = st.full_name;
+                const meta = document.createElement('div'); meta.className = 'text-sm text-slate-600';
+                meta.textContent = (st.class_name || '') + (st.admission_number_masked ? ' \u00b7 ' + st.admission_number_masked : '');
+                li.appendChild(name); li.appendChild(meta);
+                // mousedown/touch so the choice lands before the input blurs and the list closes
+                li.addEventListener('mousedown', function (e) { e.preventDefault(); select(st); });
+                li.addEventListener('touchend', function (e) { e.preventDefault(); select(st); });
+                list.appendChild(li);
+            });
+            list.hidden = false;
+            queryInput.setAttribute('aria-expanded', 'true');
+            setActive(-1);
+        }
+
+        function setActive(i) {
+            const items = list.querySelectorAll('[role="option"]');
+            items.forEach(el => { el.classList.remove('bg-blue-100'); el.removeAttribute('aria-selected'); });
+            activeIndex = i;
+            if (i >= 0 && items[i]) {
+                items[i].classList.add('bg-blue-100'); items[i].setAttribute('aria-selected', 'true');
+                queryInput.setAttribute('aria-activedescendant', items[i].id);
+                items[i].scrollIntoView({ block: 'nearest' });
+            } else {
+                queryInput.removeAttribute('aria-activedescendant');
+            }
+        }
+
+        async function search(q) {
+            if (controller) controller.abort();
+            controller = new AbortController();
+            setStatus('Searching\u2026');
+            try {
+                const r = await fetch(studentSearchUrl + '?q=' + encodeURIComponent(q), { signal: controller.signal, headers: { 'Accept': 'application/json' } });
+                const d = await r.json().catch(() => ({}));
+                if (q !== queryInput.value.trim()) return; // a newer keystroke owns the UI now
+                if (r.status === 429) { results = []; render(); setStatus('Too many searches. Please wait a moment and try again.', 'error'); return; }
+                if (!r.ok) { results = []; render(); setStatus('Could not search right now. Please try again.', 'error'); return; }
+                results = Array.isArray(d.students) ? d.students : [];
+                render();
+                if (results.length === 0) {
+                    setStatus('No student matching \u201c' + q + '\u201d was found at this school. Check the spelling, or try the admission number.', 'error');
+                } else if (results.length >= studentSearchLimit) {
+                    setStatus('Showing the first ' + studentSearchLimit + ' matches \u2014 keep typing to narrow it down.');
+                } else {
+                    setStatus(results.length + (results.length === 1 ? ' match' : ' matches') + ' \u2014 pick the right student below.');
+                }
+            } catch (e) {
+                if (e.name !== 'AbortError') { results = []; render(); setStatus('Could not search right now. Please try again.', 'error'); }
+            }
+        }
+
+        queryInput.addEventListener('input', function () {
+            const q = queryInput.value.trim();
+            // Any edit after a selection un-selects: the id must always match what is shown.
+            if (idInput.value && q !== lastQuery) clearSelection(true);
+            clearTimeout(timer);
+            if (q.length < MIN_CHARS) { if (controller) controller.abort(); results = []; render(); setStatus(q.length ? 'Keep typing\u2026' : ''); return; }
+            timer = setTimeout(() => search(q), DEBOUNCE_MS);
+        });
+
+        queryInput.addEventListener('keydown', function (e) {
+            if (list.hidden) { if (e.key === 'Enter') e.preventDefault(); return; }
+            if (e.key === 'ArrowDown') { e.preventDefault(); setActive(Math.min(activeIndex + 1, results.length - 1)); }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(Math.max(activeIndex - 1, -1)); }
+            else if (e.key === 'Enter') { e.preventDefault(); if (activeIndex >= 0) select(results[activeIndex]); else if (results.length === 1) select(results[0]); }
+            else if (e.key === 'Escape') { closeList(); }
+        });
+        queryInput.addEventListener('blur', function () { setTimeout(closeList, 150); });
+        queryInput.addEventListener('focus', function () { if (results.length && !idInput.value) render(); });
+
+        changeBtn.addEventListener('click', function () {
+            clearTimeout(timer);
+            if (controller) controller.abort();
+            clearSelection(false);
+            results = []; lastQuery = '';
+            closeList(); setStatus('');
+            queryInput.focus();
+        });
+
+        // The server enforces this too; this just stops a pointless round trip.
+        if (form) form.addEventListener('submit', function (e) {
+            if (!idInput.value) {
+                e.preventDefault(); e.stopImmediatePropagation();
+                searchWrap.hidden = false;
+                setStatus('Please search for and select the student you are paying for.', 'error');
+                queryInput.focus();
+            }
+        }, true);
+
+        // Re-select after a failed submit (the server only echoes ids that belong to this school).
+        let old = null;
+        try { old = JSON.parse(picker.dataset.oldStudent || 'null'); } catch (e) { old = null; }
+        if (old && old.id) select(old); else clearSelection(false);
+    })();
 
     // Listeners
     catSelect.addEventListener('change', function () {
@@ -663,12 +823,14 @@
         const selectedCatOption = catSelect.options[catSelect.selectedIndex];
         const catNameText = (selectedCatOption ? selectedCatOption.textContent : '').toLowerCase();
         const isSchoolFees = catNameText.includes('school fee');
+        // readOnly, not disabled: a disabled input is dropped from the POST and the
+        // server (rightly) requires quantity. It forces 1 for school fees anyway.
         if (isSchoolFees) {
             qtyInput.value = 1;
-            qtyInput.setAttribute('disabled', 'disabled');
+            qtyInput.readOnly = true;
             qtyContainer.classList.add('hidden');
         } else {
-            qtyInput.removeAttribute('disabled');
+            qtyInput.readOnly = false;
             qtyContainer.classList.remove('hidden');
         }
     }

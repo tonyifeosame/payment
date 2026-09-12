@@ -35,16 +35,24 @@ class SchoolDashboardService
      */
     public function build(School $school, ?AcademicTerm $term): array
     {
-        $now = Carbon::now();
+        // "Today" and "this week" are the school's business days (Africa/Lagos),
+        // but paid_at/created_at are stored in app.timezone (UTC). Work out the
+        // boundary in the reporting zone, then hand the query the same instant
+        // expressed in storage time — a Lagos wall-clock string bound as-is would
+        // be an hour late.
+        $now = Carbon::now(self::reportingTimezone());
+        $storageTz = config('app.timezone', 'UTC');
+        $startOfToday = $now->copy()->startOfDay()->setTimezone($storageTz);
+        $startOfWeek = $now->copy()->startOfWeek()->setTimezone($storageTz);
         $paidAt = Transaction::paidAtExpression();
 
         $successful = fn () => Transaction::forSchool($school)->successful();
 
         $today = $this->totals(
-            $successful()->whereRaw("$paidAt >= ?", [$now->copy()->startOfDay()])
+            $successful()->whereRaw("$paidAt >= ?", [$startOfToday])
         );
         $week = $this->totals(
-            $successful()->whereRaw("$paidAt >= ?", [$now->copy()->startOfWeek()])
+            $successful()->whereRaw("$paidAt >= ?", [$startOfWeek])
         );
         $allTime = $this->totals($successful());
         $termTotals = $term
@@ -89,6 +97,12 @@ class SchoolDashboardService
             'by_category' => $byCategory,
             'payouts' => $this->payoutSummary($school),
         ];
+    }
+
+    /** The timezone school admins think in; see config/fees.php. */
+    public static function reportingTimezone(): string
+    {
+        return (string) config('fees.reporting_timezone', 'Africa/Lagos');
     }
 
     /** @return array{gross: float, net: float, count: int} */

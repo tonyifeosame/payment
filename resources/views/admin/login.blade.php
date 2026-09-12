@@ -118,6 +118,7 @@
                                class="w-full pl-12 pr-4 py-3.5 border-2 border-slate-200 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all duration-200 font-medium bg-white"
                                placeholder="Enter your school name" />
                     </div>
+                    <p class="mt-1.5 text-xs text-slate-500">The school's registered name (as entered at registration), not its email address.</p>
                 </div>
 
                 <!-- Password -->

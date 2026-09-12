@@ -19,20 +19,22 @@ use Illuminate\Validation\ValidationException;
  *
  *   - category / fee ids must belong to this school, and to each other;
  *   - the term must belong to this school, and the fee must be payable in it;
- *   - the student is resolved by admission number WITHIN this school, so no id or
- *     name the browser supplies can point at another school's student;
+ *   - the student id is looked up WITHIN this school, so a hidden field pointing
+ *     at another school's student (or at nothing) fails closed, and the name,
+ *     admission number and class stored on the transaction come from that row —
+ *     never from anything the browser typed;
  *   - the amount is computed from the fee's stored price and the configured
  *     markup. `client_total` and any other browser-side figure are ignored.
  *
  * An id that does not belong to this school is a 404, matching every other
  * tenant-scoped lookup in the application (fail closed, reveal nothing). A genuine
- * user mistake — an unknown admission number, a fee not payable in the chosen term
- * — is a ValidationException so the payer sees a field error.
+ * user mistake — no student picked, a fee not payable in the chosen term — is a
+ * ValidationException so the payer sees a field error.
  */
 class PaymentCheckoutService
 {
     /**
-     * @param  array{email:string, name?:string|null, category_id:int|string, subcategory_id:int|string, quantity:int|string, admission_number?:string|null, academic_term_id?:int|string|null, academic_session_id?:int|string|null}  $input
+     * @param  array{email:string, name?:string|null, category_id:int|string, subcategory_id:int|string, quantity:int|string, student_id?:int|string|null, academic_term_id?:int|string|null, academic_session_id?:int|string|null}  $input
      */
     public function createPendingTransaction(School $school, array $input): Transaction
     {
@@ -130,26 +132,31 @@ class PaymentCheckoutService
     }
 
     /**
-     * The student the payment is for, found by admission number within this school.
-     * Required once the school has a roster; optional (null) before that.
+     * The student the payment is for, by id WITHIN this school.
+     *
+     * Required once the school has a roster; optional (null) before that. The id
+     * arrives from the page's autocomplete, but it is only a claim: an id that is
+     * not one of this school's students is a 404 (fail closed), exactly like a
+     * foreign fee or term id. Nothing else the browser sends about the student —
+     * `student_name`, `admission_number`, `class` — is read at all.
      */
     private function resolveStudent(School $school, array $input): ?Student
     {
-        $admission = Student::normalizeAdmissionNumber($input['admission_number'] ?? null);
+        $studentId = $input['student_id'] ?? null;
         $requires = $school->requiresStudentOnPayment();
 
-        if ($admission === '') {
+        if ($studentId === null || $studentId === '') {
             if ($requires) {
-                throw ValidationException::withMessages(['admission_number' => 'Please enter the student\'s admission number.']);
+                throw ValidationException::withMessages(['student_id' => 'Please search for and select the student you are paying for.']);
             }
 
             return null;
         }
 
-        $student = Student::findByAdmissionNumber($school, $admission);
+        $student = Student::forSchool($school)->find((int) $studentId);
 
         if (! $student) {
-            throw ValidationException::withMessages(['admission_number' => 'No student with that admission number was found at this school.']);
+            abort(404);
         }
 
         return $student;

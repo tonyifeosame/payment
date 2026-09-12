@@ -93,7 +93,10 @@ Route::post('/contact', function (\Illuminate\Http\Request $request) {
 
 // Admin auth routes (school-level)
 Route::get('/admin/login', [SchoolAuthController::class, 'showLogin'])->name('admin.login');
-Route::post('/admin/login', [SchoolAuthController::class, 'login'])->name('admin.login.post');
+// Throttled per IP like the other password-accepting endpoints: five attempts per hour.
+Route::post('/admin/login', [SchoolAuthController::class, 'login'])
+    ->middleware('throttle:5,60')
+    ->name('admin.login.post');
 Route::post('/admin/logout', [SchoolAuthController::class, 'logout'])->name('admin.logout');
 Route::get('admin/forgot-password', [SchoolAuthController::class, 'showLinkRequestForm'])->name('admin.password.request');
 Route::post('admin/forgot-password', [SchoolAuthController::class, 'sendResetLinkEmail'])->name('admin.password.email');
@@ -104,11 +107,12 @@ Route::post('admin/reset-password', [SchoolAuthController::class, 'reset'])->nam
 Route::prefix('s/{school:slug}')->group(function () {
     Route::get('/payment', [PaymentController::class, 'indexSchool'])->name('school.payment.index');
     Route::post('/payment/initialize', [PaymentController::class, 'initializeSchool'])->name('school.payment.initialize');
-    // Public student lookup for the payment form. Throttled per IP because it is
-    // unauthenticated and answers "does this admission number exist at this school".
-    Route::get('/payment/student-lookup', [PaymentController::class, 'studentLookup'])
-        ->middleware('throttle:30,1')
-        ->name('school.payment.student-lookup');
+    // Public student autocomplete for the payment form. Throttled per IP because it
+    // is unauthenticated and lists (a capped number of) this school's students by
+    // name. The browser debounces, so a parent typing a name costs a handful of hits.
+    Route::get('/payment/student-search', [PaymentController::class, 'studentSearch'])
+        ->middleware('throttle:60,1')
+        ->name('school.payment.student-search');
     // The school's logo: public, because it appears on the parent-facing page.
     Route::get('/logo', [SchoolSettingsController::class, 'logo'])->name('school.logo');
     // callback remains global (Paystack redirects there)

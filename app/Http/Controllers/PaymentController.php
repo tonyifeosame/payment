@@ -16,6 +16,9 @@ use Illuminate\Support\Facades\URL;
 
 class PaymentController extends Controller
 {
+    /** Suggestions per search: enough to disambiguate, not enough to list a roster. */
+    public const STUDENT_SEARCH_LIMIT = 10;
+
     /**
      * Admin entry point for the payment page.
      *
@@ -84,33 +87,50 @@ class PaymentController extends Controller
         $requiresStudent = $school->requiresStudentOnPayment();
         $currentTerm = $school->currentTerm;
 
+        // After a failed submit, re-select the student the parent had picked — but
+        // only if that id really is one of this school's students.
+        $oldStudent = null;
+        if ($requiresStudent && is_numeric(old('student_id'))) {
+            $s = Student::forSchool($school)->find((int) old('student_id'));
+            if ($s) {
+                $oldStudent = ['id' => $s->id, 'full_name' => $s->full_name, 'class_name' => $s->class_name, 'admission_number_masked' => $s->maskedAdmissionNumber()];
+            }
+        }
+
         return view('payment.index', compact(
             'categories', 'categoriesForJs', 'school', 'markupPercent',
-            'sessionsForJs', 'requiresStudent', 'currentTerm'
+            'sessionsForJs', 'requiresStudent', 'currentTerm', 'oldStudent'
         ));
     }
 
     /**
-     * Public, throttled lookup so a parent can confirm which student an admission
-     * number refers to before paying. Scoped to the bound school; returns only the
-     * name and class, never ids or guardian details.
+     * Public, throttled autocomplete behind the payment page's "Student" field.
+     *
+     * A convenience for the browser only: it lists matches WITHIN the bound school
+     * (name first, admission number second) and returns just what a parent needs to
+     * pick the right child — name, class, a MASKED admission number, and the id
+     * the form will send back. The id is then re-checked against the same school
+     * on submit by PaymentCheckoutService, so nothing here is trusted later. The
+     * full admission number and guardian details never leave the server here.
      */
-    public function studentLookup(Request $request, School $school)
+    public function studentSearch(Request $request, School $school)
     {
         $validated = $request->validate([
-            'admission_number' => 'required|string|max:50',
+            'q' => 'required|string|min:2|max:100',
         ]);
 
-        $student = Student::findByAdmissionNumber($school, $validated['admission_number']);
-
-        if (! $student) {
-            return response()->json(['found' => false], 404);
-        }
+        $students = Student::forSchool($school)
+            ->publicSearch($validated['q'])
+            ->limit(self::STUDENT_SEARCH_LIMIT)
+            ->get(['id', 'full_name', 'class_name', 'admission_number']);
 
         return response()->json([
-            'found' => true,
-            'full_name' => $student->full_name,
-            'class_name' => $student->class_name,
+            'students' => $students->map(fn (Student $s) => [
+                'id' => $s->id,
+                'full_name' => $s->full_name,
+                'class_name' => $s->class_name,
+                'admission_number_masked' => $s->maskedAdmissionNumber(),
+            ])->values(),
         ]);
     }
 
@@ -129,7 +149,7 @@ class PaymentController extends Controller
             'subcategory_id' => 'required|integer',
             'category_id' => 'required|integer',
             'quantity' => 'required|integer|min:1|max:100',
-            'admission_number' => 'nullable|string|max:50',
+            'student_id' => 'nullable|integer',
             'academic_session_id' => 'nullable|integer',
             'academic_term_id' => 'nullable|integer',
         ]);
@@ -178,7 +198,9 @@ class PaymentController extends Controller
             return redirect($resBody['data']['authorization_url']);
         }
 
-        return back()->with('error', 'Unable to initialize payment.');
+        // Keep what the parent filled in (student, term, fee, email…) so a retry is
+        // one click. Nothing secret is in this form; _token is regenerated anyway.
+        return back()->withInput($request->except('_token'))->with('error', 'Unable to initialize payment.');
     }
 
     /**

@@ -156,16 +156,22 @@ download/print the QR code. The QR encodes only the public payment URL.
 http://localhost:8000/s/demo-academy/payment — no login required. This is the URL
 a school hands to parents.
 
-Enter a seeded admission number (e.g. `DA/2026/001`) — the page looks the student
-up **within this school only** and shows the name and class for confirmation.
+Start typing a seeded student's name (or admission number, e.g. `DA/2026/001`)
+in **Student Name** — after two characters the page suggests matching students
+**from this school only**, each with class and admission number so parents can
+tell similar names apart. Pick one: the admission number and class fill in
+read-only, and the choice is shown in a green "Selected student" card
+("Change" to pick again). The form submits only the student's id; the server
+re-resolves it within the school and snapshots the name/number/class from the
+database, never from the browser.
 Pick the session/term (defaults to the current term), a category and fee type,
 enter an email you can check, submit. A ~2.5% markup (`MARKUP_PERCENT`) is added
 on top of the fee to cover Paystack's cut; the breakdown is stored on the
 transaction alongside the student, session and term.
 
-Because Demo Academy has students, the admission number is required. A school
-with no roster yet gets the old form without it — nothing breaks for a school
-that has not uploaded students.
+Because Demo Academy has students, selecting one is required (the button stays
+disabled until you do). A school with no roster yet gets the old form without
+it — nothing breaks for a school that has not uploaded students.
 
 ## 5. Paystack test checkout
 

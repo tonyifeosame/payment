@@ -149,7 +149,7 @@
                     </div>
                     <div class="text-right flex-shrink-0">
                         <p class="font-bold">{{ $money($t->fee_amount ?? $t->receiptBreakdown()['fee_subtotal']) }}</p>
-                        <p class="text-xs text-slate-500">{{ ($t->paid_at ?? $t->created_at)?->format('d M, H:i') }}</p>
+                        <p class="text-xs text-slate-500">{{ ($t->paid_at ?? $t->created_at)?->timezone(\App\Services\SchoolDashboardService::reportingTimezone())->format('d M, H:i') }}</p>
                     </div>
                 </li>
             @empty

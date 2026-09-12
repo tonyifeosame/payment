@@ -35,6 +35,32 @@ class Student extends Model
         return mb_strtoupper(trim((string) $value));
     }
 
+    /**
+     * The admission number as shown on the PUBLIC payment page: only the last
+     * few characters, with separators kept for shape (masked characters become "*").
+     * Enough for a parent to tell two same-named students apart, not enough to
+     * harvest a roster. The full number is never sent to an unauthenticated page.
+     */
+    public function maskedAdmissionNumber(int $visible = 3): string
+    {
+        $number = (string) $this->admission_number;
+        $length = mb_strlen($number);
+        if ($length === 0) {
+            return '';
+        }
+        // Short numbers still hide something: never reveal more than half.
+        $visible = min($visible, max(1, intdiv($length, 2)));
+        $hideUntil = $length - $visible;
+
+        $out = '';
+        for ($i = 0; $i < $length; $i++) {
+            $ch = mb_substr($number, $i, 1);
+            $out .= ($i < $hideUntil && ctype_alnum($ch)) ? '*' : $ch;
+        }
+
+        return $out;
+    }
+
     public function setAdmissionNumberAttribute(?string $value): void
     {
         $this->attributes['admission_number'] = self::normalizeAdmissionNumber($value);
@@ -73,6 +99,29 @@ class Student extends Model
         }
 
         return self::forSchool($school)->where('admission_number', $normalized)->first();
+    }
+
+    /**
+     * Public payment-page search: name first, admission number second. Deliberately
+     * narrower than scopeSearch() — matching on class would let anyone list a
+     * whole class by typing "JSS", and guardian details are never searchable.
+     * Case-insensitive on every driver (Postgres LIKE is case-sensitive).
+     * Callers MUST already have scoped the query to one school.
+     */
+    public function scopePublicSearch(Builder $query, string $term): Builder
+    {
+        $term = trim($term);
+        $lower = mb_strtolower($term);
+
+        return $query
+            ->where(function (Builder $q) use ($lower, $term) {
+                $q->whereRaw('LOWER(full_name) LIKE ?', ['%'.$lower.'%'])
+                    ->orWhere('admission_number', 'like', '%'.self::normalizeAdmissionNumber($term).'%');
+            })
+            // Names that START with what was typed come first, then alphabetical.
+            ->orderByRaw('CASE WHEN LOWER(full_name) LIKE ? THEN 0 ELSE 1 END', [$lower.'%'])
+            ->orderBy('full_name')
+            ->orderBy('class_name');
     }
 
     /** Search by name, admission number or class, always within the given query's school. */
