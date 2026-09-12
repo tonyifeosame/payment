@@ -31,7 +31,7 @@ class SchoolAuthController extends Controller
 
         session(['school_admin_id' => $school->id]);
 
-        return redirect()->route('school.categories.index', ['school' => $school])->with('success', 'Logged in successfully.');
+        return redirect()->route('school.dashboard', ['school' => $school])->with('success', 'Logged in successfully.');
     }
 
     public function logout(Request $request)

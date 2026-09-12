@@ -66,11 +66,15 @@
             <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                 <div class="text-center md:text-left">
                     <div class="flex items-center justify-center md:justify-start gap-3 mb-2">
+                        @if($school->logoUrl())
+                            <img src="{{ $school->logoUrl() }}" alt="{{ $school->name }} logo" class="w-14 h-14 rounded-xl object-contain bg-white shadow-lg border border-slate-200">
+                        @else
                         <div class="w-12 h-12 bg-gradient-to-br from-blue-600 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
                             <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
                             </svg>
                         </div>
+                        @endif
                         <h1 class="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight">
                             @isset($school)
                                 <span class="bg-gradient-to-r from-blue-600 via-purple-600 to-teal-600 bg-clip-text text-transparent">{{ $school->name }}</span>
@@ -81,8 +85,17 @@
                     </div>
                     <p class="text-slate-600 font-medium flex items-center justify-center md:justify-start gap-2">
                         <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-                        Secure Payment Gateway
+                        Official school fees payment page
                     </p>
+                    @if($school->address || $school->phone || $school->email)
+                        <p class="text-slate-500 text-sm mt-1">
+                            {{ $school->address }}
+                            @if($school->address && ($school->phone || $school->email)) · @endif
+                            {{ $school->phone }}
+                            @if($school->phone && $school->email) · @endif
+                            {{ $school->email }}
+                        </p>
+                    @endif
                 </div>
                 <div class="flex items-center justify-center gap-3 text-sm">
                     <span class="px-4 py-2 bg-gradient-to-r from-blue-100 to-purple-100 text-blue-900 rounded-full font-semibold flex items-center gap-2">
@@ -254,6 +267,69 @@
 
                         
 
+                        <!-- Student & term -->
+                        @if($requiresStudent || $sessionsForJs->isNotEmpty())
+                        <div class="rounded-xl border-2 border-indigo-100 bg-indigo-50/40 p-5 space-y-5">
+                            <h4 class="font-bold text-slate-800">Who and what are you paying for?</h4>
+                            @if($sessionsForJs->isNotEmpty())
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                <div class="group">
+                                    <label for="academic_session_id" class="block text-sm font-bold text-slate-700 mb-2 uppercase tracking-wide">Academic Session</label>
+                                    <select name="academic_session_id" id="academic_session_id" class="w-full px-4 py-3.5 border-2 border-slate-200 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all duration-200 font-medium bg-white" required></select>
+                                    @error('academic_session_id') <span class="text-red-600 text-sm mt-1">{{ $message }}</span> @enderror
+                                </div>
+                                <div class="group">
+                                    <label for="academic_term_id" class="block text-sm font-bold text-slate-700 mb-2 uppercase tracking-wide">Term</label>
+                                    <select name="academic_term_id" id="academic_term_id" class="w-full px-4 py-3.5 border-2 border-slate-200 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all duration-200 font-medium bg-white" required></select>
+                                    @error('academic_term_id') <span class="text-red-600 text-sm mt-1">{{ $message }}</span> @enderror
+                                </div>
+                            </div>
+                            @endif
+                            @if($requiresStudent)
+                            <div class="space-y-4" id="studentPicker" data-old-student='@json($oldStudent)'>
+                                {{-- Only student_id is submitted. The server re-resolves it within this school;
+                                     the name/class/masked admission number shown here are for the parent, never for the server. --}}
+                                <input type="hidden" id="student_id" name="student_id" value="{{ $oldStudent['id'] ?? '' }}">
+
+                                <div class="group relative" id="studentSearchWrap">
+                                    <label for="student_query" class="block text-sm font-bold text-slate-700 mb-2 uppercase tracking-wide">Student Name</label>
+                                    <input type="text" id="student_query" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="search"
+                                           role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="studentSuggestions" aria-haspopup="listbox"
+                                           class="w-full px-4 py-3.5 border-2 border-slate-200 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all duration-200 font-medium"
+                                           placeholder="Start typing the student's name">
+                                    <p class="mt-1.5 text-xs text-slate-500">Type at least 2 letters of the name. You can also type the admission number.</p>
+                                    <ul id="studentSuggestions" role="listbox" aria-label="Matching students" hidden
+                                        class="absolute left-0 right-0 z-30 mt-1 max-h-72 overflow-y-auto rounded-xl border-2 border-slate-200 bg-white shadow-xl divide-y divide-slate-100"></ul>
+                                    <p id="studentSearchStatus" class="mt-1.5 text-sm text-slate-600" aria-live="polite"></p>
+                                    @error('student_id') <span class="text-red-600 text-sm mt-1 block">{{ $message }}</span> @enderror
+                                </div>
+
+                                <div id="studentSelected" hidden class="rounded-xl border-2 border-green-300 bg-green-50 p-4">
+                                    <div class="flex items-start justify-between gap-3">
+                                        <div class="min-w-0">
+                                            <p class="text-xs font-bold text-green-700 uppercase tracking-wide">Selected student</p>
+                                            <p id="selectedStudentName" class="mt-0.5 text-lg font-extrabold text-slate-900 break-words"></p>
+                                        </div>
+                                        <button type="button" id="studentChange" class="shrink-0 px-3 py-2 text-sm font-semibold text-blue-700 bg-white border border-blue-200 rounded-lg hover:bg-blue-50">Change</button>
+                                    </div>
+                                    <div class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <div>
+                                            <label for="student_admission_display" class="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1">Admission Number</label>
+                                            <input type="text" id="student_admission_display" readonly tabindex="-1" aria-readonly="true"
+                                                   class="w-full px-3 py-2.5 rounded-lg border border-green-200 bg-white text-slate-800 font-mono font-medium">
+                                        </div>
+                                        <div>
+                                            <label for="student_class_display" class="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1">Class</label>
+                                            <input type="text" id="student_class_display" readonly tabindex="-1" aria-readonly="true"
+                                                   class="w-full px-3 py-2.5 rounded-lg border border-green-200 bg-white text-slate-800 font-medium">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            @endif
+                        </div>
+                        @endif
+
                         <!-- Fee Selection -->
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
                             <div class="group">
@@ -348,6 +424,18 @@
                 <div class="bg-white rounded-2xl shadow-lg border border-slate-200 p-6 sticky top-24">
                     <h3 class="text-lg font-extrabold text-slate-900">Order Summary</h3>
                     <div class="mt-4 space-y-3 text-sm">
+                        @if($requiresStudent)
+                        <div class="flex items-center justify-between gap-3">
+                            <span class="text-slate-600">Student</span>
+                            <span id="summaryStudent" class="font-semibold text-slate-900 text-right">—</span>
+                        </div>
+                        @endif
+                        @if($sessionsForJs->isNotEmpty())
+                        <div class="flex items-center justify-between gap-3">
+                            <span class="text-slate-600">Term</span>
+                            <span id="summaryTerm" class="font-semibold text-slate-900 text-right">—</span>
+                        </div>
+                        @endif
                         <div class="flex items-center justify-between">
                             <span class="text-slate-600">Category</span>
                             <span id="summaryCategory" class="font-semibold text-slate-900">—</span>
@@ -378,9 +466,14 @@
             </aside>
         </div>
 
-        <!-- Debug Panel (optional for support) -->
-        
     </main>
+
+    <footer class="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-10 text-center text-sm text-slate-500">
+        <p class="font-semibold text-slate-700">{{ $school->name }}</p>
+        @if($school->address)<p>{{ $school->address }}</p>@endif
+        @if($school->phone || $school->email)<p>{{ $school->phone }} {{ $school->phone && $school->email ? '·' : '' }} {{ $school->email }}</p>@endif
+        <p class="mt-2 text-xs">Payments are processed securely by Paystack. A receipt is emailed after every successful payment.</p>
+    </footer>
 
     <script>
     // Cache DOM elements
@@ -412,6 +505,225 @@
 
     // Pre-sanitized structure from controller for reliability
     const categories = {!! json_encode($categoriesForJs) !!} || [];
+    const sessions = {!! json_encode($sessionsForJs) !!} || [];
+    const currentTermId = {!! json_encode($currentTerm?->id) !!};
+    const currentSessionId = {!! json_encode($currentTerm?->academic_session_id) !!};
+    const oldSessionId = {!! json_encode(old('academic_session_id')) !!};
+    const oldTermId = {!! json_encode(old('academic_term_id')) !!};
+    const sessionSelect = document.getElementById('academic_session_id');
+    const termSelect = document.getElementById('academic_term_id');
+    const sTerm = document.getElementById('summaryTerm');
+    const sStudent = document.getElementById('summaryStudent');
+    const studentSearchUrl = {!! json_encode(route('school.payment.student-search', ['school' => $school->slug])) !!};
+    const studentSearchLimit = {{ \App\Http\Controllers\PaymentController::STUDENT_SEARCH_LIMIT }};
+
+    function selectedTermId() { return termSelect && termSelect.value ? Number(termSelect.value) : null; }
+
+    function populateSessions() {
+        if (!sessionSelect) return;
+        sessionSelect.innerHTML = '';
+        sessions.forEach(sess => {
+            const o = document.createElement('option');
+            o.value = sess.id; o.textContent = sess.name;
+            sessionSelect.appendChild(o);
+        });
+        const want = oldSessionId || currentSessionId;
+        if (want && sessions.some(x => String(x.id) === String(want))) sessionSelect.value = String(want);
+        populateTerms();
+    }
+
+    function populateTerms() {
+        if (!termSelect) return;
+        termSelect.innerHTML = '';
+        const sess = sessions.find(x => String(x.id) === String(sessionSelect.value));
+        (sess ? sess.terms : []).forEach(t => {
+            const o = document.createElement('option');
+            o.value = t.id; o.textContent = t.name;
+            termSelect.appendChild(o);
+        });
+        const want = oldTermId || currentTermId;
+        if (want && sess && sess.terms.some(t => String(t.id) === String(want))) termSelect.value = String(want);
+        if (sTerm) { const o = termSelect.options[termSelect.selectedIndex]; sTerm.textContent = o && sess ? `${o.textContent}, ${sess.name}` : '—'; }
+        populateSubcategories();
+    }
+
+    if (sessionSelect) sessionSelect.addEventListener('change', populateTerms);
+    if (termSelect) termSelect.addEventListener('change', function () {
+        const sess = sessions.find(x => String(x.id) === String(sessionSelect.value));
+        const o = termSelect.options[termSelect.selectedIndex];
+        if (sTerm) sTerm.textContent = o && sess ? `${o.textContent}, ${sess.name}` : '—';
+        populateSubcategories();
+    });
+
+    // Student picker. The parent searches by name (or admission number); the
+    // server answers with THIS school's matches only, and the form submits just
+    // the chosen id. The server re-resolves that id within the school on submit,
+    // so the admission number and class shown here are display-only.
+    (function () {
+        const picker = document.getElementById('studentPicker');
+        if (!picker) return;
+
+        const idInput = document.getElementById('student_id');
+        const queryInput = document.getElementById('student_query');
+        const list = document.getElementById('studentSuggestions');
+        const status = document.getElementById('studentSearchStatus');
+        const selectedBox = document.getElementById('studentSelected');
+        const selectedName = document.getElementById('selectedStudentName');
+        const admissionDisplay = document.getElementById('student_admission_display');
+        const classDisplay = document.getElementById('student_class_display');
+        const changeBtn = document.getElementById('studentChange');
+        const searchWrap = document.getElementById('studentSearchWrap');
+        const form = document.getElementById('paymentForm');
+
+        const MIN_CHARS = 2, DEBOUNCE_MS = 300;
+        let timer = null, controller = null, results = [], activeIndex = -1, lastQuery = '';
+
+        function setStatus(text, tone) {
+            status.textContent = text || '';
+            status.className = 'mt-1.5 text-sm ' + (tone === 'error' ? 'text-red-600' : 'text-slate-600');
+        }
+
+        function closeList() {
+            list.hidden = true; list.innerHTML = ''; activeIndex = -1;
+            queryInput.setAttribute('aria-expanded', 'false');
+            queryInput.removeAttribute('aria-activedescendant');
+        }
+
+        function updateSubmitState() {
+            const ok = !!idInput.value;
+            if (submitBtn) {
+                submitBtn.disabled = !ok;
+                submitBtn.classList.toggle('opacity-60', !ok);
+                submitBtn.classList.toggle('cursor-not-allowed', !ok);
+                submitBtn.title = ok ? '' : 'Select the student first';
+            }
+        }
+
+        function clearSelection(keepQuery) {
+            idInput.value = '';
+            selectedBox.hidden = true;
+            searchWrap.hidden = false;
+            admissionDisplay.value = ''; classDisplay.value = '';
+            if (!keepQuery) queryInput.value = '';
+            if (sStudent) sStudent.textContent = '—';
+            updateSubmitState();
+        }
+
+        function select(student) {
+            idInput.value = String(student.id);
+            selectedName.textContent = student.full_name;
+            admissionDisplay.value = student.admission_number_masked || '';
+            classDisplay.value = student.class_name || '';
+            selectedBox.hidden = false;
+            searchWrap.hidden = true;           // one clear "this is who you are paying for"
+            queryInput.value = student.full_name;
+            lastQuery = student.full_name;
+            if (sStudent) sStudent.textContent = student.full_name + (student.class_name ? ' (' + student.class_name + ')' : '');
+            closeList(); setStatus('');
+            updateSubmitState();
+        }
+
+        function render() {
+            list.innerHTML = '';
+            if (results.length === 0) { closeList(); return; }
+            results.forEach((st, i) => {
+                const li = document.createElement('li');
+                li.id = 'studentOption' + i; li.setAttribute('role', 'option'); li.dataset.index = String(i);
+                li.className = 'px-4 py-3 cursor-pointer hover:bg-blue-50 select-none';
+                const name = document.createElement('div'); name.className = 'font-bold text-slate-900'; name.textContent = st.full_name;
+                const meta = document.createElement('div'); meta.className = 'text-sm text-slate-600';
+                meta.textContent = (st.class_name || '') + (st.admission_number_masked ? ' \u00b7 ' + st.admission_number_masked : '');
+                li.appendChild(name); li.appendChild(meta);
+                // mousedown/touch so the choice lands before the input blurs and the list closes
+                li.addEventListener('mousedown', function (e) { e.preventDefault(); select(st); });
+                li.addEventListener('touchend', function (e) { e.preventDefault(); select(st); });
+                list.appendChild(li);
+            });
+            list.hidden = false;
+            queryInput.setAttribute('aria-expanded', 'true');
+            setActive(-1);
+        }
+
+        function setActive(i) {
+            const items = list.querySelectorAll('[role="option"]');
+            items.forEach(el => { el.classList.remove('bg-blue-100'); el.removeAttribute('aria-selected'); });
+            activeIndex = i;
+            if (i >= 0 && items[i]) {
+                items[i].classList.add('bg-blue-100'); items[i].setAttribute('aria-selected', 'true');
+                queryInput.setAttribute('aria-activedescendant', items[i].id);
+                items[i].scrollIntoView({ block: 'nearest' });
+            } else {
+                queryInput.removeAttribute('aria-activedescendant');
+            }
+        }
+
+        async function search(q) {
+            if (controller) controller.abort();
+            controller = new AbortController();
+            setStatus('Searching\u2026');
+            try {
+                const r = await fetch(studentSearchUrl + '?q=' + encodeURIComponent(q), { signal: controller.signal, headers: { 'Accept': 'application/json' } });
+                const d = await r.json().catch(() => ({}));
+                if (q !== queryInput.value.trim()) return; // a newer keystroke owns the UI now
+                if (r.status === 429) { results = []; render(); setStatus('Too many searches. Please wait a moment and try again.', 'error'); return; }
+                if (!r.ok) { results = []; render(); setStatus('Could not search right now. Please try again.', 'error'); return; }
+                results = Array.isArray(d.students) ? d.students : [];
+                render();
+                if (results.length === 0) {
+                    setStatus('No student matching \u201c' + q + '\u201d was found at this school. Check the spelling, or try the admission number.', 'error');
+                } else if (results.length >= studentSearchLimit) {
+                    setStatus('Showing the first ' + studentSearchLimit + ' matches \u2014 keep typing to narrow it down.');
+                } else {
+                    setStatus(results.length + (results.length === 1 ? ' match' : ' matches') + ' \u2014 pick the right student below.');
+                }
+            } catch (e) {
+                if (e.name !== 'AbortError') { results = []; render(); setStatus('Could not search right now. Please try again.', 'error'); }
+            }
+        }
+
+        queryInput.addEventListener('input', function () {
+            const q = queryInput.value.trim();
+            // Any edit after a selection un-selects: the id must always match what is shown.
+            if (idInput.value && q !== lastQuery) clearSelection(true);
+            clearTimeout(timer);
+            if (q.length < MIN_CHARS) { if (controller) controller.abort(); results = []; render(); setStatus(q.length ? 'Keep typing\u2026' : ''); return; }
+            timer = setTimeout(() => search(q), DEBOUNCE_MS);
+        });
+
+        queryInput.addEventListener('keydown', function (e) {
+            if (list.hidden) { if (e.key === 'Enter') e.preventDefault(); return; }
+            if (e.key === 'ArrowDown') { e.preventDefault(); setActive(Math.min(activeIndex + 1, results.length - 1)); }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(Math.max(activeIndex - 1, -1)); }
+            else if (e.key === 'Enter') { e.preventDefault(); if (activeIndex >= 0) select(results[activeIndex]); else if (results.length === 1) select(results[0]); }
+            else if (e.key === 'Escape') { closeList(); }
+        });
+        queryInput.addEventListener('blur', function () { setTimeout(closeList, 150); });
+        queryInput.addEventListener('focus', function () { if (results.length && !idInput.value) render(); });
+
+        changeBtn.addEventListener('click', function () {
+            clearTimeout(timer);
+            if (controller) controller.abort();
+            clearSelection(false);
+            results = []; lastQuery = '';
+            closeList(); setStatus('');
+            queryInput.focus();
+        });
+
+        // The server enforces this too; this just stops a pointless round trip.
+        if (form) form.addEventListener('submit', function (e) {
+            if (!idInput.value) {
+                e.preventDefault(); e.stopImmediatePropagation();
+                searchWrap.hidden = false;
+                setStatus('Please search for and select the student you are paying for.', 'error');
+                queryInput.focus();
+            }
+        }, true);
+
+        // Re-select after a failed submit (the server only echoes ids that belong to this school).
+        let old = null;
+        try { old = JSON.parse(picker.dataset.oldStudent || 'null'); } catch (e) { old = null; }
+        if (old && old.id) select(old); else clearSelection(false);
+    })();
 
     // Listeners
     catSelect.addEventListener('change', function () {
@@ -483,8 +795,10 @@
         if (!catId) { subSelect.disabled = true; unitPriceP.textContent = 'Unit Price: ₦0'; return; }
 
         const cat = (categories || []).find(c => Number(c.id) === catId);
-        const subs = (cat && cat.subcategories) ? cat.subcategories : [];
-        if (subs.length === 0) { subSelect.disabled = true; unitPriceP.textContent = 'Unit Price: ₦0'; return; }
+        // Only fees payable in the selected term: general fees (no term) or that term's fees.
+        const termId = selectedTermId();
+        const subs = ((cat && cat.subcategories) ? cat.subcategories : []).filter(s => s.term_id === null || s.term_id === undefined || termId === null || Number(s.term_id) === termId);
+        if (subs.length === 0) { subSelect.disabled = true; unitPriceP.textContent = 'Unit Price: ₦0'; subError.textContent = 'No fees in this category for the selected term.'; return; }
 
         subs.forEach(sub => {
             const opt = document.createElement('option');
@@ -509,12 +823,14 @@
         const selectedCatOption = catSelect.options[catSelect.selectedIndex];
         const catNameText = (selectedCatOption ? selectedCatOption.textContent : '').toLowerCase();
         const isSchoolFees = catNameText.includes('school fee');
+        // readOnly, not disabled: a disabled input is dropped from the POST and the
+        // server (rightly) requires quantity. It forces 1 for school fees anyway.
         if (isSchoolFees) {
             qtyInput.value = 1;
-            qtyInput.setAttribute('disabled', 'disabled');
+            qtyInput.readOnly = true;
             qtyContainer.classList.add('hidden');
         } else {
-            qtyInput.removeAttribute('disabled');
+            qtyInput.readOnly = false;
             qtyContainer.classList.remove('hidden');
         }
     }
@@ -526,6 +842,7 @@
         } else if ((categories || []).length > 0) {
             catSelect.value = String(categories[0].id);
         }
+        populateSessions();
         populateSubcategories();
         updateTotal();
     } catch (e) {

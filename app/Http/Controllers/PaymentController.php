@@ -4,18 +4,21 @@ namespace App\Http\Controllers;
 
 use App\Models\Category;
 use App\Models\School;
-use App\Models\Subcategory;
+use App\Models\Student;
 use App\Models\Transaction;
+use App\Services\AcademicPeriodService;
+use App\Services\PaymentCheckoutService;
 use App\Services\PaymentSettlementService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Response;
 use Illuminate\Support\Facades\URL;
-use Illuminate\Support\Facades\View;
-use Illuminate\Support\Str;
 
 class PaymentController extends Controller
 {
+    /** Suggestions per search: enough to disambiguate, not enough to list a roster. */
+    public const STUDENT_SEARCH_LIMIT = 10;
+
     /**
      * Admin entry point for the payment page.
      *
@@ -51,6 +54,9 @@ class PaymentController extends Controller
             ->where('school_id', $school->id)
             ->get();
 
+        // Only ids, names, prices and the fee's term reach the browser. The term id
+        // lets the page hide fees that are not payable in the chosen term; the
+        // server re-checks the same rule on submit.
         $categoriesForJs = $categories->map(function ($c) {
             return [
                 'id' => $c->id,
@@ -60,73 +66,97 @@ class PaymentController extends Controller
                         'id' => $s->id,
                         'name' => $s->name,
                         'price' => (float) $s->price,
+                        'term_id' => $s->academic_term_id,
                     ];
                 })->values(),
             ];
         })->values();
 
-        $markupPercent = (float) config('fees.markup_percent', 2.5);
+        $terms = app(AcademicPeriodService::class)->termsForSchool($school);
+        $sessionsForJs = $terms->groupBy('academic_session_id')->map(function ($group) {
+            $session = $group->first()->session;
 
-        return view('payment.index', compact('categories', 'categoriesForJs', 'school', 'markupPercent'));
+            return [
+                'id' => $session->id,
+                'name' => $session->name,
+                'terms' => $group->map(fn ($t) => ['id' => $t->id, 'name' => $t->name])->values(),
+            ];
+        })->values();
+
+        $markupPercent = (float) config('fees.markup_percent', 2.5);
+        $requiresStudent = $school->requiresStudentOnPayment();
+        $currentTerm = $school->currentTerm;
+
+        // After a failed submit, re-select the student the parent had picked — but
+        // only if that id really is one of this school's students.
+        $oldStudent = null;
+        if ($requiresStudent && is_numeric(old('student_id'))) {
+            $s = Student::forSchool($school)->find((int) old('student_id'));
+            if ($s) {
+                $oldStudent = ['id' => $s->id, 'full_name' => $s->full_name, 'class_name' => $s->class_name, 'admission_number_masked' => $s->maskedAdmissionNumber()];
+            }
+        }
+
+        return view('payment.index', compact(
+            'categories', 'categoriesForJs', 'school', 'markupPercent',
+            'sessionsForJs', 'requiresStudent', 'currentTerm', 'oldStudent'
+        ));
+    }
+
+    /**
+     * Public, throttled autocomplete behind the payment page's "Student" field.
+     *
+     * A convenience for the browser only: it lists matches WITHIN the bound school
+     * (name first, admission number second) and returns just what a parent needs to
+     * pick the right child — name, class, a MASKED admission number, and the id
+     * the form will send back. The id is then re-checked against the same school
+     * on submit by PaymentCheckoutService, so nothing here is trusted later. The
+     * full admission number and guardian details never leave the server here.
+     */
+    public function studentSearch(Request $request, School $school)
+    {
+        $validated = $request->validate([
+            'q' => 'required|string|min:2|max:100',
+        ]);
+
+        $students = Student::forSchool($school)
+            ->publicSearch($validated['q'])
+            ->limit(self::STUDENT_SEARCH_LIMIT)
+            ->get(['id', 'full_name', 'class_name', 'admission_number']);
+
+        return response()->json([
+            'students' => $students->map(fn (Student $s) => [
+                'id' => $s->id,
+                'full_name' => $s->full_name,
+                'class_name' => $s->class_name,
+                'admission_number_masked' => $s->maskedAdmissionNumber(),
+            ])->values(),
+        ]);
     }
 
     /**
      * Tenant-aware payment initialization for a specific school.
+     *
+     * Validation here is shape-only. Ownership (school, category, fee, term,
+     * student) and the amount are decided by PaymentCheckoutService from trusted
+     * rows; nothing about money or identity is taken from the request.
      */
-    public function initializeSchool(Request $request, School $school)
+    public function initializeSchool(Request $request, School $school, PaymentCheckoutService $checkout)
     {
         $validated = $request->validate([
             'email' => 'required|email',
-            'subcategory_id' => 'required|exists:subcategories,id',
-            'category_id' => 'required|exists:categories,id',
-            'quantity' => 'required|integer|min:1',
+            'name' => 'nullable|string|max:255',
+            'subcategory_id' => 'required|integer',
+            'category_id' => 'required|integer',
+            'quantity' => 'required|integer|min:1|max:100',
+            'student_id' => 'nullable|integer',
+            'academic_session_id' => 'nullable|integer',
+            'academic_term_id' => 'nullable|integer',
         ]);
 
-        // Load models scoped to school
-        $subcategory = Subcategory::where('school_id', $school->id)->findOrFail($validated['subcategory_id']);
-        $category = Category::where('school_id', $school->id)->findOrFail($validated['category_id']);
-
-        // Ensure the selected subcategory belongs to the selected category
-        if ((int) $subcategory->category_id !== (int) $category->id) {
-            return back()->withInput()->withErrors([
-                'subcategory_id' => 'Selected fee type does not belong to the chosen category.',
-            ]);
-        }
-
-        // Enforce quantity for school fees
-        $catNameLower = strtolower($category->name);
-        if (str_contains($catNameLower, 'school fee')) {
-            $validated['quantity'] = 1;
-        }
-
-        $baseAmount = (float) $subcategory->price * (int) $validated['quantity'];
-        $markupPercent = (float) config('fees.markup_percent', 2.5);
-        $markupAmount = round($baseAmount * ($markupPercent / 100), 2);
-        $amount = $baseAmount + $markupAmount;
-
-        // Generate and persist a unique reference before insert
-        $generatedRef = Str::uuid()->toString();
-
-        $transaction = Transaction::create([
-            'school_id' => $school->id,
-            'category_id' => $category->id,
-            'subcategory_id' => $subcategory->id,
-            'category_name' => $category->name,
-            'subcategory_name' => $subcategory->name,
-            'reference' => $generatedRef,
-            'amount' => $amount,
-            'status' => 'pending',
-            'payment_method' => 'paystack',
-            'email' => $validated['email'],
-            'name' => $request->name ?? null,
-            'meta_data' => [
-                'quantity' => (int) $validated['quantity'],
-                'base_amount' => $baseAmount,
-                'markup_percent' => $markupPercent,
-                'markup_amount' => $markupAmount,
-                'gross_amount' => $amount,
-            ],
-        ]);
+        $transaction = $checkout->createPendingTransaction($school, $validated);
+        $amount = (float) $transaction->amount;
+        $generatedRef = $transaction->reference;
 
         $paystack = [
             'amount' => (int) round($amount * 100),
@@ -135,10 +165,12 @@ class PaymentController extends Controller
             'callback_url' => route('payment.callback'),
             'metadata' => [
                 'transaction_id' => $transaction->id,
-                'quantity' => $validated['quantity'],
+                'quantity' => $transaction->decodedMetaData()['quantity'] ?? 1,
                 'school_id' => $school->id,
                 'school_slug' => $school->slug,
                 'school_name' => $school->name,
+                'admission_number' => $transaction->student_admission_number,
+                'term' => $transaction->term_name ? $transaction->term_name.' '.$transaction->session_name : null,
             ],
         ];
 
@@ -166,7 +198,9 @@ class PaymentController extends Controller
             return redirect($resBody['data']['authorization_url']);
         }
 
-        return back()->with('error', 'Unable to initialize payment.');
+        // Keep what the parent filled in (student, term, fee, email…) so a retry is
+        // one click. Nothing secret is in this form; _token is regenerated anyway.
+        return back()->withInput($request->except('_token'))->with('error', 'Unable to initialize payment.');
     }
 
     /**
@@ -285,6 +319,8 @@ class PaymentController extends Controller
     {
         $this->authorizeReceipt($request, $transaction);
 
+        $transaction->loadMissing('school', 'payout');
+
         return view('payment.receipt', [
             'transaction' => $transaction,
             'downloadUrl' => $this->signedDownloadUrl($transaction),
@@ -292,24 +328,26 @@ class PaymentController extends Controller
     }
 
     /**
-     * Download the receipt as an attachment (HTML fallback).
-     * If a PDF generator is installed, you can switch to PDF here.
+     * Download the receipt as a branded PDF.
+     *
+     * Same authorization as the on-screen receipt. The PDF template is a separate,
+     * plain-CSS view (Dompdf cannot run the Tailwind CDN) and embeds the school's
+     * logo as a data URI so rendering never makes an HTTP request.
      */
     public function downloadReceipt(Request $request, Transaction $transaction)
     {
         $this->authorizeReceipt($request, $transaction);
 
-        $html = View::make('payment.receipt', [
+        $transaction->loadMissing('school', 'payout');
+
+        $pdf = Pdf::loadView('payment.receipt_pdf', [
             'transaction' => $transaction,
-            'download' => true,
-            'downloadUrl' => $this->signedDownloadUrl($transaction),
-        ])->render();
+            'school' => $transaction->school,
+            'logoDataUri' => $transaction->school?->logoDataUri(),
+        ])->setPaper('a4');
 
-        $filename = 'receipt-'.($transaction->id).'.html';
+        $filename = 'receipt-'.($transaction->reference ?: $transaction->id).'.pdf';
 
-        return Response::make($html, 200, [
-            'Content-Type' => 'text/html; charset=UTF-8',
-            'Content-Disposition' => 'attachment; filename="'.$filename.'"',
-        ]);
+        return $pdf->download($filename);
     }
 }

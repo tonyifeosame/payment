@@ -28,7 +28,7 @@ class CategoryController extends Controller
      */
     public function indexSchool(School $school)
     {
-        $categories = Category::where('school_id', $school->id)->get();
+        $categories = Category::where('school_id', $school->id)->withCount('subcategories')->get();
 
         return view('categories.index', compact('categories', 'school'));
     }

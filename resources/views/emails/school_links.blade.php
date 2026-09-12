@@ -11,6 +11,9 @@
     </p>
 
     <ul>
+        @isset($links['dashboard'])
+        <li><strong>Dashboard:</strong> <a href="{{ $links['dashboard'] }}">{{ $links['dashboard'] }}</a></li>
+        @endisset
         <li><strong>Payment Page:</strong> <a href="{{ $links['payment'] }}">{{ $links['payment'] }}</a></li>
         <li><strong>Categories:</strong> <a href="{{ $links['categories'] }}">{{ $links['categories'] }}</a></li>
         <li><strong>Subcategories:</strong> <a href="{{ $links['subcategories'] }}">{{ $links['subcategories'] }}</a></li>
