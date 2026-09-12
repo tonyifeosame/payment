@@ -1,10 +1,16 @@
 <?php
 
+use App\Http\Controllers\AcademicSessionController;
 use App\Http\Controllers\CategoryController;
+use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\PaymentController;
+use App\Http\Controllers\PayoutController;
 use App\Http\Controllers\PaystackController;
 use App\Http\Controllers\RegistrationController;
 use App\Http\Controllers\SchoolAuthController;
+use App\Http\Controllers\SchoolSettingsController;
+use App\Http\Controllers\ShareController;
+use App\Http\Controllers\StudentController;
 use App\Http\Controllers\SubcategoryController;
 use App\Http\Controllers\TransactionController;
 use App\Http\Middleware\EnsureSchoolAdmin;
@@ -98,6 +104,13 @@ Route::post('admin/reset-password', [SchoolAuthController::class, 'reset'])->nam
 Route::prefix('s/{school:slug}')->group(function () {
     Route::get('/payment', [PaymentController::class, 'indexSchool'])->name('school.payment.index');
     Route::post('/payment/initialize', [PaymentController::class, 'initializeSchool'])->name('school.payment.initialize');
+    // Public student lookup for the payment form. Throttled per IP because it is
+    // unauthenticated and answers "does this admission number exist at this school".
+    Route::get('/payment/student-lookup', [PaymentController::class, 'studentLookup'])
+        ->middleware('throttle:30,1')
+        ->name('school.payment.student-lookup');
+    // The school's logo: public, because it appears on the parent-facing page.
+    Route::get('/logo', [SchoolSettingsController::class, 'logo'])->name('school.logo');
     // callback remains global (Paystack redirects there)
 
     // Tenant-aware management pages (protected).
@@ -105,6 +118,35 @@ Route::prefix('s/{school:slug}')->group(function () {
     // relationship, so a record belonging to another school 404s during route binding —
     // before any controller code runs. Controllers additionally assert ownership.
     Route::middleware(EnsureSchoolAdmin::class)->scopeBindings()->group(function () {
+        Route::get('/dashboard', [DashboardController::class, 'index'])->name('school.dashboard');
+
+        // Roster. {student} is scope-bound through School::students().
+        Route::get('/students', [StudentController::class, 'index'])->name('school.students.index');
+        Route::get('/students/create', [StudentController::class, 'create'])->name('school.students.create');
+        Route::post('/students', [StudentController::class, 'store'])->name('school.students.store');
+        Route::get('/students/{student}', [StudentController::class, 'show'])->name('school.students.show');
+        Route::get('/students/{student}/edit', [StudentController::class, 'edit'])->name('school.students.edit');
+        Route::put('/students/{student}', [StudentController::class, 'update'])->name('school.students.update');
+
+        // Academic sessions and terms. {academicTerm} is scope-bound through School::academicTerms().
+        Route::get('/sessions', [AcademicSessionController::class, 'index'])->name('school.sessions.index');
+        Route::post('/sessions', [AcademicSessionController::class, 'store'])->name('school.sessions.store');
+        Route::post('/terms/{academicTerm}/current', [AcademicSessionController::class, 'setCurrent'])->name('school.terms.current');
+
+        // Money out: read-only ledger.
+        Route::get('/payouts', [PayoutController::class, 'indexSchool'])->name('school.payouts.index');
+
+        // Profile, branding and payout account.
+        Route::get('/settings', [SchoolSettingsController::class, 'edit'])->name('school.settings.edit');
+        Route::put('/settings', [SchoolSettingsController::class, 'update'])->name('school.settings.update');
+        Route::put('/settings/bank', [SchoolSettingsController::class, 'updateBank'])
+            ->middleware('throttle:5,60') // password guesses against the bank form
+            ->name('school.settings.bank');
+
+        // Sharing the public payment page.
+        Route::get('/share', [ShareController::class, 'index'])->name('school.share.index');
+        Route::get('/share/qr.svg', [ShareController::class, 'qr'])->name('school.share.qr');
+
         Route::get('/categories', [CategoryController::class, 'indexSchool'])->name('school.categories.index');
         Route::post('/categories', [CategoryController::class, 'storeSchool'])->name('school.categories.store');
 
@@ -113,6 +155,7 @@ Route::prefix('s/{school:slug}')->group(function () {
         Route::post('/subcategories', [SubcategoryController::class, 'storeSchool'])->name('school.subcategories.store');
 
         Route::get('/transactions', [TransactionController::class, 'indexSchool'])->name('school.transactions.index');
+        Route::get('/transactions/export', [TransactionController::class, 'exportSchool'])->name('school.transactions.export');
 
         Route::get('/categories/{category}/edit', [CategoryController::class, 'editSchool'])->name('school.categories.edit');
         Route::put('/categories/{category}', [CategoryController::class, 'updateSchool'])->name('school.categories.update');

@@ -18,10 +18,18 @@
 
 Thank you for your payment. Here are your transaction details:
 
-**Receipt Date:** {{ $transaction->created_at?->format('M d, Y') }} {{ $transaction->created_at?->format('h:i A') }}
+**Receipt Date:** {{ ($transaction->paid_at ?? $transaction->created_at)?->format('M d, Y') }} {{ ($transaction->paid_at ?? $transaction->created_at)?->format('h:i A') }}
 
 ---
 
+@if($transaction->hasStudent() || $transaction->term_name)
+### Student
+- **Student Name:** {{ $transaction->student_name ?? '—' }}
+- **Admission Number:** {{ $transaction->student_admission_number ?? '—' }}
+- **Class:** {{ $transaction->student_class ?? '—' }}
+- **Session / Term:** {{ $transaction->session_name ?? '—' }}@if($transaction->term_name), {{ $transaction->term_name }}@endif
+
+@endif
 ### Payer Information
 - **Full Name:** {{ $transaction->name ?? '—' }}
 - **Email Address:** {{ $transaction->email ?? '—' }}
@@ -61,6 +69,14 @@ View / Download Receipt
 ---
 
 > This receipt serves as official proof of payment for the transaction detailed above. Please keep this for your records. For any queries, contact the school administration with your reference number.
+@if($transaction->school?->receipt_footer)
+
+> {{ $transaction->school->receipt_footer }}
+@endif
+@if($transaction->school?->phone || $transaction->school?->email)
+
+{{ $transaction->school->name }} · {{ $transaction->school->phone }} {{ $transaction->school->phone && $transaction->school->email ? '·' : '' }} {{ $transaction->school->email }}
+@endif
 
 Thanks for choosing us!
 @endcomponent

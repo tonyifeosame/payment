@@ -66,11 +66,15 @@
             <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                 <div class="text-center md:text-left">
                     <div class="flex items-center justify-center md:justify-start gap-3 mb-2">
+                        @if($school->logoUrl())
+                            <img src="{{ $school->logoUrl() }}" alt="{{ $school->name }} logo" class="w-14 h-14 rounded-xl object-contain bg-white shadow-lg border border-slate-200">
+                        @else
                         <div class="w-12 h-12 bg-gradient-to-br from-blue-600 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
                             <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
                             </svg>
                         </div>
+                        @endif
                         <h1 class="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight">
                             @isset($school)
                                 <span class="bg-gradient-to-r from-blue-600 via-purple-600 to-teal-600 bg-clip-text text-transparent">{{ $school->name }}</span>
@@ -81,8 +85,17 @@
                     </div>
                     <p class="text-slate-600 font-medium flex items-center justify-center md:justify-start gap-2">
                         <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-                        Secure Payment Gateway
+                        Official school fees payment page
                     </p>
+                    @if($school->address || $school->phone || $school->email)
+                        <p class="text-slate-500 text-sm mt-1">
+                            {{ $school->address }}
+                            @if($school->address && ($school->phone || $school->email)) · @endif
+                            {{ $school->phone }}
+                            @if($school->phone && $school->email) · @endif
+                            {{ $school->email }}
+                        </p>
+                    @endif
                 </div>
                 <div class="flex items-center justify-center gap-3 text-sm">
                     <span class="px-4 py-2 bg-gradient-to-r from-blue-100 to-purple-100 text-blue-900 rounded-full font-semibold flex items-center gap-2">
@@ -254,6 +267,41 @@
 
                         
 
+                        <!-- Student & term -->
+                        @if($requiresStudent || $sessionsForJs->isNotEmpty())
+                        <div class="rounded-xl border-2 border-indigo-100 bg-indigo-50/40 p-5 space-y-5">
+                            <h4 class="font-bold text-slate-800">Who and what are you paying for?</h4>
+                            @if($sessionsForJs->isNotEmpty())
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                <div class="group">
+                                    <label for="academic_session_id" class="block text-sm font-bold text-slate-700 mb-2 uppercase tracking-wide">Academic Session</label>
+                                    <select name="academic_session_id" id="academic_session_id" class="w-full px-4 py-3.5 border-2 border-slate-200 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all duration-200 font-medium bg-white" required></select>
+                                    @error('academic_session_id') <span class="text-red-600 text-sm mt-1">{{ $message }}</span> @enderror
+                                </div>
+                                <div class="group">
+                                    <label for="academic_term_id" class="block text-sm font-bold text-slate-700 mb-2 uppercase tracking-wide">Term</label>
+                                    <select name="academic_term_id" id="academic_term_id" class="w-full px-4 py-3.5 border-2 border-slate-200 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all duration-200 font-medium bg-white" required></select>
+                                    @error('academic_term_id') <span class="text-red-600 text-sm mt-1">{{ $message }}</span> @enderror
+                                </div>
+                            </div>
+                            @endif
+                            @if($requiresStudent)
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                <div class="group">
+                                    <label for="admission_number" class="block text-sm font-bold text-slate-700 mb-2 uppercase tracking-wide">Student Admission Number</label>
+                                    <input type="text" id="admission_number" name="admission_number" value="{{ old('admission_number') }}" autocomplete="off" autocapitalize="characters" required maxlength="50"
+                                           class="w-full px-4 py-3.5 border-2 border-slate-200 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all duration-200 font-mono font-medium" placeholder="As given by the school">
+                                    @error('admission_number') <span class="text-red-600 text-sm mt-1">{{ $message }}</span> @enderror
+                                </div>
+                                <div>
+                                    <p class="block text-sm font-bold text-slate-700 mb-2 uppercase tracking-wide">Student</p>
+                                    <div id="studentResult" class="px-4 py-3.5 rounded-xl border-2 border-dashed border-slate-200 bg-white text-slate-500 text-sm min-h-[3.5rem]">Enter the admission number to confirm the student.</div>
+                                </div>
+                            </div>
+                            @endif
+                        </div>
+                        @endif
+
                         <!-- Fee Selection -->
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
                             <div class="group">
@@ -348,6 +396,18 @@
                 <div class="bg-white rounded-2xl shadow-lg border border-slate-200 p-6 sticky top-24">
                     <h3 class="text-lg font-extrabold text-slate-900">Order Summary</h3>
                     <div class="mt-4 space-y-3 text-sm">
+                        @if($requiresStudent)
+                        <div class="flex items-center justify-between gap-3">
+                            <span class="text-slate-600">Student</span>
+                            <span id="summaryStudent" class="font-semibold text-slate-900 text-right">—</span>
+                        </div>
+                        @endif
+                        @if($sessionsForJs->isNotEmpty())
+                        <div class="flex items-center justify-between gap-3">
+                            <span class="text-slate-600">Term</span>
+                            <span id="summaryTerm" class="font-semibold text-slate-900 text-right">—</span>
+                        </div>
+                        @endif
                         <div class="flex items-center justify-between">
                             <span class="text-slate-600">Category</span>
                             <span id="summaryCategory" class="font-semibold text-slate-900">—</span>
@@ -378,9 +438,14 @@
             </aside>
         </div>
 
-        <!-- Debug Panel (optional for support) -->
-        
     </main>
+
+    <footer class="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-10 text-center text-sm text-slate-500">
+        <p class="font-semibold text-slate-700">{{ $school->name }}</p>
+        @if($school->address)<p>{{ $school->address }}</p>@endif
+        @if($school->phone || $school->email)<p>{{ $school->phone }} {{ $school->phone && $school->email ? '·' : '' }} {{ $school->email }}</p>@endif
+        <p class="mt-2 text-xs">Payments are processed securely by Paystack. A receipt is emailed after every successful payment.</p>
+    </footer>
 
     <script>
     // Cache DOM elements
@@ -412,6 +477,93 @@
 
     // Pre-sanitized structure from controller for reliability
     const categories = {!! json_encode($categoriesForJs) !!} || [];
+    const sessions = {!! json_encode($sessionsForJs) !!} || [];
+    const currentTermId = {!! json_encode($currentTerm?->id) !!};
+    const currentSessionId = {!! json_encode($currentTerm?->academic_session_id) !!};
+    const oldSessionId = {!! json_encode(old('academic_session_id')) !!};
+    const oldTermId = {!! json_encode(old('academic_term_id')) !!};
+    const sessionSelect = document.getElementById('academic_session_id');
+    const termSelect = document.getElementById('academic_term_id');
+    const sTerm = document.getElementById('summaryTerm');
+    const admissionInput = document.getElementById('admission_number');
+    const studentResult = document.getElementById('studentResult');
+    const sStudent = document.getElementById('summaryStudent');
+    const lookupUrl = {!! json_encode(route('school.payment.student-lookup', ['school' => $school->slug])) !!};
+
+    function selectedTermId() { return termSelect && termSelect.value ? Number(termSelect.value) : null; }
+
+    function populateSessions() {
+        if (!sessionSelect) return;
+        sessionSelect.innerHTML = '';
+        sessions.forEach(sess => {
+            const o = document.createElement('option');
+            o.value = sess.id; o.textContent = sess.name;
+            sessionSelect.appendChild(o);
+        });
+        const want = oldSessionId || currentSessionId;
+        if (want && sessions.some(x => String(x.id) === String(want))) sessionSelect.value = String(want);
+        populateTerms();
+    }
+
+    function populateTerms() {
+        if (!termSelect) return;
+        termSelect.innerHTML = '';
+        const sess = sessions.find(x => String(x.id) === String(sessionSelect.value));
+        (sess ? sess.terms : []).forEach(t => {
+            const o = document.createElement('option');
+            o.value = t.id; o.textContent = t.name;
+            termSelect.appendChild(o);
+        });
+        const want = oldTermId || currentTermId;
+        if (want && sess && sess.terms.some(t => String(t.id) === String(want))) termSelect.value = String(want);
+        if (sTerm) { const o = termSelect.options[termSelect.selectedIndex]; sTerm.textContent = o && sess ? `${o.textContent}, ${sess.name}` : '—'; }
+        populateSubcategories();
+    }
+
+    if (sessionSelect) sessionSelect.addEventListener('change', populateTerms);
+    if (termSelect) termSelect.addEventListener('change', function () {
+        const sess = sessions.find(x => String(x.id) === String(sessionSelect.value));
+        const o = termSelect.options[termSelect.selectedIndex];
+        if (sTerm) sTerm.textContent = o && sess ? `${o.textContent}, ${sess.name}` : '—';
+        populateSubcategories();
+    });
+
+    // Student lookup by admission number. The server resolves it within THIS school
+    // only and returns just a name and class; the form still submits the admission
+    // number, never an id, so the server repeats the lookup on submit.
+    let lookupTimer = null, lookupController = null;
+    async function lookupStudent() {
+        if (!admissionInput || !studentResult) return;
+        const value = admissionInput.value.trim();
+        if (sStudent) sStudent.textContent = '—';
+        if (value === '') { studentResult.textContent = 'Enter the admission number to confirm the student.'; studentResult.className = studentResult.className.replace(/border-(green|red)-300/g, 'border-slate-200'); return; }
+        if (lookupController) lookupController.abort();
+        lookupController = new AbortController();
+        studentResult.textContent = 'Checking…';
+        try {
+            const r = await fetch(lookupUrl + '?admission_number=' + encodeURIComponent(value), { signal: lookupController.signal, headers: { 'Accept': 'application/json' } });
+            const d = await r.json().catch(() => ({}));
+            if (r.ok && d.found) {
+                studentResult.innerHTML = '';
+                const name = document.createElement('span'); name.className = 'font-bold text-slate-900 block'; name.textContent = d.full_name;
+                const cls = document.createElement('span'); cls.className = 'text-slate-600'; cls.textContent = d.class_name;
+                studentResult.appendChild(name); studentResult.appendChild(cls);
+                studentResult.classList.remove('border-slate-200', 'border-red-300'); studentResult.classList.add('border-green-300');
+                if (sStudent) sStudent.textContent = d.full_name;
+            } else if (r.status === 429) {
+                studentResult.textContent = 'Too many attempts. Please wait a moment and try again.';
+            } else {
+                studentResult.textContent = 'No student found with that admission number at this school.';
+                studentResult.classList.remove('border-slate-200', 'border-green-300'); studentResult.classList.add('border-red-300');
+            }
+        } catch (e) {
+            if (e.name !== 'AbortError') studentResult.textContent = 'Could not check right now. You can still continue.';
+        }
+    }
+    if (admissionInput) {
+        admissionInput.addEventListener('input', function () { clearTimeout(lookupTimer); lookupTimer = setTimeout(lookupStudent, 400); });
+        if (admissionInput.value) lookupStudent();
+    }
 
     // Listeners
     catSelect.addEventListener('change', function () {
@@ -483,8 +635,10 @@
         if (!catId) { subSelect.disabled = true; unitPriceP.textContent = 'Unit Price: ₦0'; return; }
 
         const cat = (categories || []).find(c => Number(c.id) === catId);
-        const subs = (cat && cat.subcategories) ? cat.subcategories : [];
-        if (subs.length === 0) { subSelect.disabled = true; unitPriceP.textContent = 'Unit Price: ₦0'; return; }
+        // Only fees payable in the selected term: general fees (no term) or that term's fees.
+        const termId = selectedTermId();
+        const subs = ((cat && cat.subcategories) ? cat.subcategories : []).filter(s => s.term_id === null || s.term_id === undefined || termId === null || Number(s.term_id) === termId);
+        if (subs.length === 0) { subSelect.disabled = true; unitPriceP.textContent = 'Unit Price: ₦0'; subError.textContent = 'No fees in this category for the selected term.'; return; }
 
         subs.forEach(sub => {
             const opt = document.createElement('option');
@@ -526,6 +680,7 @@
         } else if ((categories || []).length > 0) {
             catSelect.value = String(categories[0].id);
         }
+        populateSessions();
         populateSubcategories();
         updateTotal();
     } catch (e) {

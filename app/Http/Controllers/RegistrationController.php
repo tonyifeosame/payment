@@ -57,6 +57,7 @@ class RegistrationController extends Controller
 
         // Build tenant-aware links and email them to the school admin
         $links = [
+            'dashboard' => route('school.dashboard', ['school' => $school->slug]),
             'payment' => route('school.payment.index', ['school' => $school->slug]),
             'categories' => route('school.categories.index', ['school' => $school->slug]),
             'subcategories' => route('school.subcategories.index', ['school' => $school->slug]),
@@ -74,7 +75,7 @@ class RegistrationController extends Controller
         }
 
         return redirect()
-            ->route('school.categories.index', ['school' => $school->slug])
-            ->with('success', 'School registered and you are now logged in. Get started by adding your first category.');
+            ->route('school.dashboard', ['school' => $school->slug])
+            ->with('success', 'School registered and you are now logged in. Start by creating your academic session, then your fees and students.');
     }
 }

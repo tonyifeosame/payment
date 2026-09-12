@@ -2,10 +2,18 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 
 class Transaction extends Model
 {
+    /** The only status that counts as money collected. */
+    public const STATUS_SUCCESS = 'success';
+
+    /** Every status a transaction can hold, for filters and validation. */
+    public const STATUSES = ['success', 'pending', 'failed', 'mismatch'];
+
     protected $fillable = [
         'reference',
         'paystack_reference',
@@ -13,9 +21,19 @@ class Transaction extends Model
         'subcategory_id',
         'category_name',
         'subcategory_name',
+        'student_id',
+        'student_name',
+        'student_admission_number',
+        'student_class',
+        'academic_session_id',
+        'academic_term_id',
+        'session_name',
+        'term_name',
         'email',
         'name',
         'amount',
+        'fee_amount',
+        'service_fee',
         'status',
         'paid_at',
         'payment_method',
@@ -131,11 +149,119 @@ class Transaction extends Model
         return $this->belongsTo(School::class);
     }
 
+    public function student()
+    {
+        return $this->belongsTo(Student::class);
+    }
+
+    public function academicSession()
+    {
+        return $this->belongsTo(AcademicSession::class);
+    }
+
+    public function academicTerm()
+    {
+        return $this->belongsTo(AcademicTerm::class);
+    }
+
     /**
      * The payout obligation this settled payment created (Model A: at most one).
      */
     public function payout()
     {
         return $this->hasOne(Payout::class);
+    }
+
+    // -----------------------------------------------------------------------
+    // Query scopes. Every management query starts from forSchool(); the filters
+    // below only ever narrow that set, so a query parameter can never widen it.
+    // -----------------------------------------------------------------------
+
+    public function scopeForSchool(Builder $query, School|int $school): Builder
+    {
+        return $query->where('transactions.school_id', $school instanceof School ? $school->id : $school);
+    }
+
+    public function scopeSuccessful(Builder $query): Builder
+    {
+        return $query->where('transactions.status', self::STATUS_SUCCESS);
+    }
+
+    /**
+     * The moment a payment counts: when it settled, or — for rows that predate
+     * paid_at — when it was created.
+     */
+    public static function paidAtExpression(): string
+    {
+        return 'COALESCE(transactions.paid_at, transactions.created_at)';
+    }
+
+    /**
+     * Apply the transaction-list filters. Shared by the list page and the CSV
+     * export so the file always contains exactly what the screen showed.
+     *
+     * Ids for category/session/term are accepted as given: the surrounding query is
+     * already restricted to one school, so an id from another school simply matches
+     * nothing. Dates are inclusive calendar days.
+     *
+     * @param  array{q?:string|null, status?:string|null, category_id?:mixed, session_id?:mixed, term_id?:mixed, date_from?:string|null, date_to?:string|null}  $filters
+     */
+    public function scopeFilter(Builder $query, array $filters): Builder
+    {
+        $q = trim((string) ($filters['q'] ?? ''));
+        if ($q !== '') {
+            $like = '%'.$q.'%';
+            $admission = Student::normalizeAdmissionNumber($q);
+            $query->where(function (Builder $w) use ($like, $admission) {
+                $w->where('transactions.name', 'like', $like)
+                    ->orWhere('transactions.email', 'like', $like)
+                    ->orWhere('transactions.reference', 'like', $like)
+                    ->orWhere('transactions.paystack_reference', 'like', $like)
+                    ->orWhere('transactions.student_name', 'like', $like)
+                    ->orWhere('transactions.student_admission_number', 'like', '%'.$admission.'%');
+            });
+        }
+
+        $status = $filters['status'] ?? null;
+        if (is_string($status) && in_array($status, self::STATUSES, true)) {
+            $query->where('transactions.status', $status);
+        }
+
+        foreach (['category_id' => 'category_id', 'session_id' => 'academic_session_id', 'term_id' => 'academic_term_id'] as $filter => $column) {
+            $value = $filters[$filter] ?? null;
+            if ($value !== null && $value !== '' && ctype_digit((string) $value)) {
+                $query->where('transactions.'.$column, (int) $value);
+            }
+        }
+
+        $from = self::parseDate($filters['date_from'] ?? null);
+        $to = self::parseDate($filters['date_to'] ?? null);
+        if ($from) {
+            $query->whereRaw(self::paidAtExpression().' >= ?', [$from->startOfDay()]);
+        }
+        if ($to) {
+            $query->whereRaw(self::paidAtExpression().' <= ?', [$to->endOfDay()]);
+        }
+
+        return $query;
+    }
+
+    private static function parseDate(?string $value): ?Carbon
+    {
+        if (! is_string($value) || trim($value) === '') {
+            return null;
+        }
+
+        try {
+            return Carbon::createFromFormat('Y-m-d', trim($value)) ?: null;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /** True when this payment has recorded money against a real student. */
+    public function hasStudent(): bool
+    {
+        return $this->student_id !== null || $this->student_name !== null;
     }
 }

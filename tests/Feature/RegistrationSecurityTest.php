@@ -55,7 +55,8 @@ class RegistrationSecurityTest extends TestCase
     {
         $response = $this->post('/registration', $this->payload());
 
-        $response->assertRedirect('/s/new-school/categories');
+        // Phase 1: a new school lands on its dashboard, not the category list.
+        $response->assertRedirect('/s/new-school/dashboard');
         $this->assertNotNull(session('school_admin_id'));
         $this->assertDatabaseHas('schools', ['slug' => 'new-school']);
     }

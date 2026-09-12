@@ -72,20 +72,31 @@
                 <div class="relative flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                     <div class="text-center md:text-left">
                         @php
-                            $schoolName = optional(optional($transaction->category)->school)->name
-                                          ?? optional($transaction->subcategory)->school->name
-                                          ?? null;
+                            // transactions.school_id is the authoritative source (see the
+                            // email template for why); the relation walk is only a fallback
+                            // for rows that predate school_id.
+                            $school = $transaction->school
+                                      ?? optional($transaction->category)->school
+                                      ?? optional($transaction->subcategory)->school;
+                            $schoolName = $school?->name;
                         @endphp
                         @if($schoolName)
                             <div class="flex items-center justify-center md:justify-start gap-3 mb-3">
+                                @if($school?->logoUrl())
+                                    <img src="{{ $school->logoUrl() }}" alt="" class="w-14 h-14 rounded-xl object-contain bg-white border border-white/30">
+                                @else
                                 <div class="w-14 h-14 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center border border-white/30">
                                     <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
                                     </svg>
                                 </div>
+                                @endif
                                 <div class="text-left">
                                     <h1 class="text-3xl sm:text-4xl font-black text-white tracking-tight">{{ $schoolName }}</h1>
                                     <p class="text-blue-100 text-sm font-medium">Official Payment Receipt</p>
+                                    @if($school?->address || $school?->phone || $school?->email)
+                                        <p class="text-blue-100/90 text-xs mt-1">{{ $school->address }}{{ $school->address && ($school->phone || $school->email) ? ' · ' : '' }}{{ $school->phone }}{{ $school->phone && $school->email ? ' · ' : '' }}{{ $school->email }}</p>
+                                    @endif
                                 </div>
                             </div>
                         @else
@@ -96,8 +107,8 @@
                     <div class="text-center md:text-right">
                         <div class="inline-block bg-white/20 backdrop-blur-sm border border-white/30 rounded-xl px-5 py-3">
                             <p class="text-xs text-white/80 font-semibold uppercase tracking-wider mb-1">Receipt Date</p>
-                            <p class="text-white font-bold text-lg">{{ $transaction->created_at?->format('M d, Y') }}</p>
-                            <p class="text-white/90 text-sm">{{ $transaction->created_at?->format('h:i A') }}</p>
+                            <p class="text-white font-bold text-lg">{{ ($transaction->paid_at ?? $transaction->created_at)?->format('M d, Y') }}</p>
+                            <p class="text-white/90 text-sm">{{ ($transaction->paid_at ?? $transaction->created_at)?->format('h:i A') }}</p>
                         </div>
                     </div>
                 </div>
@@ -105,6 +116,36 @@
 
             <!-- Content -->
             <div class="px-8 py-8 space-y-8">
+                @if($transaction->hasStudent() || $transaction->term_name)
+                <!-- Student & period -->
+                <div class="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl p-6 border border-emerald-100">
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-lg flex items-center justify-center shadow-md">
+                            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422A12.083 12.083 0 0121 13.5c0 .945-.11 1.865-.32 2.75M12 14v7"></path></svg>
+                        </div>
+                        <h2 class="text-lg font-bold text-slate-800">Student</h2>
+                    </div>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div>
+                            <p class="text-xs text-slate-600 font-semibold uppercase tracking-wider mb-1">Student Name</p>
+                            <p class="text-slate-900 font-bold">{{ $transaction->student_name ?? '—' }}</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-slate-600 font-semibold uppercase tracking-wider mb-1">Admission No.</p>
+                            <p class="text-slate-900 font-mono font-bold">{{ $transaction->student_admission_number ?? '—' }}</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-slate-600 font-semibold uppercase tracking-wider mb-1">Class</p>
+                            <p class="text-slate-900 font-bold">{{ $transaction->student_class ?? '—' }}</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-slate-600 font-semibold uppercase tracking-wider mb-1">Session / Term</p>
+                            <p class="text-slate-900 font-bold">{{ $transaction->session_name ?? '—' }}@if($transaction->term_name), {{ $transaction->term_name }}@endif</p>
+                        </div>
+                    </div>
+                </div>
+                @endif
+
                 <!-- Payer & Payment Details -->
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <!-- Payer Info -->
@@ -229,6 +270,9 @@
                         <div>
                             <p class="text-sm font-semibold text-slate-800 mb-1">Important Notice</p>
                             <p class="text-sm text-slate-600">This receipt serves as official proof of payment for the transaction detailed above. Please keep this for your records. For any queries, contact the school administration with your reference number.</p>
+                            @if($school?->receipt_footer)
+                                <p class="text-sm text-slate-700 mt-3 whitespace-pre-line">{{ $school->receipt_footer }}</p>
+                            @endif
                         </div>
                     </div>
                 </div>

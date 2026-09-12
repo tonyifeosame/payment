@@ -151,10 +151,11 @@ class ReceiptAccessTest extends TestCase
         $response = $this->get($signed);
 
         $response->assertOk();
-        $response->assertHeader(
-            'Content-Disposition',
-            'attachment; filename="receipt-'.$this->alphaTransaction->id.'.html"'
-        );
+        // Phase 1: the download is a branded PDF named by the payment reference.
+        $response->assertHeader('Content-Type', 'application/pdf');
+        $this->assertStringContainsString('attachment', (string) $response->headers->get('Content-Disposition'));
+        $this->assertStringContainsString('receipt-alpha-ref-1.pdf', (string) $response->headers->get('Content-Disposition'));
+        $this->assertStringStartsWith('%PDF', $response->getContent());
     }
 
     public function test_paying_session_can_view_its_own_receipt(): void
