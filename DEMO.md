@@ -4,8 +4,9 @@ A full walkthrough of the payment pipeline on your own machine, in **Paystack te
 mode**. Nothing here touches Render, and nothing here can move real money.
 
 ```
-payment -> webhook/callback -> settlement -> payout obligation -> queued job
-        -> worker -> Paystack transfer -> receipt
+school setup (session/term, fees, students) -> share link/QR -> parent pays for a
+student -> webhook/callback -> settlement -> payout obligation -> queued job
+        -> worker -> Paystack transfer -> receipt (PDF + email) -> dashboard/ledger
 ```
 
 ---
@@ -91,6 +92,7 @@ Two paths — show whichever suits the audience.
 - Admin login: http://localhost:8000/admin/login
   - School name: `Demo Academy`
   - Password: `demo-password`
+- Login lands on the **dashboard**: http://localhost:8000/s/demo-academy/dashboard
 
 **Live registration** at http://localhost:8000/registration/create — this is the
 real onboarding flow a new customer sees. Note it calls Paystack's account-resolve
@@ -101,34 +103,69 @@ seeded school rather than debugging live.
 On success the school is created, the admin is logged in automatically, and a
 "here are your links" email is sent (visible in your log or Mailpit).
 
-## 3. Fee / category setup
+## 3. Session, fees and students
 
-Logged in as the school admin:
+Logged in as the school admin, the nav bar has everything:
 
+- Sessions & terms: http://localhost:8000/s/demo-academy/sessions
 - Categories: http://localhost:8000/s/demo-academy/categories
 - Fee types: http://localhost:8000/s/demo-academy/subcategories
+- Students: http://localhost:8000/s/demo-academy/students
 
 The seeded structure is:
 
-| Category | Fee type | Price |
-|---|---|---|
-| School Fees | Primary - Term 1 | NGN 50,000.00 |
-| School Fees | Secondary - Term 1 | NGN 80,000.00 |
-| Uniform | Shirt | NGN 3,000.00 |
-| Uniform | Trousers | NGN 4,000.00 |
+| Session | Current term |
+|---|---|
+| 2026/2027 | First Term |
 
-Worth pointing out: every one of these pages is scoped to the bound school, and
-route model binding 404s a record belonging to another school before controller
-code runs. `TenantIsolationTest` covers this.
+| Category | Fee type | Term | Price |
+|---|---|---|---|
+| School Fees | Primary - First Term | First Term, 2026/2027 | NGN 50,000.00 |
+| School Fees | Secondary - First Term | First Term, 2026/2027 | NGN 80,000.00 |
+| Uniform | Shirt | General (any term) | NGN 3,000.00 |
+| Uniform | Trousers | General (any term) | NGN 4,000.00 |
+
+| Admission no. | Student | Class |
+|---|---|---|
+| DA/2026/001 | Adaeze Okonkwo | JSS 1 |
+| DA/2026/002 | Tunde Bakare | JSS 1 |
+| DA/2026/003 | Chiamaka Eze | JSS 2 |
+| DA/2025/014 | Ibrahim Musa | Primary 5 |
+| DA/2025/021 | Blessing Adeyemi | Primary 3 |
+
+Things to show:
+
+- Creating a session (`2027/2028`) creates its three terms in one go; "Set as
+  current" moves the dashboard and the payment page's default term.
+- A fee tied to a term is only payable for that term; a general fee (uniform) is
+  payable in any term. The payment page hides the mismatch and the server
+  rejects it anyway (`PaymentStudentContextTest`).
+- Admission numbers are unique **per school** — two schools can both have
+  `DA/2026/001` (`StudentManagementTest`).
+- Every one of these pages is scoped to the bound school, and route model
+  binding 404s a record belonging to another school before controller code runs.
+  `TenantIsolationTest` covers this.
+
+## 3b. Share the payment link
+
+http://localhost:8000/s/demo-academy/share — copy the link, share on WhatsApp,
+download/print the QR code. The QR encodes only the public payment URL.
 
 ## 4. Public payment page
 
 http://localhost:8000/s/demo-academy/payment — no login required. This is the URL
 a school hands to parents.
 
-Pick a category and fee type, enter an email you can check, submit. A ~2.5%
-markup (`MARKUP_PERCENT`) is added on top of the fee to cover Paystack's cut; the
-breakdown is stored on the transaction.
+Enter a seeded admission number (e.g. `DA/2026/001`) — the page looks the student
+up **within this school only** and shows the name and class for confirmation.
+Pick the session/term (defaults to the current term), a category and fee type,
+enter an email you can check, submit. A ~2.5% markup (`MARKUP_PERCENT`) is added
+on top of the fee to cover Paystack's cut; the breakdown is stored on the
+transaction alongside the student, session and term.
+
+Because Demo Academy has students, the admission number is required. A school
+with no roster yet gets the old form without it — nothing breaks for a school
+that has not uploaded students.
 
 ## 5. Paystack test checkout
 
@@ -205,16 +242,41 @@ It never calls Paystack itself and never touches a payout that is already
 `initiating`, `success`, `failed` or `needs_review` — so it is safe to run
 repeatedly in front of an audience.
 
+## 8b. Dashboard, transactions, export, payouts
+
+- Dashboard: http://localhost:8000/s/demo-academy/dashboard — today / this week /
+  selected term / all-time collections (school share and gross), payment status
+  counts, collections by category, payout status, recent payments. Every number is
+  a SUM/COUNT over this school's own rows; the term selector only offers this
+  school's terms.
+- Transactions: http://localhost:8000/s/demo-academy/transactions — search by
+  student, admission number, payer or reference; filter by status, category,
+  session, term and date range. Defaults to successful payments; pending/failed
+  rows only appear when asked for and are never counted as collections.
+- **Export CSV** on that page downloads exactly the filtered rows.
+- Payouts: http://localhost:8000/s/demo-academy/payouts — the ledger from §7 as
+  the school sees it: amount (school share only), status, payout reference,
+  Paystack transfer code, and the failure/review reason where there is one.
+- Settings: http://localhost:8000/s/demo-academy/settings — name, email, phone,
+  address, logo, receipt footer; and a guarded "change payout account" form that
+  re-verifies the account with Paystack, requires the admin password, clears the
+  stored transfer recipient and emails the school.
+
 ## 9. Receipt and email
+
+The receipt page and PDF carry the school's logo and contact details, the
+student (name, admission number, class), session/term, the fee, the fee subtotal,
+service fee and total, and the school's receipt footer text. **Download PDF** is a
+real PDF (Dompdf) under the same signed-URL / session / admin authorization.
 
 The worker sends `PaymentReceiptMail`. Where to look:
 
 - Log driver: `tail -f storage/logs/laravel.log`
 - Mailpit: http://localhost:8025
 
-**The email is a complete, self-contained receipt — it carries no link back to the
-app.** It contains the payer's name and email, the reference, the payment method,
-the status, and an itemised table ending in fee subtotal, service fee and total.
+The email is a complete receipt: student, admission number, class, session/term,
+the payer's name and email, the reference, the payment method, the status, and an
+itemised table ending in fee subtotal, service fee and total.
 Verified output for the seeded Primary fee:
 
 ```

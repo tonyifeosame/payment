@@ -2,9 +2,12 @@
 
 namespace Database\Seeders;
 
+use App\Models\AcademicSession;
 use App\Models\Category;
 use App\Models\School;
+use App\Models\Student;
 use App\Models\Subcategory;
+use App\Services\AcademicPeriodService;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 
@@ -31,6 +34,17 @@ class DemoSeeder extends Seeder
 
     public const ADMIN_PASSWORD = 'demo-password';
 
+    public const SESSION_NAME = '2026/2027';
+
+    /** admission number => [name, class] — the roster parents pay against. */
+    public const STUDENTS = [
+        'DA/2026/001' => ['Adaeze Okonkwo', 'JSS 1'],
+        'DA/2026/002' => ['Tunde Bakare', 'JSS 1'],
+        'DA/2026/003' => ['Chiamaka Eze', 'JSS 2'],
+        'DA/2025/014' => ['Ibrahim Musa', 'Primary 5'],
+        'DA/2025/021' => ['Blessing Adeyemi', 'Primary 3'],
+    ];
+
     public function run(): void
     {
         $school = School::updateOrCreate(
@@ -52,14 +66,23 @@ class DemoSeeder extends Seeder
         // PaystackService::ensureRecipientForSchool during the payout leg, which is
         // the path a real new school takes.
 
+        // One academic session with its three terms; First Term is current.
+        $session = AcademicSession::where('school_id', $school->id)->where('name', self::SESSION_NAME)->first()
+            ?? app(AcademicPeriodService::class)->createSession($school, self::SESSION_NAME);
+        $firstTerm = $session->terms()->where('number', 1)->first();
+        if ($school->current_academic_term_id === null) {
+            $school->forceFill(['current_academic_term_id' => $firstTerm->id])->save();
+        }
+
+        // Term fees are tied to First Term; uniform is general (any term).
         $fees = [
             'School Fees' => [
-                ['name' => 'Primary - Term 1', 'price' => 50000],
-                ['name' => 'Secondary - Term 1', 'price' => 80000],
+                ['name' => 'Primary - First Term', 'price' => 50000, 'term' => $firstTerm->id],
+                ['name' => 'Secondary - First Term', 'price' => 80000, 'term' => $firstTerm->id],
             ],
             'Uniform' => [
-                ['name' => 'Shirt', 'price' => 3000],
-                ['name' => 'Trousers', 'price' => 4000],
+                ['name' => 'Shirt', 'price' => 3000, 'term' => null],
+                ['name' => 'Trousers', 'price' => 4000, 'term' => null],
             ],
         ];
 
@@ -76,7 +99,7 @@ class DemoSeeder extends Seeder
                         'category_id' => $category->id,
                         'name' => $sub['name'],
                     ],
-                    ['price' => $sub['price']]
+                    ['price' => $sub['price'], 'academic_term_id' => $sub['term']]
                 );
             }
 
@@ -94,10 +117,19 @@ class DemoSeeder extends Seeder
             ->whereNotIn('name', array_keys($fees))
             ->delete();
 
+        foreach (self::STUDENTS as $admission => [$name, $class]) {
+            Student::updateOrCreate(
+                ['school_id' => $school->id, 'admission_number' => $admission],
+                ['full_name' => $name, 'class_name' => $class, 'academic_session_id' => $session->id]
+            );
+        }
+
         $this->command?->info('Demo school ready.');
         $this->command?->line('  Public payment page: /s/'.self::SCHOOL_SLUG.'/payment');
         $this->command?->line('  Admin login:         /admin/login');
         $this->command?->line('  School name:         '.self::SCHOOL_NAME);
         $this->command?->line('  Admin password:      '.self::ADMIN_PASSWORD);
+        $this->command?->line('  Session / term:      '.self::SESSION_NAME.' — First Term (current)');
+        $this->command?->line('  Students:            '.implode(', ', array_keys(self::STUDENTS)));
     }
 }
