@@ -281,7 +281,8 @@
                                     </svg>
                                 </div>
                                 <input id="account_name" name="account_name" type="text" value="{{ old('account_name') }}" readonly
-                                       class="input-modern pl-11 pr-10" placeholder="Verifying..." />
+                                       class="input-modern pl-11 pr-10" placeholder="Shown after verification" />
+                                <p id="account_name_message" class="mt-1.5 text-sm text-red-600 hidden"></p>
                                 <div id="account_name_status" class="absolute inset-y-0 right-0 pr-3 flex items-center"></div>
                             </div>
                         </div>
@@ -388,6 +389,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const accountNumberInput = document.getElementById('account_number');
     const accountNameInput = document.getElementById('account_name');
     const accountNameStatus = document.getElementById('account_name_status');
+    const accountNameMessage = document.getElementById('account_name_message');
     const toggleAdminPw = document.getElementById('toggle_admin_pw');
     const adminPassword = document.getElementById('admin_password');
     const adminPasswordConfirm = document.getElementById('admin_password_confirmation');
@@ -396,6 +398,21 @@ document.addEventListener('DOMContentLoaded', function() {
     const registerSpinner = document.getElementById('register_spinner');
 
     let verifyController = null;
+
+    const defaultAccountNamePlaceholder = accountNameInput.placeholder;
+
+    function showAccountMessage(text) {
+        accountNameMessage.textContent = text || '';
+        accountNameMessage.classList.toggle('hidden', !text);
+    }
+
+    function setBankSelectMessage(text) {
+        bankSelect.innerHTML = '';
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = text;
+        bankSelect.appendChild(option);
+    }
 
     async function loadBanks() {
         try {
@@ -412,11 +429,14 @@ document.addEventListener('DOMContentLoaded', function() {
                     bankSelect.appendChild(option);
                 });
             } else {
-                bankSelect.innerHTML = '<option value="">Failed to load banks</option>';
+                // Keep the server's reason: "secret key is not configured" and
+                // "temporarily unavailable" need very different responses.
+                console.error('Bank list failed:', response.status, data.error);
+                setBankSelectMessage('Failed to load banks' + (data.error ? ': ' + data.error : ''));
             }
         } catch (error) {
             console.error('Error loading banks:', error);
-            bankSelect.innerHTML = '<option value="">Error loading banks</option>';
+            setBankSelectMessage('Error loading banks');
         }
     }
 
@@ -436,7 +456,9 @@ document.addEventListener('DOMContentLoaded', function() {
             verifyAccount();
         } else {
             accountNameInput.value = '';
+            accountNameInput.placeholder = defaultAccountNamePlaceholder;
             accountNameStatus.innerHTML = '';
+            showAccountMessage('');
         }
     });
 
@@ -455,6 +477,8 @@ document.addEventListener('DOMContentLoaded', function() {
         verifyController = new AbortController();
 
         accountNameInput.value = '';
+        accountNameInput.placeholder = 'Verifying...';
+        showAccountMessage('');
         accountNameStatus.innerHTML = `
             <svg class="w-5 h-5 text-blue-500 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
@@ -470,6 +494,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             if (data.ok && data.account_name) {
                 accountNameInput.value = data.account_name;
+                accountNameInput.placeholder = defaultAccountNamePlaceholder;
                 accountNameStatus.innerHTML = `
                     <svg class="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
@@ -481,11 +506,14 @@ document.addEventListener('DOMContentLoaded', function() {
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                     </svg>
                 `;
-                accountNameInput.placeholder = data.error || 'Verification failed';
+                accountNameInput.placeholder = 'Not verified';
+                showAccountMessage(data.error || 'Verification failed');
             }
         } catch (error) {
             if (error.name !== 'AbortError') {
                 console.error('Error verifying account:', error);
+                accountNameInput.placeholder = 'Not verified';
+                showAccountMessage('Could not reach the verification service. Please try again.');
                 accountNameStatus.innerHTML = `
                     <svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>

@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use App\Models\School;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
 
 class PaystackService
@@ -26,6 +28,27 @@ class PaystackService
     }
 
     /**
+     * Client for read-only lookups (bank list, account resolution).
+     *
+     * Only a connection failure or a 5xx is retried, and the client never throws
+     * on a failed response. The default retry() re-throws once its attempts are
+     * exhausted — and it counts any 4xx as an attempt — so Paystack's own
+     * "Could not resolve account name" 422 was retried three times and then
+     * surfaced as a generic "Failed to verify account." 500. The callers below
+     * inspect the response themselves and keep Paystack's message.
+     */
+    protected function lookupClient()
+    {
+        return Http::withToken($this->secret)
+            ->retry(3, 200, function (\Throwable $e) {
+                return $e instanceof ConnectionException
+                    || ($e instanceof RequestException && $e->response->serverError());
+            }, throw: false)
+            ->connectTimeout(10)
+            ->timeout(30);
+    }
+
+    /**
      * Client for money-moving requests.
      *
      * Deliberately NOT retrying: an automatic retry of POST /transfer can create a
@@ -40,35 +63,101 @@ class PaystackService
             ->timeout(30);
     }
 
-    public function resolveAccount(string $accountNumber, string $bankCode): array
+    /**
+     * Banks Paystack can pay out to, for the registration / bank-change forms.
+     *
+     * @return array{ok:bool, banks?:array, message?:string, reason?:string}
+     *                                                                       reason (when !ok): 'config' | 'rejected' | 'unavailable'
+     */
+    public function listBanks(string $country = 'nigeria'): array
     {
         if (empty($this->secret)) {
-            return ['ok' => false, 'message' => 'Paystack secret key is not configured'];
+            return ['ok' => false, 'reason' => 'config', 'message' => 'Paystack secret key is not configured'];
         }
 
         try {
-            $resp = $this->client()->get($this->baseUrl.'/bank/resolve', [
+            $resp = $this->lookupClient()->get($this->baseUrl.'/bank', ['country' => $country]);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return ['ok' => false, 'reason' => 'unavailable', 'message' => 'Could not reach the bank directory.'];
+        }
+
+        $json = $resp->json();
+
+        if ($resp->successful() && is_array($json) && ($json['status'] ?? false) && is_array($json['data'] ?? null)) {
+            return ['ok' => true, 'banks' => $json['data']];
+        }
+
+        return $this->lookupFailure($resp->status(), $json, 'Failed to fetch banks');
+    }
+
+    /**
+     * Resolve an account number to the name the bank holds for it.
+     *
+     * Every caller that stores bank details (registration, bank-details change)
+     * uses the name returned here and never one typed into a form.
+     *
+     * @return array{ok:bool, account_name?:?string, account_number?:?string, message?:string, reason?:string}
+     *                                                                                                         reason (when !ok): 'config' | 'rejected' | 'unavailable'
+     */
+    public function resolveAccount(string $accountNumber, string $bankCode): array
+    {
+        if (empty($this->secret)) {
+            return ['ok' => false, 'reason' => 'config', 'message' => 'Paystack secret key is not configured'];
+        }
+
+        try {
+            $resp = $this->lookupClient()->get($this->baseUrl.'/bank/resolve', [
                 'account_number' => $accountNumber,
                 'bank_code' => $bankCode,
             ]);
+        } catch (\Throwable $e) {
+            report($e);
+            $message = $e instanceof ConnectionException ? 'Connection to verification service timed out.' : 'Failed to verify account.';
 
-            $json = $resp->json();
+            return ['ok' => false, 'reason' => 'unavailable', 'message' => $message];
+        }
 
-            if (! ($json['status'] ?? false)) {
-                return ['ok' => false, 'message' => $json['message'] ?? 'Resolve failed'];
-            }
+        $json = $resp->json();
 
+        if ($resp->successful() && is_array($json) && ($json['status'] ?? false) && ! empty($json['data']['account_name'])) {
             return [
                 'ok' => true,
-                'account_name' => $json['data']['account_name'] ?? null,
+                'account_name' => $json['data']['account_name'],
                 'account_number' => $json['data']['account_number'] ?? null,
             ];
-        } catch (\Exception $e) {
-            report($e); // Log the exception
-            $errorMessage = $e instanceof \Illuminate\Http\Client\ConnectionException ? 'Connection to verification service timed out.' : 'Failed to verify account.';
-
-            return ['ok' => false, 'message' => $errorMessage];
         }
+
+        return $this->lookupFailure($resp->status(), $json, 'Resolve failed');
+    }
+
+    /**
+     * Classify a non-successful lookup response.
+     *
+     * A 4xx with a decodable body is Paystack's definitive answer and its message
+     * is passed on (the account really does not resolve; the key really is
+     * invalid). A 5xx or an unreadable body is Paystack being unavailable, and the
+     * caller should say so rather than blame the account.
+     */
+    private function lookupFailure(int $status, mixed $json, string $fallback): array
+    {
+        $message = is_array($json) ? ($json['message'] ?? null) : null;
+
+        if ($status === 401 || $status === 403) {
+            return ['ok' => false, 'reason' => 'config', 'message' => $message ?? 'Paystack rejected the API key'];
+        }
+
+        if ($status >= 400 && $status < 500 && $message !== null) {
+            return ['ok' => false, 'reason' => 'rejected', 'message' => $message];
+        }
+
+        if ($status >= 200 && $status < 300 && is_array($json)) {
+            // 200 with status:false — Paystack occasionally answers this way.
+            return ['ok' => false, 'reason' => 'rejected', 'message' => $message ?? $fallback];
+        }
+
+        return ['ok' => false, 'reason' => 'unavailable', 'message' => 'Verification service is temporarily unavailable. Please try again.'];
     }
 
     /**
@@ -149,7 +238,7 @@ class PaystackService
      * boolean — callers must distinguish "definitely not sent" from "unknown".
      *
      * @return array{outcome:string, message:?string, data:?array, response:?array}
-     *         outcome: 'accepted' | 'rejected' | 'unknown'
+     *                                                                              outcome: 'accepted' | 'rejected' | 'unknown'
      */
     public function initiateTransfer(School $school, int $amountKobo, string $reference, string $reason = ''): array
     {
@@ -203,7 +292,7 @@ class PaystackService
      * second transfer for money that may already be on its way.
      *
      * @return array{outcome:string, status:?string, data:?array, message:?string}
-     *         outcome: 'found' | 'absent' | 'unknown'
+     *                                                                             outcome: 'found' | 'absent' | 'unknown'
      */
     public function fetchTransfer(string $reference): array
     {

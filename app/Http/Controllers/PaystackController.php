@@ -2,118 +2,75 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\PaystackService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
+/**
+ * Browser-facing helpers behind the registration and bank-change forms.
+ *
+ * These only ever *look things up*; the name the browser shows is a convenience.
+ * The name that gets stored is resolved again server-side by whichever action
+ * saves bank details (RegistrationController, SchoolBankDetailsService).
+ */
 class PaystackController extends Controller
 {
-    private function validatePaystackConfig()
+    public function __construct(private PaystackService $paystack) {}
+
+    public function banks(Request $request): JsonResponse
     {
-        $secretKey = config('services.paystack.secret_key');
-        $paymentUrl = config('services.paystack.payment_url');
+        $country = (string) $request->query('country', 'nigeria');
 
-        if (empty($secretKey)) {
-            return ['error' => 'Paystack secret key is not configured'];
+        $result = $this->paystack->listBanks($country);
+
+        if (! $result['ok']) {
+            Log::error('Bank list lookup failed', ['reason' => $result['reason'], 'message' => $result['message']]);
+
+            return $this->failure($result);
         }
 
-        if (empty($paymentUrl)) {
-            return ['error' => 'Paystack payment URL is not configured'];
-        }
-
-        return null;
+        return response()->json(['ok' => true, 'banks' => $result['banks']]);
     }
 
-    public function banks(Request $request)
+    public function resolveAccount(Request $request): JsonResponse
     {
-        $validationError = $this->validatePaystackConfig();
-        if ($validationError) {
-            return response()->json(['ok' => false, 'error' => $validationError['error']], 500);
-        }
-
-        $country = $request->query('country', 'nigeria');
-
-        try {
-            $resp = Http::withToken(config('services.paystack.secret_key'))
-                ->retry(3, 200)
-                ->connectTimeout(10)
-                ->timeout(25)
-                ->get(config('services.paystack.payment_url').'/bank', [
-                    'country' => $country,
-                ]);
-
-            if (! $resp->ok()) {
-                Log::error('Paystack banks API error', [
-                    'status' => $resp->status(),
-                    'body' => $resp->body(),
-                ]);
-
-                return response()->json(['ok' => false, 'error' => 'Failed to fetch banks'], 502);
-            }
-
-            $data = $resp->json();
-
-            return response()->json([
-                'ok' => true,
-                'banks' => $data['data'] ?? [],
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Exception fetching banks', ['message' => $e->getMessage()]);
-
-            return response()->json(['ok' => false, 'error' => 'Failed to fetch banks'], 500);
-        }
-    }
-
-    public function resolveAccount(Request $request)
-    {
-        $validationError = $this->validatePaystackConfig();
-        if ($validationError) {
-            return response()->json(['ok' => false, 'error' => $validationError['error']], 500);
-        }
-
         $validated = $request->validate([
             'account_number' => 'required|string|min:10|max:12',
             'bank_code' => 'required|string',
         ]);
 
-        try {
-            $resp = Http::withToken(config('services.paystack.secret_key'))
-                ->retry(3, 200)
-                ->connectTimeout(10)
-                ->timeout(40) // Increased timeout
-                ->get(config('services.paystack.payment_url').'/bank/resolve', [
-                    'account_number' => $validated['account_number'],
-                    'bank_code' => $validated['bank_code'],
-                ]);
+        $result = $this->paystack->resolveAccount($validated['account_number'], $validated['bank_code']);
 
-            if (! $resp->ok()) {
-                Log::error('Paystack resolve account error', [
-                    'status' => $resp->status(),
-                    'body' => $resp->body(),
-                ]);
-                $error = $resp->json('message') ?? 'Could not connect to verification service.';
-
-                return response()->json(['ok' => false, 'error' => $error], $resp->status());
+        if (! $result['ok']) {
+            // A rejected account is the expected outcome for a typo, not an error.
+            if ($result['reason'] !== 'rejected') {
+                Log::error('Account resolution failed', ['reason' => $result['reason'], 'message' => $result['message']]);
             }
 
-            $json = $resp->json();
-            if (! ($json['status'] ?? false)) {
-                return response()->json(['ok' => false, 'error' => $json['message'] ?? 'Resolve failed'], 422);
-            }
-
-            return response()->json([
-                'ok' => true,
-                'account_name' => $json['data']['account_name'] ?? null,
-                'account_number' => $json['data']['account_number'] ?? null,
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Exception resolving account', [
-                'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-            ]);
-            $errorMessage = $e instanceof \Illuminate\Http\Client\ConnectionException ? 'Connection to verification service timed out.' : 'Failed to verify account.';
-
-            return response()->json(['ok' => false, 'error' => $errorMessage], 500);
+            return $this->failure($result);
         }
+
+        return response()->json([
+            'ok' => true,
+            'account_name' => $result['account_name'],
+            'account_number' => $result['account_number'],
+        ]);
+    }
+
+    /**
+     * 'config'      -> 500: our side is misconfigured (no key / key refused).
+     * 'rejected'    -> 422: Paystack answered definitively; pass its message on.
+     * 'unavailable' -> 503: Paystack unreachable or erroring; worth retrying later.
+     */
+    private function failure(array $result): JsonResponse
+    {
+        $status = match ($result['reason']) {
+            'config' => 500,
+            'rejected' => 422,
+            default => 503,
+        };
+
+        return response()->json(['ok' => false, 'error' => $result['message']], $status);
     }
 }
