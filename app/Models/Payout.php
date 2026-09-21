@@ -119,6 +119,12 @@ class Payout extends Model
         return $this->belongsTo(Transaction::class);
     }
 
+    /** Operator recovery actions taken on this payout (see PayoutRecoveryEvent). */
+    public function recoveryEvents()
+    {
+        return $this->hasMany(PayoutRecoveryEvent::class)->orderBy('id');
+    }
+
     /** No further state change is possible. */
     public function isTerminal(): bool
     {

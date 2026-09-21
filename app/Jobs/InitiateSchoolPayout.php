@@ -106,6 +106,24 @@ class InitiateSchoolPayout implements ShouldBeUnique, ShouldQueue
             return;
         }
 
+        // Last line of defence, immediately before money moves: the amount about to
+        // be sent must still be within what the payment authorises (the same chain
+        // release and retry are checked against). A breach releases the claim as a
+        // definitive failure — no transfer exists — and is never auto-corrected.
+        $problem = $payouts->amountAuthorityProblem($payout, (float) $payout->amount, 'payout amount');
+        if ($problem !== null) {
+            Log::critical('FINANCIAL INTEGRITY: refused to transfer a payout amount its payment does not authorise', [
+                'payout_id' => $payout->id,
+                'reference' => $payout->reference,
+                'school_id' => $payout->school_id,
+                'payout_amount' => (float) $payout->amount,
+                'problem' => $problem,
+            ]);
+            $payouts->releaseClaim($payout, 'Refused before transfer: '.$problem);
+
+            return;
+        }
+
         $result = $paystack->initiateTransfer(
             $school,
             $amountKobo,
@@ -133,26 +151,13 @@ class InitiateSchoolPayout implements ShouldBeUnique, ShouldQueue
     /**
      * Resolve a payout stuck in `initiating` by asking Paystack what happened to our
      * reference. The payout is only released for another attempt when Paystack
-     * confirms no such transfer exists.
+     * confirms no such transfer exists. The rule lives in
+     * PayoutService::reconcileInitiating() so the operator lookup command and this
+     * job can never disagree about it.
      */
     private function resolveAmbiguous(Payout $payout, PayoutService $payouts, PaystackService $paystack): void
     {
-        $lookup = $paystack->fetchTransfer($payout->reference);
-
-        match ($lookup['outcome']) {
-            'found' => $payouts->applyPaystackStatus($payout, $lookup['status'], $lookup['data'] ?? []),
-
-            'absent' => $payouts->releaseClaim(
-                $payout,
-                'Paystack has no transfer for this reference: '.($lookup['message'] ?? 'not found')
-            ),
-
-            default => Log::critical('Payout status still unresolved after lookup', [
-                'payout_id' => $payout->id,
-                'reference' => $payout->reference,
-                'message' => $lookup['message'] ?? null,
-            ]),
-        };
+        $payouts->reconcileInitiating($payout, $paystack);
     }
 
     /**

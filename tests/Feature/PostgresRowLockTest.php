@@ -137,4 +137,53 @@ class PostgresRowLockTest extends TestCase
             $this->assertSame('success', $row->status, 'second writer did not observe the committed transition');
         });
     }
+
+    /**
+     * B1 recovery: an operator reset (failed -> pending) and a concurrent worker
+     * claim (pending -> initiating) both re-read the row under `for update`, so
+     * the second of two operators, or an operator racing the worker, observes
+     * the first writer's committed state and its own guard refuses. This is the
+     * mechanism PayoutService::retryFailed() / releaseForTransfer() rely on.
+     */
+    public function test_a_recovery_reset_is_serialised_by_the_row_lock(): void
+    {
+        $a = DB::connection('pg_a');
+        $b = DB::connection('pg_b');
+
+        $a->table(self::TABLE)->where('id', 1)->update(['status' => 'failed']);
+
+        // Operator A holds the lock while resetting the payout.
+        $a->beginTransaction();
+        $rowA = $a->table(self::TABLE)->where('id', 1)->lockForUpdate()->first();
+        $this->assertSame('failed', $rowA->status);
+        $a->table(self::TABLE)->where('id', 1)->update(['status' => 'pending']);
+
+        // Operator B cannot even read the row for update until A is done.
+        $blocked = false;
+        try {
+            $b->beginTransaction();
+            $b->select('select * from '.self::TABLE.' where id = 1 for update nowait');
+        } catch (\Throwable) {
+            $blocked = true;
+        } finally {
+            if ($b->transactionLevel() > 0) {
+                $b->rollBack();
+            }
+        }
+        $this->assertTrue($blocked, 'a second operator was not blocked by the first reset');
+
+        $a->commit();
+
+        // Once A has committed, B sees `pending`, so its "only failed may be reset"
+        // guard refuses — and the worker's conditional claim is the only writer left.
+        $b->transaction(function () use ($b) {
+            $row = $b->table(self::TABLE)->where('id', 1)->lockForUpdate()->first();
+            $this->assertSame('pending', $row->status);
+        });
+
+        $claimed = $b->table(self::TABLE)->where('id', 1)->where('status', 'pending')->update(['status' => 'initiating']);
+        $this->assertSame(1, $claimed);
+        $claimedAgain = $a->table(self::TABLE)->where('id', 1)->where('status', 'pending')->update(['status' => 'initiating']);
+        $this->assertSame(0, $claimedAgain, 'a second claim must find nothing to claim');
+    }
 }
