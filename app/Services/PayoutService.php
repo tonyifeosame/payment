@@ -558,6 +558,89 @@ class PayoutService
     }
 
     /**
+     * H1: reconcile every stale `initiating` payout — the scheduled counterpart of
+     * `payouts:lookup --stale`, built on exactly the same two pieces
+     * (staleInitiating() + reconcileInitiating()). Lookup only: this can move a
+     * payout to processing / success / failed / reversed / needs_review by applying
+     * Paystack's answer, or release a claim Paystack knows nothing about, but it
+     * can never send a transfer, mint a reference or touch an amount.
+     *
+     * Safe to overlap with the worker, a webhook or another run: every write goes
+     * through the transition-checked, row-locked applyPaystackStatus() or the
+     * conditional releaseClaim(), so a second observer of the same answer changes
+     * nothing. Each payout is handled on its own — one failure never stops the rest.
+     *
+     * An audit event (source given) is recorded only when a payout actually changed
+     * state, so an hourly run over a still-ambiguous payout leaves no noise.
+     *
+     * @param  (callable(Payout, array{outcome: string, previous: string, status: string, message: ?string}|\Throwable): void)|null  $each  progress callback per payout
+     * @return array{found: int, changed: int, released: int, unresolved: int, skipped: int, failed: int, by_status: array<string, int>}
+     */
+    public function reconcileStaleInitiating(PaystackService $paystack, string $source = PayoutRecoveryEvent::SOURCE_SCHEDULER, ?callable $each = null): array
+    {
+        $counts = ['found' => 0, 'changed' => 0, 'released' => 0, 'unresolved' => 0, 'skipped' => 0, 'failed' => 0, 'by_status' => []];
+
+        foreach ($this->staleInitiating()->get() as $payout) {
+            $counts['found']++;
+
+            try {
+                $result = $this->reconcileInitiating($payout, $paystack);
+            } catch (\Throwable $e) {
+                report($e);
+                Log::error('Stale payout reconciliation failed for a payout', [
+                    'payout_id' => $payout->id,
+                    'reference' => $payout->reference,
+                    'school_id' => $payout->school_id,
+                    'error' => $e->getMessage(),
+                ]);
+                $counts['failed']++;
+                if ($each) {
+                    $each($payout, $e);
+                }
+
+                continue;
+            }
+
+            $changed = $result['status'] !== $result['previous'];
+
+            if ($changed) {
+                $this->recordRecoveryEvent(
+                    $payout,
+                    PayoutRecoveryEvent::ACTION_LOOKUP,
+                    $result['previous'],
+                    $result['status'],
+                    $source,
+                    null,
+                    $result['message'],
+                    $result['outcome'].': '.$result['previous'].' -> '.$result['status']
+                );
+                $counts['by_status'][$result['status']] = ($counts['by_status'][$result['status']] ?? 0) + 1;
+            }
+
+            if ($result['outcome'] === 'not_initiating') {
+                $counts['skipped']++;
+            } elseif ($result['outcome'] === 'released') {
+                $counts['released']++;
+                $counts['changed']++;
+            } elseif ($changed) {
+                $counts['changed']++;
+            } else {
+                $counts['unresolved']++;
+            }
+
+            if ($each) {
+                $each($payout, $result);
+            }
+        }
+
+        if ($counts['found'] > 0) {
+            Log::info('Stale payout reconciliation run', array_merge(['source' => $source], $counts));
+        }
+
+        return $counts;
+    }
+
+    /**
      * Write the immutable audit row for an operator action. Called inside the
      * transaction that performs the action, so the two commit or roll back together.
      */

@@ -6,6 +6,7 @@ use App\Jobs\InitiateSchoolPayout;
 use App\Models\Payout;
 use App\Models\Transaction;
 use App\Services\PayoutService;
+use App\Services\PaystackService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
@@ -23,8 +24,17 @@ use Illuminate\Support\Facades\Log;
  * exact same idempotent state machine as new ones. A transaction that already has a
  * payout is skipped, so it can never create a duplicate transfer.
  *
- * Every transaction is handled independently: one school's failure is logged
- * against that school and processing continues for all the others (E4b).
+ * H1: it also reconciles payouts left in `initiating` for longer than
+ * PayoutService::STALE_INITIATING_MINUTES — the transfer was requested and the
+ * answer was lost — by asking Paystack what became of our reference
+ * (PayoutService::reconcileStaleInitiating, the same path as `payouts:lookup
+ * --stale`). That is a read-only GET per stale payout; the answer is applied
+ * through the state machine, and a payout Paystack has never seen is released to
+ * `failed` for an operator's `payouts:retry`. It never re-sends.
+ *
+ * Every transaction and every stale payout is handled independently: one school's
+ * failure is logged against that school and processing continues for all the
+ * others (E4b).
  */
 class RunPayouts extends Command
 {
@@ -35,9 +45,9 @@ class RunPayouts extends Command
         {--dispatch : Actually queue the transfers (otherwise obligations are only recorded)}
         {--dry-run : Report what would happen and change nothing}';
 
-    protected $description = 'Reconcile settled payments that have no payout obligation, and queue their transfers';
+    protected $description = 'Reconcile settled payments that have no payout obligation, queue their transfers, and resolve stale initiating payouts';
 
-    public function handle(PayoutService $payouts): int
+    public function handle(PayoutService $payouts, PaystackService $paystack): int
     {
         $dryRun = (bool) $this->option('dry-run');
         $dispatch = (bool) $this->option('dispatch');
@@ -71,6 +81,10 @@ class RunPayouts extends Command
         // run, including runs where nothing else needs reconciling (MEDIUM-3).
         $requeued = $dryRun ? 0 : $this->requeueStrandedObligations($dispatch);
 
+        // H1: payouts whose transfer outcome was lost are looked up on every run
+        // (lookup only — see the class comment). A dry run only counts them.
+        $staleFailures = $this->reconcileStaleInitiating($payouts, $paystack, $dryRun);
+
         if ($transactions->isEmpty()) {
             $this->info('No settled payments are missing a payout obligation.');
 
@@ -78,7 +92,7 @@ class RunPayouts extends Command
                 $this->info("Re-queued {$requeued} stranded obligation(s).");
             }
 
-            return self::SUCCESS;
+            return $staleFailures > 0 ? self::FAILURE : self::SUCCESS;
         }
 
         $this->info("Found {$transactions->count()} settled payment(s) without a payout obligation.");
@@ -161,7 +175,57 @@ class RunPayouts extends Command
             $this->comment('Re-run with --dispatch to queue the transfers for these obligations.');
         }
 
-        return $failed > 0 ? self::FAILURE : self::SUCCESS;
+        return $failed + $staleFailures > 0 ? self::FAILURE : self::SUCCESS;
+    }
+
+    /**
+     * H1: look up every `initiating` payout older than the stale threshold and apply
+     * Paystack's answer. Prints a per-payout line and a summary; nothing here can
+     * create a transfer. Returns how many payouts raised an exception.
+     */
+    private function reconcileStaleInitiating(PayoutService $payouts, PaystackService $paystack, bool $dryRun): int
+    {
+        $minutes = PayoutService::STALE_INITIATING_MINUTES;
+
+        if ($dryRun) {
+            $stale = $payouts->staleInitiating()->count();
+            if ($stale > 0) {
+                $this->newLine();
+                $this->warn("{$stale} payout(s) have been initiating for over {$minutes} minutes and would be looked up (dry run: not contacted).");
+            }
+
+            return 0;
+        }
+
+        $printed = false;
+        $counts = $payouts->reconcileStaleInitiating($paystack, \App\Models\PayoutRecoveryEvent::SOURCE_SCHEDULER, function (Payout $payout, $result) use (&$printed, $minutes) {
+            if (! $printed) {
+                $this->newLine();
+                $this->info("Looking up payouts initiating for over {$minutes} minutes:");
+                $printed = true;
+            }
+
+            if ($result instanceof \Throwable) {
+                $this->error("  FAILED {$payout->reference}: ".$result->getMessage());
+
+                return;
+            }
+
+            $line = match ($result['outcome']) {
+                'resolved' => "  {$payout->reference}: ".($result['message'] ?? 'resolved')." -> {$result['status']}",
+                'released' => "  {$payout->reference}: Paystack has no transfer for this reference -> {$result['status']} (retry with payouts:retry once the cause is known)",
+                'not_initiating' => "  {$payout->reference}: already {$result['status']} (resolved elsewhere); nothing done",
+                default => "  {$payout->reference}: still unknown (".($result['message'] ?? 'no answer').') -> left initiating',
+            };
+            $result['outcome'] === 'unresolved' || $result['outcome'] === 'released' ? $this->warn($line) : $this->line($line);
+        });
+
+        if ($counts['found'] > 0) {
+            $byStatus = $counts['by_status'] === [] ? 'none' : implode(', ', array_map(fn ($status, $n) => "{$n} {$status}", array_keys($counts['by_status']), $counts['by_status']));
+            $this->info("Stale payouts: found {$counts['found']}, changed {$counts['changed']} ({$byStatus}), released to failed {$counts['released']}, still ambiguous {$counts['unresolved']}, resolved elsewhere {$counts['skipped']}, errors {$counts['failed']}");
+        }
+
+        return $counts['failed'];
     }
 
     /**

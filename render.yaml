@@ -230,13 +230,18 @@ services:
 
   # ---------------------------------------------------------------------------
   # Hourly reconciliation / recovery. This is NOT the payout mechanism — payouts are
-  # created and queued the moment a payment settles (Model A). This job only catches
-  # what settlement missed: a payment whose obligation was never recorded, or an
-  # obligation whose job never reached the queue. It records and enqueues; it never
-  # calls Paystack itself, so every transfer still goes through InitiateSchoolPayout,
-  # the atomic pending->initiating claim and the payout state machine. It is safe to
-  # run repeatedly: a payout that is initiating, processing, success, reversed,
-  # failed or needs_review is left untouched.
+  # created and queued the moment a payment settles (Model A). This job catches what
+  # settlement missed — a payment whose obligation was never recorded, or an
+  # obligation whose job never reached the queue — by recording and enqueueing, so
+  # every transfer still goes through InitiateSchoolPayout, the atomic
+  # pending->initiating claim and the payout state machine. Since H1 it also looks
+  # up payouts stuck in `initiating` for over 10 minutes (read-only GET
+  # /transfer/verify/{reference}) and applies Paystack's answer through the same
+  # state machine; it never re-sends a transfer. It is safe to run repeatedly: a
+  # payout that is processing, success, reversed, failed or needs_review is left
+  # untouched, and an `initiating` payout Paystack still cannot account for stays
+  # `initiating`. Hourly is the finest schedule Render cron offers and is
+  # sufficient: the 10-minute threshold only decides eligibility.
   #
   # Cost note: cron jobs are the one Render service billed per second of actual
   # runtime rather than as a monthly plan, subject to a $1/month minimum. An hourly
@@ -286,8 +291,9 @@ services:
         value: database
       - key: LOG_CHANNEL
         value: stderr
-      # Needed so a payout amount can be resolved and the queued job is well formed.
-      # The cron itself makes no Paystack call; the worker performs the transfer.
+      # Used for the read-only transfer lookups of stale `initiating` payouts (H1)
+      # and so the queued job is well formed. The cron never sends a transfer; the
+      # worker does.
       - key: PAYSTACK_SECRET_KEY
         sync: false
       - key: PAYSTACK_PAYMENT_URL

@@ -157,7 +157,7 @@ reason, result) — including refusals.
 | `php artisan payouts:release {reference} --amount=50000 [--note="why"]` | a payout is `needs_review` and you have established the correct school share | sets the amount and moves `needs_review → pending`, then dispatches. The amount must be positive, at most two decimals, and **never above the school share** recorded for the payment (or, for a legacy payment with no trustworthy breakdown, never above what the parent paid). A payout with no transaction behind it cannot be released. |
 | `php artisan payouts:lookup {reference}` | a payout is `initiating` (transfer outcome unknown) | asks Paystack for the transfer by our reference: found → its status is applied (amount- and currency-checked); not found (404) → released to `failed` for a retry; unknown → left `initiating`. Never re-sends. |
 | `php artisan payouts:lookup --stale` | after a Paystack or network incident | the above for every `initiating` payout older than 10 minutes; recent ones are untouched |
-| `php artisan payouts:run --dispatch` | the hourly cron, or by hand after a worker outage | records missing obligations for settled payments and re-queues `pending` payouts that were never dispatched; never calls Paystack |
+| `php artisan payouts:run --dispatch` | the hourly cron, or by hand after a worker outage | records missing obligations for settled payments, re-queues `pending` payouts that were never dispatched, and looks up every payout `initiating` for over 10 minutes (same lookup-only path as `payouts:lookup --stale`); never sends a transfer |
 
 `payouts:release` and `payouts:retry` are operator overrides: they log at
 warning/critical with the payout, school, amount and reason. Keep the ticket
@@ -184,15 +184,17 @@ Payments still settle through the browser callback when the parent returns;
 those who do not return stay `pending` until the webhook is redelivered
 (Paystack retries). Payout `transfer.*` events are also missed, so payouts sit
 in `processing`. Restore reachability (web service up, HTTPS, URL registered),
-then: `php artisan payouts:lookup --stale` for anything `initiating`; for
+then: the hourly cron looks up anything `initiating` for over 10 minutes on its
+own; run `php artisan payouts:lookup --stale` yourself to do it immediately. For
 `processing` payouts wait for Paystack's retry or use "Resend" on the event in
 the dashboard's webhook log. Never re-initiate the transfer.
 
 **Transfer stuck `initiating`**
-The transfer request got no answer. Run `php artisan payouts:lookup {reference}`
-(or `--stale`). Found → resolved; 404 → `failed`, then `payouts:retry` once the
-cause is known; still unknown → leave it and retry the lookup later. Do not
-touch the row.
+The transfer request got no answer. The hourly cron (`payouts:run`) looks every
+such payout up automatically once it is 10 minutes old; to act sooner run
+`php artisan payouts:lookup {reference}` (or `--stale`). Found → resolved; 404 →
+`failed`, then `payouts:retry` once the cause is known; still unknown → left
+`initiating` and looked up again next hour. Do not touch the row.
 
 **Transfer stuck `processing`**
 Paystack accepted it and has not finalised it. Check the transfer in the

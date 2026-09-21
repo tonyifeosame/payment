@@ -234,7 +234,9 @@ class PayoutReconciliationCronTest extends TestCase
     public function test_the_command_never_calls_paystack_itself(): void
     {
         // The cron must not move money; it only records and enqueues. Any outbound
-        // HTTP here would mean the command bypassed the job/state machine.
+        // HTTP here would mean the command bypassed the job/state machine. (The one
+        // call it may make — H1's read-only lookup of a payout `initiating` for over
+        // ten minutes — needs such a payout to exist; see StalePayoutReconciliationTest.)
         \Illuminate\Support\Facades\Http::preventStrayRequests();
         Bus::fake();
 

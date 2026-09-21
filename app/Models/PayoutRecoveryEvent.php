@@ -19,8 +19,11 @@ class PayoutRecoveryEvent extends Model
 
     public const ACTION_LOOKUP = 'lookup';
 
-    /** Who performed the action. The artisan commands are the only source today. */
+    /** Who performed the action: an operator at the console… */
     public const SOURCE_ARTISAN = 'artisan';
+
+    /** …or the scheduled `payouts:run` reconciliation (H1: stale `initiating` lookups). */
+    public const SOURCE_SCHEDULER = 'payouts:run';
 
     const UPDATED_AT = null;
 
