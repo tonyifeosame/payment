@@ -3,330 +3,258 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Payment Receipt</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    animation: {
-                        'fade-in': 'fadeIn 0.8s ease-out',
-                        'slide-down': 'slideDown 0.6s ease-out',
-                    }
-                }
-            }
-        }
-    </script>
-    <style>
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes slideDown {
-            from { opacity: 0; transform: translateY(-20px); }
-            to { opacity: 1; transform: translateY(0); }
+    @php
+        // transactions.school_id is the authoritative source (see the email template
+        // for why); the relation walk is only a fallback for rows that predate school_id.
+        $school = $transaction->school
+                  ?? optional($transaction->category)->school
+                  ?? optional($transaction->subcategory)->school;
+        $receipt = $transaction->receiptBreakdown();
+        $paidAt = $transaction->paid_at ?? $transaction->created_at;
+        $isSuccess = $transaction->status === 'success';
+        $money = fn ($n) => '₦'.number_format((float) $n, 2);
+        // Paystack channels arrive as snake_case ("bank_transfer"); the pre-settlement
+        // placeholder is the provider name itself.
+        $method = $transaction->payment_method
+            ? ucfirst(str_replace('_', ' ', (string) $transaction->payment_method))
+            : null;
+        $backUrl = $school?->slug
+            ? route('school.payment.index', ['school' => $school->slug])
+            : route('payment.index');
+    @endphp
+    <title>Payment receipt{{ $school ? ' — '.$school->name : '' }}</title>
+    <meta name="robots" content="noindex">
+    <link rel="icon" type="image/svg+xml" href="{{ asset('favicon.svg') }}">
+    @include('marketing.partials.head-tokens')
+    <style type="text/tailwindcss">
+        @layer components {
+            /* Receipt rows: label left, value right; values may wrap on 375px phones
+               (UUID references) without ever forcing horizontal scroll. */
+            .receipt-section { @apply border-t border-brand-ash/60 px-5 py-4 sm:px-6; }
+            .receipt-section-title { @apply text-xs font-semibold uppercase tracking-[0.12em] text-brand-slate; }
+            .receipt-rows { @apply mt-2 divide-y divide-brand-fog; }
+            .receipt-row { @apply flex items-start justify-between gap-4 py-2.5; }
+            .receipt-row dt { @apply shrink-0 text-sm text-brand-slate; }
+            .receipt-row dd { @apply min-w-0 break-words text-right text-sm font-semibold text-brand-obsidian; }
         }
         @media print {
-            .no-print { display: none; }
-            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            .print-shadow { box-shadow: none; border: 1px solid #e2e8f0; }
-        }
-        .gradient-border {
-            position: relative;
-        }
-        .gradient-border::before {
-            content: '';
-            position: absolute;
-            inset: 0;
-            border-radius: 1rem;
-            padding: 2px;
-            background: linear-gradient(135deg, #3b82f6, #8b5cf6, #10b981);
-            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-            mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-            -webkit-mask-composite: xor;
-            mask-composite: exclude;
+            .no-print { display: none !important; }
+            body { background: #fff !important; }
+            .receipt-card { box-shadow: none !important; border: 1px solid #D1D1DB; }
         }
     </style>
 </head>
-<body class="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 py-8 px-4">
-    <div class="max-w-4xl mx-auto animate-fade-in">
-        <!-- Success Badge -->
-        <div class="text-center mb-6 animate-slide-down">
-            <div class="inline-flex items-center gap-3 bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-200 rounded-full px-6 py-3 shadow-lg">
-                <div class="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-500 rounded-full flex items-center justify-center shadow-md">
-                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path>
-                    </svg>
-                </div>
-                <div class="text-left">
-                    <p class="text-sm font-semibold text-green-900">Payment Successful</p>
-                    <p class="text-xs text-green-700">Your transaction has been completed</p>
-                </div>
-            </div>
+<body class="min-h-screen bg-brand-fog text-brand-obsidian">
+
+    {{-- Top bar: brand + what this page is. Not a link — parents should stay on their receipt. --}}
+    <header class="border-b border-brand-ash/60 bg-white no-print">
+        <div class="mx-auto flex h-14 max-w-5xl items-center justify-between px-4 sm:px-6">
+            <span class="inline-flex items-center gap-2 font-display text-lg font-bold">
+                @include('marketing.partials.logo-mark', ['size' => 28])
+                @include('marketing.partials.brand-name')
+            </span>
+            <span class="inline-flex items-center gap-1.5 text-xs font-medium text-brand-slate">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h5M10 17h5"/></svg>
+                Official receipt
+            </span>
+        </div>
+    </header>
+
+    <main class="mx-auto max-w-md px-4 pb-10 pt-8 sm:px-6 lg:max-w-2xl lg:pb-16 lg:pt-14">
+
+        {{-- 1. Outcome --}}
+        <section class="text-center" aria-labelledby="receipt-heading">
+            @if($isSuccess)
+                <span class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-600 text-white" aria-hidden="true">
+                    <svg class="h-8 w-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>
+                </span>
+                <h1 id="receipt-heading" class="mt-5 font-display text-3xl font-extrabold leading-tight tracking-tight sm:text-4xl">Payment successful</h1>
+                <p class="mx-auto mt-3 max-w-sm text-base text-brand-slate">
+                    Thank you{{ $transaction->name ? ', '.$transaction->name : '' }}. Your payment of
+                    <span class="font-semibold text-brand-obsidian">{{ $money($receipt['total']) }}</span>{{ $school ? ' to '.$school->name : '' }}
+                    has been received and your receipt is ready.
+                </p>
+            @else
+                <span class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-brand-ash text-brand-obsidian" aria-hidden="true">
+                    <svg class="h-8 w-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                </span>
+                <h1 id="receipt-heading" class="mt-5 font-display text-3xl font-extrabold leading-tight tracking-tight sm:text-4xl">Payment {{ strtolower($transaction->status) }}</h1>
+                <p class="mx-auto mt-3 max-w-sm text-base text-brand-slate">This payment has not been confirmed as successful. The details recorded for it are below.</p>
+            @endif
+        </section>
+
+        {{-- 2. Primary action --}}
+        <div class="mt-6 no-print lg:text-center">
+            <a href="{{ $downloadUrl }}" class="btn-obsidian w-full text-lg lg:w-auto lg:min-w-[22rem] lg:px-10">
+                <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0l-4-4m4 4l4-4M5 19h14"/></svg>
+                Download receipt (PDF)
+            </a>
         </div>
 
-        <div class="bg-white shadow-2xl rounded-2xl overflow-hidden print-shadow border border-slate-200">
-            <!-- Header -->
-            <div class="relative bg-gradient-to-r from-blue-600 via-purple-600 to-teal-600 px-8 py-8">
-                <div class="absolute inset-0 bg-black opacity-5"></div>
-                <div class="relative flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                    <div class="text-center md:text-left">
-                        @php
-                            // transactions.school_id is the authoritative source (see the
-                            // email template for why); the relation walk is only a fallback
-                            // for rows that predate school_id.
-                            $school = $transaction->school
-                                      ?? optional($transaction->category)->school
-                                      ?? optional($transaction->subcategory)->school;
-                            $schoolName = $school?->name;
-                        @endphp
-                        @if($schoolName)
-                            <div class="flex items-center justify-center md:justify-start gap-3 mb-3">
-                                @if($school?->logoUrl())
-                                    <img src="{{ $school->logoUrl() }}" alt="" class="w-14 h-14 rounded-xl object-contain bg-white border border-white/30">
-                                @else
-                                <div class="w-14 h-14 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center border border-white/30">
-                                    <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
-                                    </svg>
-                                </div>
-                                @endif
-                                <div class="text-left">
-                                    <h1 class="text-3xl sm:text-4xl font-black text-white tracking-tight">{{ $schoolName }}</h1>
-                                    <p class="text-blue-100 text-sm font-medium">Official Payment Receipt</p>
-                                    @if($school?->address || $school?->phone || $school?->email)
-                                        <p class="text-blue-100/90 text-xs mt-1">{{ $school->address }}{{ $school->address && ($school->phone || $school->email) ? ' · ' : '' }}{{ $school->phone }}{{ $school->phone && $school->email ? ' · ' : '' }}{{ $school->email }}</p>
-                                    @endif
-                                </div>
+        {{-- 3. Receipt card --}}
+        <article class="receipt-card mt-6 overflow-hidden rounded-3xl bg-white shadow-sm" aria-label="Receipt details">
+
+            {{-- School --}}
+            <div class="flex items-center gap-4 px-5 py-5 sm:px-6">
+                @if($school?->logoUrl())
+                    <img src="{{ $school->logoUrl() }}" alt="{{ $school->name }} logo" class="h-14 w-14 shrink-0 rounded-2xl border border-brand-ash/60 bg-white object-contain">
+                @elseif($school)
+                    <span class="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-brand-violet font-display text-xl font-bold text-white" aria-hidden="true">{{ mb_substr($school->name, 0, 1) }}</span>
+                @endif
+                <div class="min-w-0">
+                    <h2 class="font-display text-xl font-bold leading-tight tracking-tight">{{ $school?->name ?? 'Payment receipt' }}</h2>
+                    @if($school?->address)<p class="mt-0.5 text-sm text-brand-slate">{{ $school->address }}</p>@endif
+                    @if($school?->phone || $school?->email)
+                        <p class="text-sm text-brand-slate break-words">{{ $school->phone }}{{ $school->phone && $school->email ? ' · ' : '' }}{{ $school->email }}</p>
+                    @endif
+                </div>
+            </div>
+
+            {{-- Payment --}}
+            <section class="receipt-section" aria-labelledby="section-payment">
+                <h3 id="section-payment" class="receipt-section-title">Payment</h3>
+                <dl class="receipt-rows">
+                    <div class="receipt-row">
+                        <dt>Reference</dt>
+                        <dd class="font-mono text-[13px] break-all">{{ $transaction->reference ?? '—' }}</dd>
+                    </div>
+                    <div class="receipt-row">
+                        <dt>Date</dt>
+                        <dd>{{ $paidAt?->format('d M Y, h:i A') ?? '—' }}</dd>
+                    </div>
+                    @if($method)
+                        <div class="receipt-row">
+                            <dt>Payment method</dt>
+                            <dd>{{ $method }}</dd>
+                        </div>
+                    @endif
+                    <div class="receipt-row">
+                        <dt>Status</dt>
+                        <dd>
+                            <span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold {{ $isSuccess ? 'bg-green-50 text-green-800' : 'bg-brand-fog text-brand-slate' }}">
+                                <span class="h-1.5 w-1.5 rounded-full {{ $isSuccess ? 'bg-green-600' : 'bg-brand-slate' }}" aria-hidden="true"></span>
+                                {{ $isSuccess ? 'Successful' : ucfirst($transaction->status) }}
+                            </span>
+                        </dd>
+                    </div>
+                    @if($transaction->name || $transaction->email)
+                        <div class="receipt-row">
+                            <dt>Paid by</dt>
+                            <dd>
+                                @if($transaction->name)<span class="block">{{ $transaction->name }}</span>@endif
+                                @if($transaction->email)<span class="block font-normal text-brand-slate break-all">{{ $transaction->email }}</span>@endif
+                            </dd>
+                        </div>
+                    @endif
+                </dl>
+            </section>
+
+            {{-- Student: only when the payment was recorded against a real student. The
+                 receipt itself is only reachable by the payer, a signed link or the
+                 owning school (see PaymentController::authorizeReceipt), so the full
+                 admission number is shown here exactly as before; the public search is
+                 where it is masked. --}}
+            @if($transaction->hasStudent())
+                <section class="receipt-section" aria-labelledby="section-student">
+                    <h3 id="section-student" class="receipt-section-title">Student</h3>
+                    <dl class="receipt-rows">
+                        <div class="receipt-row">
+                            <dt>Name</dt>
+                            <dd>{{ $transaction->student_name ?? '—' }}</dd>
+                        </div>
+                        @if($transaction->student_class)
+                            <div class="receipt-row">
+                                <dt>Class</dt>
+                                <dd>{{ $transaction->student_class }}</dd>
                             </div>
-                        @else
-                            <h1 class="text-3xl sm:text-4xl font-black text-white mb-2">Payment Receipt</h1>
                         @endif
-                        <p class="text-white/90 text-sm font-medium">Thank you for your payment</p>
-                    </div>
-                    <div class="text-center md:text-right">
-                        <div class="inline-block bg-white/20 backdrop-blur-sm border border-white/30 rounded-xl px-5 py-3">
-                            <p class="text-xs text-white/80 font-semibold uppercase tracking-wider mb-1">Receipt Date</p>
-                            <p class="text-white font-bold text-lg">{{ ($transaction->paid_at ?? $transaction->created_at)?->format('M d, Y') }}</p>
-                            <p class="text-white/90 text-sm">{{ ($transaction->paid_at ?? $transaction->created_at)?->format('h:i A') }}</p>
+                        @if($transaction->student_admission_number)
+                            <div class="receipt-row">
+                                <dt>Admission No.</dt>
+                                <dd class="font-mono text-[13px]">{{ $transaction->student_admission_number }}</dd>
+                            </div>
+                        @endif
+                    </dl>
+                </section>
+            @endif
+
+            {{-- Fee --}}
+            <section class="receipt-section" aria-labelledby="section-fee">
+                <h3 id="section-fee" class="receipt-section-title">Fee</h3>
+                <dl class="receipt-rows">
+                    @php
+                        $categoryName = $transaction->category_name ?? optional($transaction->category)->name;
+                        $feeName = $transaction->subcategory_name ?? optional($transaction->subcategory)->name;
+                    @endphp
+                    @if($categoryName)
+                        <div class="receipt-row">
+                            <dt>Category</dt>
+                            <dd>{{ $categoryName }}</dd>
                         </div>
+                    @endif
+                    @if($feeName)
+                        <div class="receipt-row">
+                            <dt>Fee type</dt>
+                            <dd>{{ $feeName }}</dd>
+                        </div>
+                    @endif
+                    @if($transaction->session_name || $transaction->term_name)
+                        <div class="receipt-row">
+                            <dt>Session / Term</dt>
+                            <dd>{{ $transaction->session_name ?? '—' }}@if($transaction->term_name), {{ $transaction->term_name }}@endif</dd>
+                        </div>
+                    @endif
+                    <div class="receipt-row">
+                        <dt>Fee amount{{ $receipt['quantity'] > 1 ? ' ('.$receipt['quantity'].' × '.$money($receipt['unit_price']).')' : '' }}</dt>
+                        <dd>{{ $money($receipt['fee_subtotal']) }}</dd>
                     </div>
-                </div>
+                    @if($receipt['has_service_fee'])
+                        <div class="receipt-row">
+                            <dt>Service fee</dt>
+                            <dd>{{ $money($receipt['service_fee']) }}</dd>
+                        </div>
+                    @endif
+                </dl>
+            </section>
+
+            {{-- Total: the one number a parent looks for. --}}
+            <div class="flex items-center justify-between gap-4 border-t border-brand-ash/60 bg-brand-fog px-5 py-5 sm:px-6">
+                <span class="font-display text-base font-bold">Total paid</span>
+                <span class="font-display text-2xl font-extrabold tracking-tight sm:text-3xl">{{ $money($receipt['total']) }}</span>
             </div>
+        </article>
 
-            <!-- Content -->
-            <div class="px-8 py-8 space-y-8">
-                @if($transaction->hasStudent() || $transaction->term_name)
-                <!-- Student & period -->
-                <div class="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl p-6 border border-emerald-100">
-                    <div class="flex items-center gap-3 mb-4">
-                        <div class="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-lg flex items-center justify-center shadow-md">
-                            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422A12.083 12.083 0 0121 13.5c0 .945-.11 1.865-.32 2.75M12 14v7"></path></svg>
-                        </div>
-                        <h2 class="text-lg font-bold text-slate-800">Student</h2>
-                    </div>
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <div>
-                            <p class="text-xs text-slate-600 font-semibold uppercase tracking-wider mb-1">Student Name</p>
-                            <p class="text-slate-900 font-bold">{{ $transaction->student_name ?? '—' }}</p>
-                        </div>
-                        <div>
-                            <p class="text-xs text-slate-600 font-semibold uppercase tracking-wider mb-1">Admission No.</p>
-                            <p class="text-slate-900 font-mono font-bold">{{ $transaction->student_admission_number ?? '—' }}</p>
-                        </div>
-                        <div>
-                            <p class="text-xs text-slate-600 font-semibold uppercase tracking-wider mb-1">Class</p>
-                            <p class="text-slate-900 font-bold">{{ $transaction->student_class ?? '—' }}</p>
-                        </div>
-                        <div>
-                            <p class="text-xs text-slate-600 font-semibold uppercase tracking-wider mb-1">Session / Term</p>
-                            <p class="text-slate-900 font-bold">{{ $transaction->session_name ?? '—' }}@if($transaction->term_name), {{ $transaction->term_name }}@endif</p>
-                        </div>
-                    </div>
-                </div>
-                @endif
+        {{-- 4. Email delivery. Receipts are queued to the payer's email on settlement
+             (PaymentSettlementService::queueReceipt); there is no re-send endpoint. --}}
+        @if($isSuccess && $transaction->email)
+            <p class="mt-5 text-center text-sm text-brand-slate no-print">
+                <span class="inline-flex items-center gap-2">
+                    <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3 8l9 6 9-6"/></svg>
+                    A copy of this receipt has been emailed to
+                </span>
+                <span class="block break-all font-semibold text-brand-obsidian">{{ $transaction->email }}</span>
+            </p>
+        @endif
 
-                <!-- Payer & Payment Details -->
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <!-- Payer Info -->
-                    <div class="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-100">
-                        <div class="flex items-center gap-3 mb-4">
-                            <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-lg flex items-center justify-center shadow-md">
-                                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
-                                </svg>
-                            </div>
-                            <h2 class="text-lg font-bold text-slate-800">Payer Information</h2>
-                        </div>
-                        <div class="space-y-3">
-                            <div>
-                                <p class="text-xs text-slate-600 font-semibold uppercase tracking-wider mb-1">Full Name</p>
-                                <p class="text-slate-900 font-bold text-lg">{{ $transaction->name ?? '—' }}</p>
-                            </div>
-                            <div>
-                                <p class="text-xs text-slate-600 font-semibold uppercase tracking-wider mb-1">Email Address</p>
-                                <p class="text-slate-700 font-medium">{{ $transaction->email ?? '—' }}</p>
-                            </div>
-                            
-                        </div>
-                    </div>
-
-                    <!-- Payment Details -->
-                    <div class="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-6 border border-purple-100">
-                        <div class="flex items-center gap-3 mb-4">
-                            <div class="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center shadow-md">
-                                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path>
-                                </svg>
-                            </div>
-                            <h2 class="text-lg font-bold text-slate-800">Payment Details</h2>
-                        </div>
-                        <div class="space-y-3">
-                            <div>
-                                <p class="text-xs text-slate-600 font-semibold uppercase tracking-wider mb-1">Reference Number</p>
-                                <p class="text-slate-900 font-mono font-bold text-sm bg-white px-3 py-2 rounded-lg border border-slate-200">{{ $transaction->reference ?? '—' }}</p>
-                            </div>
-                            <div>
-                                <p class="text-xs text-slate-600 font-semibold uppercase tracking-wider mb-1">Payment Method</p>
-                                <p class="text-slate-700 font-medium">{{ $transaction->payment_method ?? '—' }}</p>
-                            </div>
-                            <div>
-                                <p class="text-xs text-slate-600 font-semibold uppercase tracking-wider mb-1">Status</p>
-                                <span class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-bold {{ $transaction->status === 'success' ? 'bg-green-100 text-green-800 border border-green-200' : 'bg-red-100 text-red-800 border border-red-200' }}">
-                                    <span class="w-2 h-2 rounded-full {{ $transaction->status === 'success' ? 'bg-green-500' : 'bg-red-500' }} animate-pulse"></span>
-                                    {{ ucfirst($transaction->status) }}
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Transaction Table -->
-                <div class="gradient-border rounded-xl overflow-hidden">
-                    <div class="bg-white">
-                        <div class="overflow-x-auto">
-                            <table class="w-full">
-                                <thead>
-                                    <tr class="bg-gradient-to-r from-slate-50 to-slate-100 border-b-2 border-slate-200">
-                                        <th class="text-left py-4 px-6 text-slate-700 font-bold text-sm uppercase tracking-wider">Category</th>
-                                        <th class="text-left py-4 px-6 text-slate-700 font-bold text-sm uppercase tracking-wider">Fee Type</th>
-                                        <th class="text-right py-4 px-6 text-slate-700 font-bold text-sm uppercase tracking-wider">Unit Price</th>
-                                        <th class="text-right py-4 px-6 text-slate-700 font-bold text-sm uppercase tracking-wider">Qty</th>
-                                        <th class="text-right py-4 px-6 text-slate-700 font-bold text-sm uppercase tracking-wider">Line Total</th>
-                                    </tr>
-                                </thead>
-                                <tbody class="divide-y divide-slate-100">
-                                    @php
-                                        $receipt = $transaction->receiptBreakdown();
-                                        $qty = $receipt['quantity'];
-                                        $unit = $receipt['unit_price'];
-                                        $baseTotal = $receipt['fee_subtotal'];
-                                    @endphp
-                                    <tr class="hover:bg-slate-50 transition-colors">
-                                        <td class="py-5 px-6 text-slate-800 font-semibold">{{ $transaction->category_name ?? optional($transaction->category)->name }}</td>
-                                        <td class="py-5 px-6 text-slate-700 font-medium">{{ $transaction->subcategory_name ?? optional($transaction->subcategory)->name }}</td>
-                                        <td class="py-5 px-6 text-right text-slate-800 font-semibold">₦{{ number_format($unit, 2) }}</td>
-                                        <td class="py-5 px-6 text-right text-slate-800 font-semibold">{{ $qty }}</td>
-                                        <td class="py-5 px-6 text-right text-slate-900 font-bold text-lg">₦{{ number_format($baseTotal, 2) }}</td>
-                                    </tr>
-                                </tbody>
-                                <tfoot class="bg-gradient-to-r from-blue-50 to-purple-50 border-t-2 border-slate-200">
-                                    @if($receipt['has_service_fee'])
-                                        <tr>
-                                            <td colspan="4" class="py-3 px-6 text-right">
-                                                <span class="text-slate-600 font-semibold">Fee Subtotal</span>
-                                            </td>
-                                            <td class="py-3 px-6 text-right text-slate-800 font-semibold">₦{{ number_format($receipt['fee_subtotal'], 2) }}</td>
-                                        </tr>
-                                        <tr>
-                                            <td colspan="4" class="py-3 px-6 text-right">
-                                                <span class="text-slate-600 font-semibold">Service Fee</span>
-                                            </td>
-                                            <td class="py-3 px-6 text-right text-slate-800 font-semibold">₦{{ number_format($receipt['service_fee'], 2) }}</td>
-                                        </tr>
-                                    @endif
-                                    <tr>
-                                        <td colspan="4" class="py-5 px-6 text-right">
-                                            <span class="text-slate-700 font-bold text-lg uppercase tracking-wide">Total Amount Paid</span>
-                                        </td>
-                                        <td class="py-5 px-6 text-right">
-                                            <div class="inline-block bg-gradient-to-r from-blue-600 to-purple-600 text-white px-6 py-3 rounded-xl shadow-lg">
-                                                <span class="text-2xl font-black">₦{{ number_format($receipt['total'], 2) }}</span>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                </tfoot>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Footer Note -->
-                <div class="bg-gradient-to-r from-slate-50 to-blue-50 rounded-xl p-6 border border-slate-200">
-                    <div class="flex items-start gap-3">
-                        <svg class="w-6 h-6 text-blue-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                        </svg>
-                        <div>
-                            <p class="text-sm font-semibold text-slate-800 mb-1">Important Notice</p>
-                            <p class="text-sm text-slate-600">This receipt serves as official proof of payment for the transaction detailed above. Please keep this for your records. For any queries, contact the school administration with your reference number.</p>
-                            @if($school?->receipt_footer)
-                                <p class="text-sm text-slate-700 mt-3 whitespace-pre-line">{{ $school->receipt_footer }}</p>
-                            @endif
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Action Buttons -->
-            <div class="px-8 py-6 bg-gradient-to-r from-slate-50 to-slate-100 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4 no-print">
-                <div class="flex flex-wrap items-center justify-center gap-3">
-                    <a href="{{ $downloadUrl }}" 
-                       class="inline-flex items-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-6 py-3 rounded-xl font-bold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
-                        </svg>
-                        Download PDF
-                    </a>
-                    <button onclick="window.print()" 
-                            class="inline-flex items-center gap-2 bg-gradient-to-r from-slate-700 to-slate-800 hover:from-slate-600 hover:to-slate-700 text-white px-6 py-3 rounded-xl font-bold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path>
-                        </svg>
-                        Print Receipt
-                    </button>
-                </div>
-                @php
-                    $schoolSlug = optional($transaction->school)->slug
-                                  ?? optional(optional($transaction->category)->school)->slug
-                                  ?? optional(optional($transaction->subcategory)->school)->slug
-                                  ?? null;
-                @endphp
-                @if($schoolSlug)
-                    <a href="{{ route('school.payment.index', ['school' => $schoolSlug]) }}" 
-                       class="inline-flex items-center gap-2 text-slate-600 hover:text-slate-900 font-semibold transition-colors">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
-                        </svg>
-                        Back to Payment
-                    </a>
-                @else
-                    <a href="{{ route('payment.index') }}" 
-                       class="inline-flex items-center gap-2 text-slate-600 hover:text-slate-900 font-semibold transition-colors">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
-                        </svg>
-                        Back to Payment
-                    </a>
-                @endif
-            </div>
+        {{-- 5. Back --}}
+        <div class="mt-5 no-print lg:text-center">
+            <a href="{{ $backUrl }}" class="btn-outline w-full lg:w-auto lg:min-w-[22rem] lg:px-10">
+                <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5m0 0l6-6m-6 6l6 6"/></svg>
+                Back to {{ $school ? $school->name : 'payment page' }}
+            </a>
         </div>
 
-        <!-- Watermark for Print -->
-        <div class="hidden print:block text-center mt-8 text-slate-400 text-xs">
-            <p>Generated on {{ now()->format('F d, Y \a\t h:i A') }}</p>
-            <p class="mt-1">This is a computer-generated receipt and does not require a signature.</p>
-        </div>
-    </div>
+        <footer class="mt-10 space-y-3 text-center text-xs text-brand-slate">
+            <p>This receipt is official proof of payment. Keep it for your records and quote the reference in any enquiry to the school.</p>
+            @if($school?->receipt_footer)
+                <p class="whitespace-pre-line">{{ $school->receipt_footer }}</p>
+            @endif
+            <p class="hidden print:block">Generated {{ now()->format('d M Y, h:i A') }} · computer-generated, no signature required.</p>
+            <p class="inline-flex items-center gap-1.5 pt-2 font-display text-sm font-bold text-brand-obsidian">
+                @include('marketing.partials.logo-mark', ['size' => 20])
+                @include('marketing.partials.brand-name')
+            </p>
+        </footer>
+    </main>
 </body>
 </html>
