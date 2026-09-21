@@ -47,6 +47,7 @@ every secret `sync: false` on purpose, so nothing secret is in the repo.
 | `MAIL_MAILER`, `MAIL_HOST`, `MAIL_PORT`, `MAIL_SCHEME`, `MAIL_USERNAME`, `MAIL_PASSWORD` | your SMTP provider | receipts (worker), password resets and bank-change notices (web) |
 | `MAIL_FROM_ADDRESS` / `MAIL_FROM_NAME` | a real sender on your domain | receipts and password resets come from it; the contact form delivers to it |
 | `REPORTING_TIMEZONE` | `Africa/Lagos` (default) | dashboard business days |
+| `PENDING_PAYMENT_EXPIRY_HOURS` | `24` (default) | how long a checkout may stay `pending` before the hourly cron verifies it with Paystack (section 5b); the answer, never the age, decides the outcome |
 | `LOG_CHANNEL` | `stderr` | Render keeps stderr; the container filesystem does not survive a deploy |
 | `SKIP_MIGRATIONS` | `true` on worker and cron only | only the web service runs `migrate --force` at start |
 
@@ -158,10 +159,39 @@ reason, result) — including refusals.
 | `php artisan payouts:lookup {reference}` | a payout is `initiating` (transfer outcome unknown) | asks Paystack for the transfer by our reference: found → its status is applied (amount- and currency-checked); not found (404) → released to `failed` for a retry; unknown → left `initiating`. Never re-sends. |
 | `php artisan payouts:lookup --stale` | after a Paystack or network incident | the above for every `initiating` payout older than 10 minutes; recent ones are untouched |
 | `php artisan payouts:run --dispatch` | the hourly cron, or by hand after a worker outage | records missing obligations for settled payments, re-queues `pending` payouts that were never dispatched, and looks up every payout `initiating` for over 10 minutes (same lookup-only path as `payouts:lookup --stale`); never sends a transfer |
+| `php artisan payments:expire-pending [--limit=200] [--dry-run]` | the hourly cron (after `payouts:run`), or by hand | verifies every **payment** pending for over `PENDING_PAYMENT_EXPIRY_HOURS` with Paystack: success → settled (receipt + payout as usual), failed/reversed/abandoned/unknown reference → `failed`, still open or unreachable → left pending; oldest first, at most `--limit` per run; never a charge or transfer |
 
 `payouts:release` and `payouts:retry` are operator overrides: they log at
 warning/critical with the payout, school, amount and reason. Keep the ticket
 reference in `--note`.
+
+### 5b. Payment attempt lifecycle (H5)
+
+A parent's checkout is a **transaction**:
+
+| Local status | Meaning | How it gets there |
+|---|---|---|
+| `pending` | checkout created; Paystack has not confirmed anything | `initialize` (before the parent is even redirected) |
+| `success` | Paystack verified the charge; amount and currency matched | callback, `charge.success` webhook, or the expiry pass discovering a late success — **terminal: nothing ever moves it back** |
+| `failed` | Paystack gave a definitive non-success for this attempt | callback/webhook verify returning `failed` or `reversed`; or the expiry pass finding the checkout `abandoned` or the reference unknown after the window |
+| `mismatch` | Paystack confirmed a charge whose amount/currency did not match | callback/webhook — a human investigates; never auto-resolved |
+
+Paystack never sends a "charge failed" webhook for hosted checkout; failure is
+learned only by asking (`GET /transaction/verify/{reference}`), which is why
+a decline the parent sees on Paystack's page still shows here as `pending`
+until the callback or the hourly pass verifies it. `abandoned` means the parent
+has not completed checkout *yet* and can still do so, so it is only recorded as
+failed once `PENDING_PAYMENT_EXPIRY_HOURS` has passed. A timed-out request, a
+missing callback or a closed browser is never treated as proof of failure.
+
+A `failed` row keeps its reference, amount and currency, and records
+Paystack's status and short gateway message (`meta_data.failure`) for internal
+diagnosis; admins see "Payment not completed" with the time it was observed —
+never the provider payload, and never the service fee or gross. If Paystack
+later reports that "failed" attempt as successful (the parent retried on the
+same checkout), the next callback/webhook/expiry verification settles it
+normally: the receipt is queued and the payout obligation recorded then, exactly
+once. A failed attempt never creates a payout.
 
 **Never:**
 - re-send a transfer from the Paystack dashboard as a workaround — the
@@ -226,6 +256,14 @@ reported with the wrong amount is parked in `needs_review`, never marked paid.
 If the dashboard shows two transfers for one `PO-…` reference, stop retries,
 reconcile with Paystack support, and record the outcome with `payouts:release`
 / `payouts:retry` only after the ledger and the dashboard agree.
+
+**Payment shows `pending` for a long time**
+Either the parent never completed checkout (it becomes `failed`/"not completed"
+after the expiry window) or Paystack's confirmation has not reached us. Run
+`php artisan payments:expire-pending --dry-run` to see the candidates and
+`php artisan payments:expire-pending` to verify them now; a charge Paystack
+reports as successful is settled on the spot. Never mark a payment failed or
+successful by hand.
 
 **Worker outage**
 Payments still settle (web service); receipts and transfers queue up in the

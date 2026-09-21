@@ -30,7 +30,7 @@ class PaymentTimeline
                 $steps[] = $step('Payment confirmed', 'The payment provider confirmed the money was received.', $transaction->paid_at, 'done');
                 break;
             case 'pending':
-                $steps[] = $step('Awaiting confirmation', 'The payment has not been confirmed yet. It usually completes within minutes; abandoned checkouts stay here.', null, 'current');
+                $steps[] = $step('Awaiting confirmation', 'The payment has not been confirmed yet. It usually completes within minutes; a checkout that is never completed is marked "not completed" after '.(int) config('fees.pending_payment_expiry_hours', 24).' hours.', null, 'current');
 
                 return $steps;
             case 'mismatch':
@@ -38,7 +38,13 @@ class PaymentTimeline
 
                 return $steps;
             default:
-                $steps[] = $step('Payment not completed', 'The provider did not confirm this payment. Nothing was collected from the parent.', null, 'attention');
+                $failure = $transaction->failure();
+                $steps[] = $step('Payment not completed', match ($failure['paystack_status'] ?? null) {
+                    'abandoned' => 'The parent opened checkout but never completed it. Nothing was collected from the parent.',
+                    'reversed' => 'The provider reversed this charge. Nothing was kept from the parent.',
+                    'not_found' => 'The checkout never reached the payment provider. Nothing was collected from the parent.',
+                    default => 'The provider did not confirm this payment. Nothing was collected from the parent.',
+                }, $failure['observed_at'] ?? null, 'attention');
 
                 return $steps;
         }

@@ -306,7 +306,7 @@ class PaystackReadiness
             ['manual.webhook_registered', 'Webhook URL registered (live)', 'Settings → API Keys & Webhooks (Live) → Webhook URL = '.$url],
             ['manual.webhook_reachable', 'Webhook reachable over HTTPS', 'Paystack must reach '.$url.' from the internet; on Render the web service (not the worker) serves it and must not be sleeping'],
             ['manual.settlement_bank', 'Settlement / bank configuration', 'the business\'s own settlement account and schedule are correct in the dashboard'],
-            ['manual.render_services', 'Render services running', 'laravel-app (web), laravel-queue-worker (worker) and laravel-payout-reconciliation (cron, hourly payouts:run --dispatch) are deployed and healthy'],
+            ['manual.render_services', 'Render services running', 'laravel-app (web), laravel-queue-worker (worker) and laravel-payout-reconciliation (cron, hourly: payouts:run --dispatch then payments:expire-pending) are deployed and healthy'],
             ['manual.render_env_parity', 'APP_KEY / APP_URL identical on all three services', 'the worker signs receipt links the web service validates; the cron and worker share the same database queue and cache locks'],
         ];
 

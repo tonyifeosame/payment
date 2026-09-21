@@ -217,6 +217,15 @@ class PaystackService
 
         try {
             $resp = $this->client()->get($this->baseUrl.'/transaction/verify/'.rawurlencode($reference));
+        } catch (RequestException $e) {
+            // H5: a 404 is Paystack's definitive "no transaction with this reference" —
+            // the checkout was never initialised there. Everything else is transient.
+            if ($e->response->status() === 404) {
+                return ['ok' => false, 'not_found' => true, 'message' => $e->response->json('message') ?? 'Transaction reference not found'];
+            }
+            report($e);
+
+            return ['ok' => false, 'message' => 'Could not reach the payment verification service.'];
         } catch (\Throwable $e) {
             report($e);
 
@@ -238,6 +247,9 @@ class PaystackService
             'currency' => $data['currency'] ?? null,
             'channel' => $data['channel'] ?? null,
             'reference' => $data['reference'] ?? null,
+            // Paystack's short human message for the attempt ("Approved", "Declined",
+            // "Insufficient Funds"); kept for internal diagnosis of failures only.
+            'gateway_response' => isset($data['gateway_response']) ? (string) $data['gateway_response'] : null,
             'raw' => $data,
         ];
     }

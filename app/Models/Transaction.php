@@ -264,4 +264,27 @@ class Transaction extends Model
     {
         return $this->student_id !== null || $this->student_name !== null;
     }
+
+    /**
+     * H5: when a pending attempt was recorded as failed, and why — Paystack's status
+     * (failed / reversed / abandoned / not_found) and its short gateway message.
+     * Null for rows that never failed. Nothing here is secret or a raw payload.
+     *
+     * @return array{paystack_status: ?string, reason: ?string, gateway_response: ?string, observed_at: ?Carbon, source: ?string}|null
+     */
+    public function failure(): ?array
+    {
+        $failure = $this->decodedMetaData()['failure'] ?? null;
+        if (! is_array($failure)) {
+            return null;
+        }
+
+        return [
+            'paystack_status' => $failure['paystack_status'] ?? null,
+            'reason' => $failure['reason'] ?? null,
+            'gateway_response' => $failure['gateway_response'] ?? null,
+            'observed_at' => isset($failure['observed_at']) ? Carbon::parse($failure['observed_at']) : null,
+            'source' => $failure['source'] ?? null,
+        ];
+    }
 }

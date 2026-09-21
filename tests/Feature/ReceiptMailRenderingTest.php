@@ -106,7 +106,10 @@ class ReceiptMailRenderingTest extends TestCase
     /** Drain every queued job, not just the first. */
     private function drainQueue(): void
     {
-        Artisan::call('queue:work', ['--stop-when-empty' => true, '--tries' => 1]);
+        // --memory: the worker's default limit is 128 MB of the *whole* PHP process;
+        // late in a full suite run the test process itself sits at that mark, so
+        // the worker would stop (exit 12, memory limit) before finishing the job.
+        Artisan::call('queue:work', ['--stop-when-empty' => true, '--tries' => 1, '--memory' => 1024]);
     }
 
     /** Receipt jobs currently waiting on the queue. */

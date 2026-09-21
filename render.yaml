@@ -257,8 +257,20 @@ services:
     plan: 0.5c-512mb
     schedule: "0 * * * *"
     # `command:` is not a Blueprint field. A Docker-runtime service overrides the
-    # image CMD with dockerCommand.
-    dockerCommand: php artisan payouts:run --dispatch
+    # image CMD with dockerCommand (the entrypoint still runs first and exec's it).
+    #
+    # Two read-then-reconcile passes per hour, each safe to repeat:
+    #   payouts:run --dispatch    payout obligations + stale `initiating` lookups
+    #   payments:expire-pending   H5: checkouts pending for over
+    #                             PENDING_PAYMENT_EXPIRY_HOURS (default 24) are
+    #                             verified with Paystack (GET /transaction/verify);
+    #                             a success is settled like a late webhook, a
+    #                             failed/abandoned/unknown attempt is recorded as
+    #                             failed, anything still open stays pending.
+    #                             Never on age alone; never a charge or transfer.
+    # Both always run; the job's exit status is the first non-zero one, so a
+    # failure in either pass is visible in Render without hiding the other.
+    dockerCommand: sh -c 'php artisan payouts:run --dispatch; a=$?; php artisan payments:expire-pending; b=$?; if [ "$a" -ne 0 ]; then exit "$a"; fi; exit "$b"'
     envVars:
       # See the worker's note: only the web service runs migrations.
       - key: SKIP_MIGRATIONS

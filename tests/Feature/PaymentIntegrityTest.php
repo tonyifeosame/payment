@@ -269,7 +269,11 @@ class PaymentIntegrityTest extends TestCase
 
         $this->get('/payment/callback?reference=alpha-ref-001')->assertSessionHas('error');
 
-        $this->assertSame('pending', $this->pending->refresh()->status);
+        // H5: a definitive `failed` from Paystack is recorded as failed (never
+        // success); nothing is settled, queued or sent.
+        $this->assertSame('failed', $this->pending->refresh()->status);
+        $this->assertNull($this->pending->paid_at);
+        $this->assertDatabaseCount('payouts', 0);
         Mail::assertNothingQueued();
         Mail::assertNothingSent();
     }

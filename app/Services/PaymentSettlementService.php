@@ -44,6 +44,17 @@ class PaymentSettlementService
     public const CURRENCY_MISMATCH = 'currency_mismatch';
     public const VERIFICATION_FAILED = 'verification_failed'; // transient: could not reach/parse Paystack
     public const SETTLEMENT_CONFLICT = 'settlement_conflict'; // durable DB conflict; needs a human, not a retry
+    public const FAILED_RECORDED = 'failed_recorded';         // H5: Paystack's definitive failure written to the row
+    public const ALREADY_FAILED = 'already_failed';           // H5: it was already recorded as failed; no-op
+
+    /**
+     * H5: Paystack statuses that are a definitive end for THIS attempt. `failed` is a
+     * declined/errored charge; `reversed` means a charge was undone. `abandoned` is
+     * NOT here: it means the customer has not (yet) completed the hosted checkout,
+     * which they may still do, so it only becomes a failure once the pending
+     * window has passed (see reconcilePendingAttempt).
+     */
+    public const DEFINITIVE_FAILURE_STATUSES = ['failed', 'reversed'];
 
     public function __construct(
         private PaystackService $paystack,
@@ -77,17 +88,74 @@ class PaymentSettlementService
         // hold a database lock open.
         $verification = $this->paystack->verifyTransaction($reference);
 
+        return $this->applyVerification($transaction, $verification, expireAbandoned: false, source: 'verify');
+    }
+
+    /**
+     * H5: the expiry command's path for a checkout that has stayed `pending` past the
+     * configured window. Exactly the same verification and settlement as the
+     * callback and webhook — a payment Paystack now reports successful is SETTLED
+     * here, receipt and payout included — with two additional definitive outcomes
+     * that only apply once the window has passed: an `abandoned` checkout, and a
+     * reference Paystack has never seen, are recorded as failed. Anything Paystack
+     * still calls open, and any answer we could not get, leaves the row pending.
+     *
+     * @return array{outcome: string, transaction: ?Transaction, message: ?string}
+     */
+    public function reconcilePendingAttempt(Transaction $transaction): array
+    {
+        $transaction->refresh();
+
+        if ($transaction->status === 'success') {
+            return $this->result(self::ALREADY_SETTLED, $transaction);
+        }
+        if ($transaction->status !== 'pending') {
+            return $this->result($transaction->status === 'failed' ? self::ALREADY_FAILED : self::NOT_SUCCESSFUL, $transaction, 'transaction is '.$transaction->status);
+        }
+
+        $verification = $this->paystack->verifyTransaction((string) $transaction->reference);
+
+        return $this->applyVerification($transaction, $verification, expireAbandoned: true, source: 'expiry');
+    }
+
+    /**
+     * Apply one verification answer to one transaction. Shared by every path so the
+     * callback, the webhook and the expiry job can never disagree about what an
+     * answer means. Only `success` settles; only a definitive failure fails; every
+     * ambiguous answer changes nothing.
+     */
+    private function applyVerification(Transaction $transaction, array $verification, bool $expireAbandoned, string $source): array
+    {
         if (! ($verification['ok'] ?? false)) {
+            // A reference Paystack has never seen (initialize never reached it) can
+            // only be a failure once we would otherwise expire it; until then a
+            // retry of the same checkout might still initialise it.
+            if (($verification['not_found'] ?? false) && $expireAbandoned) {
+                return $this->recordFailure($transaction, 'not_found', 'Paystack has no transaction with this reference', $verification['message'] ?? null, $source);
+            }
+
             Log::warning('Paystack verification failed', [
-                'reference' => $reference,
+                'reference' => $transaction->reference,
                 'message' => $verification['message'] ?? null,
             ]);
 
             return $this->result(self::VERIFICATION_FAILED, $transaction, $verification['message'] ?? null);
         }
 
-        if (($verification['status'] ?? null) !== 'success') {
-            return $this->result(self::NOT_SUCCESSFUL, $transaction);
+        $status = strtolower((string) ($verification['status'] ?? ''));
+
+        if ($status !== 'success') {
+            if (in_array($status, self::DEFINITIVE_FAILURE_STATUSES, true)) {
+                return $this->recordFailure($transaction, $status, 'Paystack reported the charge as '.$status, $verification['gateway_response'] ?? null, $source);
+            }
+
+            if ($status === 'abandoned' && $expireAbandoned) {
+                return $this->recordFailure($transaction, $status, 'Checkout was never completed (abandoned) within the pending window', $verification['gateway_response'] ?? null, $source);
+            }
+
+            // pending / ongoing / queued / processing / abandoned-but-within-window /
+            // anything new: not proof of anything. Leave it.
+            return $this->result(self::NOT_SUCCESSFUL, $transaction, $status !== '' ? 'Paystack reports the transaction as '.$status : null);
         }
 
         $expectedMinorUnits = (int) round(((float) $transaction->amount) * 100);
@@ -237,6 +305,59 @@ class PaymentSettlementService
         });
 
         return $this->result($outcome, $row, $outcome === self::ALREADY_SETTLED ? null : $message);
+    }
+
+    /**
+     * H5: record a definitive failure for a pending attempt, under the same row lock
+     * as settlement. Success is terminal (a stale failure can never downgrade it),
+     * `mismatch` is a state for a human and is left alone, and an already-failed row
+     * is a no-op — so a webhook, callback and two expiry workers can all report the
+     * same failure and the row is written once. The reference, amount and currency
+     * stay exactly as they were; what is added is the status and a short,
+     * non-secret record of why (Paystack's status and gateway message).
+     */
+    private function recordFailure(Transaction $transaction, string $paystackStatus, string $reason, ?string $gatewayResponse, string $source): array
+    {
+        [$outcome, $row] = DB::transaction(function () use ($transaction, $paystackStatus, $reason, $gatewayResponse, $source) {
+            $locked = $this->lockRow($transaction);
+
+            if (! $locked) {
+                return [self::NOT_FOUND, null];
+            }
+            if ($locked->status === 'success') {
+                Log::warning('Discarded a stale failure report for an already-settled payment', [
+                    'transaction_id' => $locked->id, 'reference' => $locked->reference, 'paystack_status' => $paystackStatus,
+                ]);
+
+                return [self::ALREADY_SETTLED, $locked];
+            }
+            if ($locked->status === 'failed') {
+                return [self::ALREADY_FAILED, $locked];
+            }
+            if ($locked->status !== 'pending') {
+                return [self::NOT_SUCCESSFUL, $locked]; // mismatch: a human decides
+            }
+
+            $locked->forceFill([
+                'status' => 'failed',
+                'meta_data' => $this->mergeMeta($locked, 'failure', [
+                    'paystack_status' => $paystackStatus,
+                    'reason' => $reason,
+                    'gateway_response' => $gatewayResponse !== null ? mb_substr($gatewayResponse, 0, 200) : null,
+                    'observed_at' => now()->toIso8601String(),
+                    'source' => $source,
+                ]),
+            ])->save();
+
+            Log::info('Payment attempt recorded as failed', [
+                'transaction_id' => $locked->id, 'reference' => $locked->reference, 'school_id' => $locked->school_id,
+                'paystack_status' => $paystackStatus, 'source' => $source,
+            ]);
+
+            return [self::FAILED_RECORDED, $locked];
+        });
+
+        return $this->result($outcome, $row, $outcome === self::FAILED_RECORDED ? $reason : null);
     }
 
     /**
