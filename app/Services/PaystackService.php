@@ -93,6 +93,47 @@ class PaystackService
     }
 
     /**
+     * The integration's Paystack balance(s) — the funds transfers are paid from.
+     *
+     * Read-only (GET /balance), for the `paystack:check` readiness command. Uses
+     * the same non-throwing lookup client and failure classification as the bank
+     * directory, and never returns anything but amounts and currencies.
+     *
+     * @return array{ok:bool, balances?:array<int, array{currency:string, balance:float}>, message?:string, reason?:string}
+     *                                                                                                                      reason (when !ok): 'config' | 'rejected' | 'unavailable'
+     */
+    public function fetchBalance(): array
+    {
+        if (empty($this->secret)) {
+            return ['ok' => false, 'reason' => 'config', 'message' => 'Paystack secret key is not configured'];
+        }
+
+        try {
+            $resp = $this->lookupClient()->get($this->baseUrl.'/balance');
+        } catch (\Throwable $e) {
+            report($e);
+
+            return ['ok' => false, 'reason' => 'unavailable', 'message' => 'Could not reach Paystack.'];
+        }
+
+        $json = $resp->json();
+
+        if ($resp->successful() && is_array($json) && ($json['status'] ?? false) && is_array($json['data'] ?? null)) {
+            $balances = [];
+            foreach ($json['data'] as $row) {
+                if (is_array($row) && isset($row['balance'])) {
+                    // Paystack reports balances in minor units (kobo).
+                    $balances[] = ['currency' => strtoupper((string) ($row['currency'] ?? 'NGN')), 'balance' => round(((int) $row['balance']) / 100, 2)];
+                }
+            }
+
+            return ['ok' => true, 'balances' => $balances];
+        }
+
+        return $this->lookupFailure($resp->status(), $json, 'Failed to fetch balance');
+    }
+
+    /**
      * Resolve an account number to the name the bank holds for it.
      *
      * Every caller that stores bank details (registration, bank-details change)

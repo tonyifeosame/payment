@@ -1,0 +1,289 @@
+# FEYRA — Paystack production runbook
+
+Operator guide for taking FEYRA live with real Paystack payments and school
+payouts, and for handling the situations that come up afterwards. It uses the
+application's own terms: a **transaction** is a parent's payment, a **payout** is
+the obligation (and transfer) that settles the school's share of one
+transaction, and every command below is an Artisan command run on the web
+service shell (Render → laravel-app → Shell) unless stated otherwise.
+
+Before anything else, run the read-only readiness check and fix every `FAIL`:
+
+```
+php artisan paystack:check --production
+php artisan paystack:check --production --json   # CI / ticket attachment
+```
+
+It prints `PASS` (verified by the code), `WARN` (look before go-live), `FAIL`
+(a required application-side prerequisite is missing → exit code 1) and
+`MANUAL` (things only you can confirm in the Paystack dashboard or Render — the
+command never marks these as done). Exit code is 0 when nothing fails; `WARN`
+and `MANUAL` do not change it. The command makes two read-only Paystack calls
+(`GET /bank`, `GET /balance`) and never prints a key, an account number or a
+raw provider payload.
+
+---
+
+## 1. Environment setup
+
+All three Render services (`laravel-app` web, `laravel-queue-worker`,
+`laravel-payout-reconciliation` cron) are built from the same image and read
+the same variables. Set them in each service's dashboard — `render.yaml` marks
+every secret `sync: false` on purpose, so nothing secret is in the repo.
+
+| Variable | Value | Why |
+|---|---|---|
+| `APP_ENV` | `production` | enables HTTPS enforcement and production rules |
+| `APP_DEBUG` | `false` | error pages must never show configuration |
+| `APP_KEY` | one value, **identical on all three services**, never rotated | signs receipt links (worker signs, web validates) and encrypts sessions; a new key invalidates every receipt link ever emailed |
+| `APP_URL` | `https://<your-host>` — identical on all three services | builds the webhook/callback URLs Paystack uses and every emailed link; must be HTTPS |
+| `PAYSTACK_SECRET_KEY` | the **live** secret key (`sk_live_…`) | verifies charges, signs/validates webhooks, sends transfers; the only Paystack credential the code reads |
+| `PAYSTACK_PUBLIC_KEY` | live public key (optional) | not read by any code today (checkout is a server-side redirect); set it for completeness |
+| `PAYSTACK_PAYMENT_URL` | `https://api.paystack.co` | API base |
+| `DB_CONNECTION` / `DATABASE_URL` | `pgsql` / the Render Postgres | one database shared by all services — it is also the queue and the lock store |
+| `QUEUE_CONNECTION` | `database` | payout transfers and receipt emails are queued jobs; the worker service drains them |
+| `CACHE_STORE` | `database` | `InitiateSchoolPayout` is a unique job; the lock must be shared by web, worker and cron |
+| `SESSION_DRIVER` / `SESSION_SECURE_COOKIE` | `database` / `true` | admin sessions over HTTPS only |
+| `MAIL_MAILER`, `MAIL_HOST`, `MAIL_PORT`, `MAIL_SCHEME`, `MAIL_USERNAME`, `MAIL_PASSWORD` | your SMTP provider | receipts (worker), password resets and bank-change notices (web) |
+| `MAIL_FROM_ADDRESS` / `MAIL_FROM_NAME` | a real sender on your domain | receipts and password resets come from it; the contact form delivers to it |
+| `REPORTING_TIMEZONE` | `Africa/Lagos` (default) | dashboard business days |
+| `LOG_CHANNEL` | `stderr` | Render keeps stderr; the container filesystem does not survive a deploy |
+| `SKIP_MIGRATIONS` | `true` on worker and cron only | only the web service runs `migrate --force` at start |
+
+Transfers need nothing beyond `PAYSTACK_SECRET_KEY`: the platform fee is
+`config/fees.php` (`markup_percent`, 2.5 % by default), the school's share is
+read from each transaction's stored breakdown, and the Paystack transfer
+recipient for a school is created automatically on its first payout from the
+bank details verified at registration or in Settings.
+
+## 2. Paystack dashboard setup
+
+Do these in the **Live** dashboard of the business whose live key is configured.
+
+1. **Transfers capability** — Paystack enables transfers only for a registered
+   business. Confirm "Transfers" is available; otherwise every payout is
+   rejected as soon as the first payment settles.
+2. **Settlement / balance** — transfers are paid from the **Paystack balance**
+   (`source: balance` in `PaystackService::initiateTransfer`). Card collections
+   settle to your bank account by default and leave the balance at ₦0, so either
+   set the settlement destination to the balance or keep the balance topped up.
+   `paystack:check` shows the current NGN balance.
+3. **Transfer authorisation / OTP** — turn off OTP for API transfers. The worker
+   runs unattended; a transfer waiting for an OTP is held as `processing` and
+   never completes.
+4. **Webhook** — Settings → API Keys & Webhooks → **Live** → Webhook URL:
+
+   ```
+   POST {APP_URL}/paystack/webhook
+   ```
+
+   There is no separate webhook secret: the endpoint verifies the
+   `x-paystack-signature` header as HMAC-SHA512 of the raw body with
+   `PAYSTACK_SECRET_KEY`, so the key in the dashboard and the key on Render must
+   be the same live key. The endpoint is registered outside the web middleware
+   group (no session, no CSRF) and answers `401` to any unsigned or mis-signed
+   delivery.
+5. **HTTPS reachability** — Paystack must reach the URL above from the internet.
+   The **web** service serves it (not the worker); it must be on a paid plan
+   that does not sleep, and `APP_URL` must be the public HTTPS host.
+6. **Bank / settlement account** — confirm the business's own settlement account
+   and schedule are what you expect.
+
+## 3. Pre-launch checklist
+
+Run `php artisan paystack:check --production` — every `FAIL` fixed, every
+`MANUAL` item ticked by hand — then walk both flows in **test mode** first
+(`DEMO.md` covers the local test-mode walkthrough) and once more in live mode
+with the first production transaction (section 4).
+
+**Collections**
+- [ ] `https://<host>/pay/{school-slug}` renders the school's fees and finds an active student
+- [ ] "Pay" redirects to Paystack's hosted checkout with the expected total (fee + service fee)
+- [ ] `GET /payment/callback` returns the payer to the school page with a success message
+- [ ] the `charge.success` webhook is delivered and acknowledged (`200`, body `{"status":"settled"}` or `already_settled`)
+- [ ] the transaction shows `success` with `paid_at` in the school admin (Transactions)
+- [ ] the receipt page and PDF download open from the emailed signed link
+- [ ] the receipt email arrives from `MAIL_FROM_ADDRESS`
+
+**Payouts**
+- [ ] the school's bank account was verified (Settings → payout account resolves to the bank's account name)
+- [ ] a `pending` payout appears for the settled transaction, amount = the school's fee share (not the gross)
+- [ ] the worker picks the job up: payout moves to `processing` with a `transfer_code`
+- [ ] exactly one transfer appears in the Paystack dashboard for the payout's `PO-…` reference
+- [ ] the `transfer.success` webhook moves the payout to `success` (shown as "Paid" to the school)
+- [ ] `php artisan payouts:run --dry-run` reports nothing missing
+- [ ] `php artisan payouts:retry`, `payouts:release`, `payouts:lookup` are registered (`php artisan list payouts`)
+
+## 4. First production transaction
+
+Use one small real payment appropriate for the school and your account — a
+genuine fee on a genuine active student, paid with a real card, coordinated
+with the school so the payout is expected. Then verify, in order:
+
+1. **Settlement** — Transactions shows the payment as `success`; the callback and
+   the webhook both settled it exactly once (`transactions.paid_at` written once;
+   webhook log shows `settled` then `already_settled` on any retry).
+2. **Obligation** — one payout row exists for the transaction (`payouts.transaction_id` is unique).
+3. **Amount** — `payouts.amount` equals the transaction's school share: the
+   fee subtotal from its breakdown, never the gross the parent paid.
+4. **Single transfer** — the payout went `pending → initiating → processing`
+   once; the dashboard shows one transfer with the `PO-…` reference and the same
+   kobo amount.
+5. **Resolution** — the `transfer.success` webhook set `success` and
+   `completed_at`; a repeated delivery changes nothing.
+6. **Receipt** — web page and PDF show the school, student, admission number,
+   session/term, fee, service fee, total charged, status, reference, date.
+7. **Email** — the receipt email arrived with a working signed link.
+8. **No duplicates** — one transaction, one payout, one transfer; the hourly
+   cron (`payouts:run --dispatch`) reports nothing to reconcile.
+
+If any step fails, stop onboarding and use sections 5–6; do not "fix" it in the
+Paystack dashboard.
+
+## 5. Payout recovery commands
+
+All are read-and-write on **our** ledger only; none creates a transfer itself.
+The transfer is always sent by the queued `InitiateSchoolPayout` job, which
+claims the payout atomically (`pending → initiating`), sends our `PO-…`
+reference as the idempotency key, and refuses any amount the payment does not
+authorise. Every command writes an immutable row to `payout_recovery_events`
+(payout, action, previous/new status, source `artisan`, amount for a release,
+reason, result) — including refusals.
+
+| Command | Use when | What it does |
+|---|---|---|
+| `php artisan payouts:retry {reference}` | a payout is `failed` and the cause is fixed (balance topped up, recipient/bank corrected) | re-validates `payouts.amount` against the payment, resets `failed → pending`, dispatches the job. Refuses every other state. A payout already `pending` is queued again (safe). |
+| `php artisan payouts:retry --all-failed` | many payouts failed for one cause (typically insufficient balance) | the above for each `failed` payout independently; prints `processed / reset / skipped / failed` |
+| `php artisan payouts:release {reference} --amount=50000 [--note="why"]` | a payout is `needs_review` and you have established the correct school share | sets the amount and moves `needs_review → pending`, then dispatches. The amount must be positive, at most two decimals, and **never above the school share** recorded for the payment (or, for a legacy payment with no trustworthy breakdown, never above what the parent paid). A payout with no transaction behind it cannot be released. |
+| `php artisan payouts:lookup {reference}` | a payout is `initiating` (transfer outcome unknown) | asks Paystack for the transfer by our reference: found → its status is applied (amount- and currency-checked); not found (404) → released to `failed` for a retry; unknown → left `initiating`. Never re-sends. |
+| `php artisan payouts:lookup --stale` | after a Paystack or network incident | the above for every `initiating` payout older than 10 minutes; recent ones are untouched |
+| `php artisan payouts:run --dispatch` | the hourly cron, or by hand after a worker outage | records missing obligations for settled payments and re-queues `pending` payouts that were never dispatched; never calls Paystack |
+
+`payouts:release` and `payouts:retry` are operator overrides: they log at
+warning/critical with the payout, school, amount and reason. Keep the ticket
+reference in `--note`.
+
+**Never:**
+- re-send a transfer from the Paystack dashboard as a workaround — the
+  application would not know about it and the payout would be paid twice once it
+  is retried. Reconcile the payout here first (`payouts:lookup`, then `retry`).
+- edit `payouts.amount` (or any payout row) directly in the database. The job
+  refuses an amount above the payment's share and parks the payout as `failed`;
+  the audit trail would show nothing.
+- retry an `initiating` or `processing` payout. Resolve it with `payouts:lookup`
+  (or wait for the transfer webhook) first; `payouts:retry` refuses these states.
+- release a `needs_review` payout without establishing the amount from the
+  transaction (Transactions → the payment's fee breakdown) and, if in doubt, the
+  school. `needs_review` means the system could not separate the school's share
+  from the platform fee, or Paystack reported a transfer that did not match.
+
+## 6. Incident handling
+
+**Webhook outage (Paystack cannot reach `/paystack/webhook`)**
+Payments still settle through the browser callback when the parent returns;
+those who do not return stay `pending` until the webhook is redelivered
+(Paystack retries). Payout `transfer.*` events are also missed, so payouts sit
+in `processing`. Restore reachability (web service up, HTTPS, URL registered),
+then: `php artisan payouts:lookup --stale` for anything `initiating`; for
+`processing` payouts wait for Paystack's retry or use "Resend" on the event in
+the dashboard's webhook log. Never re-initiate the transfer.
+
+**Transfer stuck `initiating`**
+The transfer request got no answer. Run `php artisan payouts:lookup {reference}`
+(or `--stale`). Found → resolved; 404 → `failed`, then `payouts:retry` once the
+cause is known; still unknown → leave it and retry the lookup later. Do not
+touch the row.
+
+**Transfer stuck `processing`**
+Paystack accepted it and has not finalised it. Check the transfer in the
+dashboard by `PO-…` reference: if it is waiting for OTP/approval, fix the
+account setting (section 2.3) and approve that one; otherwise wait for the
+`transfer.success` / `transfer.failed` webhook (or resend it from the dashboard
+log). `payouts:lookup` only acts on `initiating`; `payouts:retry` refuses
+`processing`.
+
+**Failed transfer**
+The payout is `failed` with the reason in the school's ledger detail
+("Needs attention"). Typical causes: insufficient balance, recipient not
+available (school has no verified bank details), Paystack rejection. Fix the
+cause, then `php artisan payouts:retry {reference}` (or `--all-failed` after
+a balance top-up). If Paystack refuses because the reference already exists,
+look the transfer up in the dashboard before anything else.
+
+**`needs_review`**
+Either the payment has no trustworthy fee breakdown (legacy row) or Paystack
+reported a transfer whose amount/currency/reference did not match. Investigate
+the transaction and the dashboard transfer; when the correct school share is
+established, `php artisan payouts:release {reference} --amount=… --note=…`.
+Never release the gross.
+
+**Duplicate or ambiguous provider response**
+The state machine already tolerates replays: a repeated `charge.success` is
+`already_settled`; a repeated `transfer.*` event is a no-op; a transfer
+reported with the wrong amount is parked in `needs_review`, never marked paid.
+If the dashboard shows two transfers for one `PO-…` reference, stop retries,
+reconcile with Paystack support, and record the outcome with `payouts:release`
+/ `payouts:retry` only after the ledger and the dashboard agree.
+
+**Worker outage**
+Payments still settle (web service); receipts and transfers queue up in the
+`jobs` table. Restart `laravel-queue-worker` in Render; the backlog drains in
+order. Then `php artisan payouts:run --dispatch` re-queues any `pending`
+payout whose job was lost. Check `php artisan queue:failed` for receipt jobs
+that exhausted their retries and `queue:retry` them.
+
+**Insufficient Paystack balance**
+Transfers are rejected → payouts `failed` with Paystack's message. Fund the
+balance (or fix the settlement destination), confirm with
+`paystack:check`, then `php artisan payouts:retry --all-failed`.
+
+**Recipient / bank problem**
+"Recipient not available": the school has no verified bank details — the
+school updates its payout account in Settings (password re-entry + Paystack
+account resolution; the recipient code is cleared and re-created on the next
+payout), then `payouts:retry`. A Paystack rejection naming the recipient
+(closed account, name mismatch) is the same path. Payouts already
+`initiating`/`processing` keep the recipient they were sent with.
+
+## 7. Security
+
+- Never commit a Paystack key. `.env` is ignored; `render.yaml` declares keys
+  as `sync: false`; `paystack:check` prints only live/test classification.
+- Never put the secret key in a Blade view or JavaScript. The browser only ever
+  sees Paystack's hosted checkout URL.
+- Webhook authenticity is the HMAC-SHA512 signature over the raw body checked
+  with `hash_equals` before the payload is parsed; unsigned requests are `401`.
+  Keep the key identical between Render and the dashboard.
+- HTTPS everywhere: `ForceHttps` redirects plain HTTP in production and trusts
+  Render's `X-Forwarded-Proto`; `SESSION_SECURE_COOKIE=true`.
+- Logs: provider payloads are stored on the payout row (`payouts.response`),
+  not printed; `last_error` is a short message; the school-facing UI never
+  renders either. `paystack:check` and the recovery commands print references,
+  masked account endings and one-line messages only.
+- Least privilege: only the operator who runs payouts needs Render shell access;
+  school admins have no path to any of these commands (no HTTP route exists).
+- Tickets and chat: reference payouts by `PO-…` and transactions by their
+  reference; never paste keys, full account numbers or raw webhook bodies.
+
+## 8. Stop / rollback procedure
+
+There is no single "maintenance" Artisan command for money in this project;
+use the layers that exist, in this order, and record what you did.
+
+1. **Stop new payouts (keeps collections running)** — in Render, suspend the
+   `laravel-queue-worker` service and the `laravel-payout-reconciliation` cron
+   (manual Render operations). Settled payments still create `pending`
+   obligations; nothing is transferred until the worker is resumed, at which
+   point the backlog is sent through the normal claim guard.
+2. **Stop new payments** — Paystack side: disable the live API key or switch
+   the business to test mode (manual Paystack operation); the application then
+   shows "Unable to initialize payment." Application side: `php artisan down`
+   on the web service takes the whole site (including the public payment pages
+   and the webhook) offline; Paystack will retry undelivered webhooks for a
+   while, so keep the outage short and run `payouts:lookup --stale` and
+   `payouts:run --dispatch` after `php artisan up`.
+3. **Rollback a deploy** — Render → laravel-app → Rollback to the previous
+   image (manual Render operation). Migrations are additive and are not rolled
+   back; the payout ledger is unaffected.
+4. **Resume** — `paystack:check --production` clean → resume the worker → watch
+   the first payouts move `pending → processing → success` → resume the cron.
