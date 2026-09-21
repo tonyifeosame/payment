@@ -41,6 +41,58 @@ class SchoolAuthController extends Controller
         return redirect()->route('admin.login')->with('success', 'Logged out.');
     }
 
+    /**
+     * Where the installed "FEYRA Admin" app opens: the signed-in school's dashboard,
+     * otherwise the login page. Uses the same session key as EnsureSchoolAdmin and
+     * the same deleted-school fallback; nothing about authentication changes.
+     */
+    public function app(Request $request)
+    {
+        $schoolId = session('school_admin_id');
+        $school = $schoolId ? School::find($schoolId) : null;
+
+        if (! $school) {
+            $request->session()->forget('school_admin_id');
+
+            return redirect()->route('admin.login');
+        }
+
+        return redirect()->route('school.dashboard', ['school' => $school]);
+    }
+
+    /**
+     * The admin web app manifest. Served by a route (not a static file) so the
+     * content type is right on every web server and the URLs follow the app URL.
+     * Scope is strictly /admin/ — login, the /admin entry point and every
+     * /admin/{school}/… page — so no public page (/, /pay/…, receipts) can ever be
+     * inside the installed app.
+     */
+    public function manifest()
+    {
+        return response()->json([
+            'id' => '/admin',
+            'name' => 'FEYRA Admin',
+            'short_name' => 'FEYRA Admin',
+            'description' => "Manage your school's payments, students, fees and payouts.",
+            'lang' => 'en',
+            'dir' => 'ltr',
+            // start_url must itself be inside the scope (a plain path-prefix match), or
+            // Chrome drops the scope and falls back to "/" — which would let public pages
+            // into the installed app. /admin/ resolves to the same entry point as /admin.
+            'start_url' => '/admin/',
+            'scope' => '/admin/',
+            'display' => 'standalone',
+            'orientation' => 'any',
+            'background_color' => '#F7F7F8',
+            'theme_color' => '#FFFFFF',
+            'icons' => [
+                ['src' => '/icons/admin-192.png', 'sizes' => '192x192', 'type' => 'image/png', 'purpose' => 'any'],
+                ['src' => '/icons/admin-512.png', 'sizes' => '512x512', 'type' => 'image/png', 'purpose' => 'any'],
+                ['src' => '/icons/admin-maskable-512.png', 'sizes' => '512x512', 'type' => 'image/png', 'purpose' => 'maskable'],
+            ],
+        ], 200, ['Content-Type' => 'application/manifest+json'], JSON_UNESCAPED_SLASHES);
+    }
+
     public function showLinkRequestForm()
     {
         return view('admin.password.request');

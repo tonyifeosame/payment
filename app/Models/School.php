@@ -71,6 +71,17 @@ class School extends Model implements CanResetPassword
         return $this->hasMany(AcademicSession::class)->orderByDesc('name');
     }
 
+    /** The school's class ladder, in progression order. */
+    public function classLevels(): HasMany
+    {
+        return $this->hasMany(ClassLevel::class)->orderBy('position')->orderBy('id');
+    }
+
+    public function studentPromotions(): HasMany
+    {
+        return $this->hasMany(StudentPromotion::class);
+    }
+
     public function academicTerms(): HasMany
     {
         return $this->hasMany(AcademicTerm::class);
@@ -126,9 +137,13 @@ class School extends Model implements CanResetPassword
         return 'data:'.$mime.';base64,'.base64_encode($disk->get($this->logo_path));
     }
 
-    /** The public page parents pay on. The only URL that is ever shared or encoded in a QR. */
+    /**
+     * The public page parents pay on. The only URL that is ever shared or encoded
+     * in a QR. Canonical form (/pay/{school}); the legacy /s/{school}/payment URL
+     * keeps working for links already in the wild.
+     */
     public function paymentUrl(): string
     {
-        return route('school.payment.index', ['school' => $this->slug]);
+        return route('public.payment', ['school' => $this->slug]);
     }
 }

@@ -60,9 +60,17 @@ class SubcategoryController extends Controller
      */
     public function indexSchool(School $school)
     {
+        // Presentation order only: by category, then term (general fees first), then name.
         $subcategories = Subcategory::with(['category', 'academicTerm.session'])
             ->where('school_id', $school->id)
-            ->get();
+            ->get()
+            ->sortBy([
+                fn ($a, $b) => strcasecmp($a->category->name ?? '', $b->category->name ?? ''),
+                fn ($a, $b) => strcmp($a->academicTerm?->session?->name ?? '', $b->academicTerm?->session?->name ?? ''),
+                fn ($a, $b) => ($a->academicTerm?->number ?? 0) <=> ($b->academicTerm?->number ?? 0),
+                fn ($a, $b) => strcasecmp($a->name, $b->name),
+            ])
+            ->values();
         $categories = Category::where('school_id', $school->id)->get();
 
         return view('subcategories.index', compact('subcategories', 'categories', 'school'));

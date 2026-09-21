@@ -19,7 +19,7 @@
             ? ucfirst(str_replace('_', ' ', (string) $transaction->payment_method))
             : null;
         $backUrl = $school?->slug
-            ? route('school.payment.index', ['school' => $school->slug])
+            ? route('public.payment', ['school' => $school->slug])
             : route('payment.index');
     @endphp
     <title>Payment receipt{{ $school ? ' — '.$school->name : '' }}</title>

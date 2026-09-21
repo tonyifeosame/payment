@@ -37,7 +37,7 @@ class SchoolAdminLoginTest extends TestCase
         $school = $this->makeSchool('Alpha School', 'alpha');
 
         $this->post('/admin/login', ['name' => 'ALPHA school', 'password' => 'password123'])
-            ->assertRedirect('/s/alpha/dashboard');
+            ->assertRedirect('/admin/alpha/dashboard');
 
         $this->assertSame($school->id, session('school_admin_id'));
     }
@@ -96,7 +96,7 @@ class SchoolAdminLoginTest extends TestCase
         }
 
         $this->post('/admin/login', ['name' => 'Alpha School', 'password' => 'password123'])
-            ->assertRedirect('/s/alpha/dashboard');
+            ->assertRedirect('/admin/alpha/dashboard');
         $this->assertSame($school->id, session('school_admin_id'));
     }
 
@@ -105,9 +105,11 @@ class SchoolAdminLoginTest extends TestCase
         $this->seed(DemoSeeder::class);
 
         $this->post('/admin/login', ['name' => DemoSeeder::SCHOOL_NAME, 'password' => DemoSeeder::ADMIN_PASSWORD])
-            ->assertRedirect('/s/'.DemoSeeder::SCHOOL_SLUG.'/dashboard');
+            ->assertRedirect('/admin/'.DemoSeeder::SCHOOL_SLUG.'/dashboard');
 
-        $this->get('/s/'.DemoSeeder::SCHOOL_SLUG.'/dashboard')->assertOk();
+        $this->get('/admin/'.DemoSeeder::SCHOOL_SLUG.'/dashboard')->assertOk();
+        // The legacy admin URL now bounces the signed-in admin to the canonical page.
+        $this->get('/s/'.DemoSeeder::SCHOOL_SLUG.'/dashboard')->assertStatus(301)->assertRedirect('/admin/'.DemoSeeder::SCHOOL_SLUG.'/dashboard');
 
         // Belt and braces: the seeded email is not accepted as the identifier.
         $this->flushSession();

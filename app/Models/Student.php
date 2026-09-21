@@ -18,11 +18,28 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  */
 class Student extends Model
 {
+    public const STATUS_ACTIVE = 'active';
+
+    public const STATUS_GRADUATED = 'graduated';
+
+    public const STATUS_LEFT = 'left';
+
+    /** Every status a student can hold, with the label the admin sees. */
+    public const STATUS_LABELS = [
+        self::STATUS_ACTIVE => 'Active',
+        self::STATUS_GRADUATED => 'Graduated',
+        self::STATUS_LEFT => 'Left the school',
+    ];
+
     protected $fillable = [
         'school_id',
         'full_name',
         'admission_number',
+        // class_name is the display snapshot (payment page, receipts, CSV read it);
+        // class_level_id is the school-configured level it is written from.
         'class_name',
+        'class_level_id',
+        'status',
         'academic_session_id',
         'guardian_name',
         'guardian_phone',
@@ -76,6 +93,16 @@ class Student extends Model
         return $this->belongsTo(AcademicSession::class, 'academic_session_id');
     }
 
+    public function classLevel(): BelongsTo
+    {
+        return $this->belongsTo(ClassLevel::class);
+    }
+
+    public function promotionEntries(): HasMany
+    {
+        return $this->hasMany(StudentPromotionEntry::class);
+    }
+
     public function transactions(): HasMany
     {
         return $this->hasMany(Transaction::class);
@@ -84,6 +111,35 @@ class Student extends Model
     public function scopeForSchool(Builder $query, School|int $school): Builder
     {
         return $query->where('school_id', $school instanceof School ? $school->id : $school);
+    }
+
+    public function scopeActive(Builder $query): Builder
+    {
+        return $query->where('status', self::STATUS_ACTIVE);
+    }
+
+    /**
+     * Students a parent may pay for: the active roster. Graduated students and
+     * students who left keep their record and every historical payment, but the
+     * public payment page neither lists them nor accepts their id.
+     */
+    public function scopePayable(Builder $query): Builder
+    {
+        return $query->active();
+    }
+
+    /**
+     * Roster order: by the school's class ladder, then legacy class text (students
+     * not yet mapped to a level sort after mapped ones), then name.
+     */
+    public function scopeRosterOrder(Builder $query): Builder
+    {
+        return $query
+            // Explicit, because SQLite sorts NULL first and PostgreSQL sorts it last.
+            ->orderByRaw('CASE WHEN students.class_level_id IS NULL THEN 1 ELSE 0 END')
+            ->orderBy(ClassLevel::select('position')->whereColumn('class_levels.id', 'students.class_level_id'))
+            ->orderBy('class_name')
+            ->orderBy('full_name');
     }
 
     /**

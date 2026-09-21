@@ -59,7 +59,7 @@
         if (!raw) { input.focus(); return; }
         // Same slug rule as before: lowercase, strip anything but a-z 0-9 - and spaces, spaces -> hyphens.
         var slug = raw.toLowerCase().replace(/[^a-z0-9\-\s]/g, '').replace(/\s+/g, '-');
-        window.location.href = '/s/' + encodeURIComponent(slug) + '/payment';
+        window.location.href = '/pay/' + encodeURIComponent(slug);
     });
 })();
 </script>

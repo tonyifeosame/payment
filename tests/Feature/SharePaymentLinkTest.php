@@ -26,19 +26,19 @@ class SharePaymentLinkTest extends TestCase
 
     public function test_share_page_shows_link_whatsapp_and_qr_for_the_owning_admin_only(): void
     {
-        $this->get('/s/alpha/share')->assertRedirect('/admin/login');
+        $this->get('/admin/alpha/share')->assertRedirect('/admin/login');
 
         $beta = $this->makeSchool('Beta School', 'beta');
-        $this->actingAsSchoolAdmin($beta)->get('/s/alpha/share')->assertNotFound();
+        $this->actingAsSchoolAdmin($beta)->get('/admin/alpha/share')->assertNotFound();
         $this->flushSession();
 
-        $page = $this->actingAsSchoolAdmin($this->alpha)->get('/s/alpha/share')->assertOk();
+        $page = $this->actingAsSchoolAdmin($this->alpha)->get('/admin/alpha/share')->assertOk();
 
-        $page->assertSee('http://localhost/s/alpha/payment');
+        $page->assertSee('http://localhost/pay/alpha');
         $page->assertSee('https://wa.me/?text=', false);
-        $page->assertSee(rawurlencode('http://localhost/s/alpha/payment'), false);
+        $page->assertSee(rawurlencode('http://localhost/pay/alpha'), false);
         $page->assertSee('<svg', false);
-        $page->assertSee('/s/alpha/share/qr.svg', false);
+        $page->assertSee('/admin/alpha/share/qr.svg', false);
 
         // Nothing sensitive leaks onto the share page.
         $page->assertDontSee('RCP_secret')->assertDontSee('0123456789')->assertDontSee('A/2026/001');
@@ -46,7 +46,7 @@ class SharePaymentLinkTest extends TestCase
 
     public function test_qr_svg_encodes_only_the_public_payment_url(): void
     {
-        $response = $this->actingAsSchoolAdmin($this->alpha)->get('/s/alpha/share/qr.svg');
+        $response = $this->actingAsSchoolAdmin($this->alpha)->get('/admin/alpha/share/qr.svg');
 
         $response->assertOk()->assertHeader('Content-Type', 'image/svg+xml');
         $svg = $response->getContent();
@@ -61,15 +61,15 @@ class SharePaymentLinkTest extends TestCase
 
             return (new \BaconQrCode\Writer($renderer))->writeString($text);
         };
-        $this->assertSame($render('http://localhost/s/alpha/payment'), $svg);
-        $this->assertNotSame($render('http://localhost/s/alpha/payment?x=1'), $svg);
+        $this->assertSame($render('http://localhost/pay/alpha'), $svg);
+        $this->assertNotSame($render('http://localhost/pay/alpha?x=1'), $svg);
 
         foreach (['RCP_secret', '0123456789', 'A/2026/001', (string) $this->alpha->id.'"'] as $needle) {
             $this->assertStringNotContainsString($needle, $svg);
         }
 
         $this->flushSession();
-        $this->get('/s/alpha/share/qr.svg')->assertRedirect('/admin/login');
+        $this->get('/admin/alpha/share/qr.svg')->assertRedirect('/admin/login');
     }
 
     public function test_the_shared_link_opens_the_public_payment_page_without_login(): void

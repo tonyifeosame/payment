@@ -6,8 +6,10 @@ use App\Models\Category;
 use App\Models\School;
 use App\Models\Transaction;
 use App\Services\AcademicPeriodService;
+use App\Services\PaymentTimeline;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\URL;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class TransactionController extends Controller
@@ -45,10 +47,43 @@ class TransactionController extends Controller
     }
 
     /**
+     * Read-only detail of one payment and the payout it created.
+     *
+     * {transaction} is scope-bound through School::transactions(), so a row from
+     * another school 404s during binding; the explicit check is the backstop.
+     * Every figure comes from receiptBreakdown() and the payout row — nothing is
+     * recalculated here or in the view, and there are no state-changing actions.
+     */
+    public function showSchool(School $school, Transaction $transaction, PaymentTimeline $timeline)
+    {
+        if ((int) $transaction->school_id !== (int) $school->id) {
+            abort(404);
+        }
+
+        $transaction->load(['student', 'payout', 'academicTerm.session']);
+
+        return view('transactions.show', [
+            'school' => $school,
+            'transaction' => $transaction,
+            'breakdown' => $transaction->receiptBreakdown(),
+            'payout' => $transaction->payout,
+            'payoutLabels' => PayoutController::STATUS_LABELS,
+            'timeline' => $timeline->forTransaction($transaction),
+            'payoutState' => $timeline->payoutState($transaction->payout, $transaction->status === Transaction::STATUS_SUCCESS),
+            // The same signed, non-expiring link the receipt page and email hand out.
+            'downloadUrl' => $transaction->status === Transaction::STATUS_SUCCESS
+                ? URL::signedRoute('payment.receipt.download', ['transaction' => $transaction->id])
+                : null,
+        ]);
+    }
+
+    /**
      * CSV export of exactly the rows the list shows, for the acting school only.
      *
      * Streamed so a large history never has to fit in memory. Plain CSV rather
      * than XLSX: it opens in Excel and Google Sheets and needs no extra package.
+     * Amounts are the school's fee amount only: the platform service fee and the
+     * gross total the parent was charged are never exported to the school.
      */
     public function exportSchool(Request $request, School $school): StreamedResponse
     {
@@ -67,7 +102,7 @@ class TransactionController extends Controller
                 'Student', 'Admission Number', 'Class', 'Session', 'Term',
                 'Category', 'Fee Type', 'Quantity',
                 'Payer Name', 'Payer Email', 'Payment Method',
-                'Fee Amount (NGN)', 'Service Fee (NGN)', 'Total Charged (NGN)',
+                'Fee Amount (NGN)',
                 'Payout Status', 'Payout Reference',
             ]);
 
@@ -91,8 +126,6 @@ class TransactionController extends Controller
                         $t->email,
                         $t->payment_method,
                         number_format($breakdown['fee_subtotal'], 2, '.', ''),
-                        number_format($breakdown['service_fee'], 2, '.', ''),
-                        number_format($breakdown['total'], 2, '.', ''),
                         $t->payout?->status,
                         $t->payout?->reference,
                     ]);

@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use App\Models\AcademicSession;
 use App\Models\Category;
+use App\Models\ClassLevel;
 use App\Models\School;
 use App\Models\Student;
 use App\Models\Subcategory;
@@ -35,6 +36,15 @@ class DemoSeeder extends Seeder
     public const ADMIN_PASSWORD = 'demo-password';
 
     public const SESSION_NAME = '2026/2027';
+
+    /**
+     * The demo school's class ladder, first to last. Demo data only: a real school
+     * defines its own on the Classes page and nothing is ever inferred from names.
+     */
+    public const CLASS_LADDER = [
+        'Primary 1', 'Primary 2', 'Primary 3', 'Primary 4', 'Primary 5', 'Primary 6',
+        'JSS 1', 'JSS 2', 'JSS 3', 'SS 1', 'SS 2', 'SS 3',
+    ];
 
     /** admission number => [name, class] — the roster parents pay against. */
     public const STUDENTS = [
@@ -117,10 +127,26 @@ class DemoSeeder extends Seeder
             ->whereNotIn('name', array_keys($fees))
             ->delete();
 
+        // Class ladder, in order. Idempotent on name; positions follow the list above.
+        $levels = [];
+        foreach (self::CLASS_LADDER as $i => $className) {
+            $levels[$className] = ClassLevel::updateOrCreate(
+                ['school_id' => $school->id, 'name' => $className],
+                ['position' => $i + 1, 'is_active' => true]
+            );
+        }
+
+        // Demo students are mapped to their level by the exact name in STUDENTS —
+        // this is seed data we wrote ourselves, not a guess about a real roster.
         foreach (self::STUDENTS as $admission => [$name, $class]) {
             Student::updateOrCreate(
                 ['school_id' => $school->id, 'admission_number' => $admission],
-                ['full_name' => $name, 'class_name' => $class, 'academic_session_id' => $session->id]
+                [
+                    'full_name' => $name,
+                    'class_name' => $class,
+                    'class_level_id' => $levels[$class]?->id,
+                    'academic_session_id' => $session->id,
+                ]
             );
         }
 
@@ -131,5 +157,6 @@ class DemoSeeder extends Seeder
         $this->command?->line('  Admin password:      '.self::ADMIN_PASSWORD);
         $this->command?->line('  Session / term:      '.self::SESSION_NAME.' — First Term (current)');
         $this->command?->line('  Students:            '.implode(', ', array_keys(self::STUDENTS)));
+        $this->command?->line('  Classes:             '.self::CLASS_LADDER[0].' … '.self::CLASS_LADDER[count(self::CLASS_LADDER) - 1]);
     }
 }

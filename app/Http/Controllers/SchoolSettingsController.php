@@ -5,7 +5,9 @@ namespace App\Http\Controllers;
 use App\Models\School;
 use App\Services\SchoolBankDetailsService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
 
 /**
  * School profile, branding and payout account. Always the bound (and therefore
@@ -90,6 +92,44 @@ class SchoolSettingsController extends Controller
 
         return redirect()->route('school.settings.edit', ['school' => $school->slug])
             ->with('success', 'Payout account updated to '.$school->account_name.'. A confirmation has been emailed to '.$school->email.'.');
+    }
+
+    /**
+     * Change the admin password from inside a logged-in session.
+     *
+     * The current password is re-checked (a hijacked session alone is not enough),
+     * the new one follows the same rules as registration and the reset flow
+     * (min 8, confirmed) and is stored with Hash::make. Errors go to their own bag
+     * and NO input is flashed, so no password ever round-trips through the session
+     * or back into the page. The session is kept: this is a change, not a reset.
+     */
+    public function updatePassword(Request $request, School $school)
+    {
+        $validator = Validator::make($request->only(['current_password', 'password', 'password_confirmation']), [
+            'current_password' => [
+                'required', 'string',
+                function ($attribute, $value, $fail) use ($school) {
+                    if (! $school->admin_password || ! Hash::check((string) $value, $school->admin_password)) {
+                        $fail('The password you entered is incorrect.');
+                    }
+                },
+            ],
+            'password' => ['required', 'string', 'min:8', 'confirmed'],
+        ], [
+            'password.confirmed' => 'The new password and its confirmation do not match.',
+        ]);
+
+        if ($validator->fails()) {
+            return redirect()->route('school.settings.edit', ['school' => $school->slug])
+                ->withErrors($validator, 'password')
+                ->withFragment('security');
+        }
+
+        $school->forceFill(['admin_password' => Hash::make($validator->validated()['password'])])->save();
+
+        return redirect()->route('school.settings.edit', ['school' => $school->slug])
+            ->with('success', 'Your password has been changed.')
+            ->withFragment('security');
     }
 
     /**

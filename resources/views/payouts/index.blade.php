@@ -1,97 +1,179 @@
 @extends('layouts.admin')
 
 @section('title', 'Payouts')
-@section('heading', 'Payout ledger')
-@section('subheading', 'Every transfer of your share of a payment to your bank account.')
+@section('eyebrow', 'Money movement')
+@section('heading', 'Payouts')
+@section('subheading', 'Track money moving from student payments to your school.')
 
 @section('content')
 @php
+    $s = ['school' => $school->slug];
     $money = fn ($n) => '₦'.number_format((float) $n, 2);
-    $badge = fn ($status) => match($status) {
-        'success' => 'bg-green-100 text-green-800',
-        'pending', 'initiating', 'processing' => 'bg-amber-100 text-amber-800',
-        'failed', 'needs_review' => 'bg-red-100 text-red-800',
-        'reversed' => 'bg-slate-200 text-slate-800',
-        default => 'bg-slate-100 text-slate-700',
+    $by = $summary['by_status'];
+    $sum = function (array $statuses) use ($by) {
+        $amount = 0.0; $count = 0;
+        foreach ($statuses as $st) { $amount += $by[$st]['amount'] ?? 0; $count += $by[$st]['count'] ?? 0; }
+        return ['amount' => round($amount, 2), 'count' => $count];
     };
+    // Every figure is the school's share as recorded on the payout row — nothing is derived here.
+    $cards = [
+        ['Pending', $sum([\App\Models\Payout::PENDING]), 'pending', 'Waiting to be sent', 'text-brand-obsidian'],
+        ['Processing', $sum([\App\Models\Payout::INITIATING, \App\Models\Payout::PROCESSING]), 'in_progress', 'Sent to the bank', 'text-brand-violet'],
+        ['Paid', $sum([\App\Models\Payout::SUCCESS]), 'success', 'Reached your account', 'text-green-800'],
+        ['Needs attention', $sum(\App\Http\Controllers\PayoutController::STATUS_GROUPS['attention']), 'attention', 'Failed or under review', 'text-red-700'],
+    ];
+    $groupLabels = ['in_progress' => 'Pending or processing', 'attention' => 'Needs attention'];
+    $indexUrl = fn (array $except = []) => route('school.payouts.index', array_merge($s, Arr::except(request()->query(), array_merge($except, ['page']))));
+    $activeFilters = [];
+    if ($q !== '') { $activeFilters['q'] = ['Search', '“'.$q.'”']; }
+    if ($status !== '') { $activeFilters['status'] = ['Status', $labels[$status] ?? $groupLabels[$status] ?? $status]; }
+    if ($dateFrom) { $activeFilters['date_from'] = ['From', \Illuminate\Support\Carbon::parse($dateFrom)->format('d M Y')]; }
+    if ($dateTo) { $activeFilters['date_to'] = ['To', \Illuminate\Support\Carbon::parse($dateTo)->format('d M Y')]; }
 @endphp
 
-<div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-    <div class="card p-5"><p class="text-xs font-black uppercase tracking-wider text-slate-500">Paid to bank</p><p class="text-2xl font-black text-green-700 mt-2">{{ $money($summary['paid']['amount']) }}</p><p class="text-xs text-slate-500">{{ $summary['paid']['count'] }} {{ Str::plural('transfer', $summary['paid']['count']) }}</p></div>
-    <div class="card p-5"><p class="text-xs font-black uppercase tracking-wider text-slate-500">On the way</p><p class="text-2xl font-black text-amber-600 mt-2">{{ $money($summary['in_progress']['amount']) }}</p><p class="text-xs text-slate-500">queued, sending or processing at the bank</p></div>
-    <div class="card p-5"><p class="text-xs font-black uppercase tracking-wider text-slate-500">Needs attention</p><p class="text-2xl font-black text-red-600 mt-2">{{ $money($summary['attention']['amount']) }}</p><p class="text-xs text-slate-500">failed or under review — contact support with the reference</p></div>
+{{-- Summary --}}
+<div class="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4" role="list" aria-label="Payout summary">
+    @foreach($cards as [$label, $figure, $filter, $hint, $tone])
+        <a href="{{ route('school.payouts.index', $s + ['status' => $filter]) }}" role="listitem"
+           class="card flex min-h-[48px] flex-col p-4 hover:border-brand-obsidian focus:outline-none focus-visible:ring-4 focus-visible:ring-brand-violet/30 sm:p-5 {{ $status === $filter ? 'border-brand-violet ring-4 ring-brand-violet/15' : '' }}"
+           aria-label="{{ $label }}: {{ $money($figure['amount']) }} across {{ $figure['count'] }} {{ Str::plural('payout', $figure['count']) }}. Show these payouts."
+           @if($status === $filter) aria-current="true" @endif>
+            <span class="text-xs font-semibold uppercase tracking-[0.08em] text-brand-slate">{{ $label }}</span>
+            <span class="mt-1 font-display text-xl font-extrabold tabular-nums tracking-tight sm:text-2xl {{ $tone }}">{{ $money($figure['amount']) }}</span>
+            <span class="mt-1 text-xs text-brand-slate">{{ $figure['count'] }} {{ Str::plural('payout', $figure['count']) }} · {{ $hint }}</span>
+        </a>
+    @endforeach
 </div>
+<p class="mt-3 px-1 text-sm text-brand-slate">Every amount here is the fee amount due to your school for a confirmed payment.</p>
 
-<form method="GET" class="card p-4 mb-4 flex flex-wrap gap-3 items-end">
-    <div>
-        <label for="status" class="label">Status</label>
-        <select id="status" name="status" class="input" onchange="this.form.submit()">
-            <option value="">All</option>
-            @foreach($labels as $value => $label)
-                <option value="{{ $value }}" @selected($status === $value)>{{ $label }}</option>
-            @endforeach
-        </select>
+{{-- Filters --}}
+<form method="GET" action="{{ route('school.payouts.index', $s) }}" class="card mt-6 p-5 sm:p-6" role="search" aria-labelledby="filters-heading">
+    <h2 id="filters-heading" class="font-display text-lg font-bold tracking-tight">Filter payouts</h2>
+    <div class="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-12">
+        <div class="sm:col-span-2 lg:col-span-5">
+            <label for="q" class="label">Search</label>
+            <input id="q" name="q" type="search" value="{{ $q }}" class="input" placeholder="Payout or payment reference, student, payer" autocomplete="off" enterkeyhint="search">
+        </div>
+        <div class="lg:col-span-3">
+            <label for="status" class="label">Status</label>
+            <select id="status" name="status" class="input">
+                <option value="">All statuses</option>
+                <option value="in_progress" @selected($status === 'in_progress')>Pending or processing</option>
+                <option value="attention" @selected($status === 'attention')>Needs attention</option>
+                @foreach($labels as $value => $label)
+                    <option value="{{ $value }}" @selected($status === $value)>{{ $label }}</option>
+                @endforeach
+            </select>
+        </div>
+        <div class="lg:col-span-2">
+            <label for="date_from" class="label">From</label>
+            <input id="date_from" name="date_from" type="date" value="{{ $dateFrom }}" class="input">
+        </div>
+        <div class="lg:col-span-2">
+            <label for="date_to" class="label">To</label>
+            <input id="date_to" name="date_to" type="date" value="{{ $dateTo }}" class="input">
+        </div>
+        <div class="flex flex-col gap-3 sm:col-span-2 sm:flex-row sm:justify-end lg:col-span-12">
+            <a class="btn-outline sm:w-auto" href="{{ route('school.payouts.index', $s) }}">Reset filters</a>
+            <button class="btn-obsidian sm:w-auto" type="submit">Apply filters</button>
+        </div>
     </div>
-    <a class="btn-secondary" href="{{ route('school.payouts.index', ['school' => $school->slug]) }}">Reset</a>
-    <p class="text-xs text-slate-500 ml-auto max-w-md">Amounts here are your share of each payment. The service fee charged to the parent is never transferred to the school.</p>
+    @if($activeFilters)
+        <div class="mt-5 flex flex-wrap items-center gap-2 border-t border-brand-ash/60 pt-5" role="group" aria-label="Active filters">
+            <span class="mr-1 text-xs font-semibold uppercase tracking-[0.08em] text-brand-violet">{{ count($activeFilters) }} {{ Str::plural('filter', count($activeFilters)) }} active</span>
+            @foreach($activeFilters as $chipKey => [$chipLabel, $chipValue])
+                <a href="{{ $indexUrl([$chipKey]) }}" class="inline-flex min-h-[48px] items-center gap-1.5 rounded-full border border-brand-violet/30 bg-brand-violet/10 py-1 pl-4 pr-3 text-sm font-medium text-brand-violet hover:border-brand-violet hover:bg-brand-violet/15 focus:outline-none focus-visible:ring-4 focus-visible:ring-brand-violet/30">
+                    <span><span class="sr-only">Remove filter </span>{{ $chipLabel }}: {{ $chipValue }}</span>
+                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+                </a>
+            @endforeach
+        </div>
+    @endif
 </form>
 
-<div class="card overflow-hidden">
-    <div class="overflow-x-auto">
-        <table class="min-w-full divide-y divide-slate-200">
-            <thead class="bg-slate-50">
-                <tr>
-                    <th class="th">Date</th>
-                    <th class="th">Payment</th>
-                    <th class="th text-right">Amount</th>
-                    <th class="th">Status</th>
-                    <th class="th">Payout reference</th>
-                    <th class="th">Details</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-slate-100 bg-white">
-                @forelse($payouts as $payout)
-                    <tr>
-                        <td class="td whitespace-nowrap">
-                            {{ ($payout->completed_at ?? $payout->initiated_at ?? $payout->created_at)?->format('d M Y') }}
-                            <span class="block text-xs text-slate-500">{{ ($payout->completed_at ?? $payout->initiated_at ?? $payout->created_at)?->format('H:i') }}</span>
-                        </td>
-                        <td class="td">
-                            @if($payout->transaction)
-                                <span class="font-semibold">{{ $payout->transaction->student_name ?? $payout->transaction->name ?? $payout->transaction->email }}</span>
-                                <span class="block text-xs text-slate-500">{{ $payout->transaction->subcategory_name ?? $payout->transaction->category_name }}</span>
-                                <span class="block text-xs font-mono text-slate-500 break-all">{{ $payout->transaction->reference }}</span>
-                            @else
-                                <span class="text-slate-400">—</span>
-                            @endif
-                        </td>
-                        <td class="td text-right font-bold whitespace-nowrap">{{ $money($payout->amount) }}</td>
-                        <td class="td">
-                            <span class="badge {{ $badge($payout->status) }}">{{ $labels[$payout->status] ?? ucfirst($payout->status) }}</span>
-                            @if($payout->attempts > 1)<span class="block text-xs text-slate-500 mt-1">{{ $payout->attempts }} attempts</span>@endif
-                        </td>
-                        <td class="td font-mono text-xs break-all">
-                            {{ $payout->reference ?? '—' }}
-                            @if($payout->transfer_code)<span class="block text-slate-500">{{ $payout->transfer_code }}</span>@endif
-                        </td>
-                        <td class="td text-xs text-slate-600 max-w-xs">
-                            @if(in_array($payout->status, ['failed', 'needs_review'], true) && $payout->last_error)
-                                {{ $payout->last_error }}
-                            @elseif($payout->status === 'success')
-                                Paid {{ $payout->completed_at?->format('d M Y, H:i') }}
-                            @else
-                                —
-                            @endif
-                        </td>
-                    </tr>
-                @empty
-                    <tr><td colspan="6" class="px-4 py-12 text-center text-slate-500">No payouts yet. A payout is created the moment a payment is confirmed.</td></tr>
-                @endforelse
-            </tbody>
-        </table>
-    </div>
+{{-- Result summary --}}
+<div class="mb-3 mt-6 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-1">
+    <p class="text-sm text-brand-slate">
+        <span class="font-display text-lg font-bold text-brand-obsidian">{{ number_format($payouts->total()) }}</span> {{ Str::plural('payout', $payouts->total()) }}@if($activeFilters) match your filters @endif
+    </p>
     @if($payouts->hasPages())
-        <div class="px-4 py-3 border-t border-slate-100">{{ $payouts->links() }}</div>
+        <p class="text-sm text-brand-slate">Page {{ $payouts->currentPage() }} of {{ $payouts->lastPage() }}</p>
     @endif
 </div>
+
+<x-admin.table
+    :columns="$payouts->isEmpty() ? [] : [['Date', 'left', 'xl:w-[13%]'], ['Payment', 'left', 'xl:w-[23%]'], ['Reference', 'left', 'xl:w-[19%]'], ['Amount', 'right', 'xl:w-[12%]'], ['Status', 'left', 'xl:w-[13%]'], ['Updated', 'left', 'xl:w-[10%]'], ['Actions', 'actions', 'xl:w-[10%]']]"
+    caption="Payouts to {{ $school->name }}, newest first"
+    class="xl:[&_table]:w-full xl:[&_table]:table-fixed md:[&_.th]:px-3 md:[&_.td]:px-3"
+    stacked>
+    @forelse($payouts as $payout)
+        @php $t = $payout->transaction; @endphp
+        <tr>
+            <td class="td" data-label="Date">
+                <div class="min-w-0">
+                    <time datetime="{{ $payout->created_at?->toIso8601String() }}" class="whitespace-nowrap font-medium">{{ $payout->created_at?->format('d M Y') }}</time>
+                    <span class="block text-xs text-brand-slate">{{ $payout->created_at?->format('H:i') }}</span>
+                </div>
+            </td>
+            <td class="td" data-label="Payment">
+                <div class="min-w-0">
+                    @if($t)
+                        <span class="block font-semibold">{{ $t->student_name ?? $t->name ?? $t->email ?? '—' }}</span>
+                        <span class="block text-xs text-brand-slate">{{ $t->subcategory_name ?? $t->category_name ?? 'Payment' }}@if($t->student_name && $t->name) · paid by {{ $t->name }}@endif</span>
+                    @else
+                        <span class="text-brand-slate">No payment attached</span>
+                    @endif
+                </div>
+            </td>
+            <td class="td" data-label="Reference">
+                <div class="min-w-0">
+                    @if($t)<span class="block break-all font-mono text-[12px]">{{ $t->reference }}</span>@endif
+                    <span class="block break-all font-mono text-[11px] leading-4 text-brand-slate">Payout {{ $payout->reference ?? '—' }}</span>
+                </div>
+            </td>
+            <td class="td text-right lg:whitespace-nowrap" data-label="Amount">
+                <div class="min-w-0">
+                    @if($payout->status === \App\Models\Payout::NEEDS_REVIEW && (float) $payout->amount === 0.0)
+                        <span class="text-sm text-brand-slate">Under review</span>
+                    @else
+                        <span class="whitespace-nowrap font-display text-base font-bold tabular-nums">{{ $money($payout->amount) }}</span>
+                    @endif
+                </div>
+            </td>
+            <td class="td" data-label="Status">@include('admin._badge', ['status' => $payout->status, 'label' => $labels[$payout->status] ?? ucfirst($payout->status)])</td>
+            <td class="td" data-label="Updated">
+                <div class="min-w-0">
+                    <time datetime="{{ $payout->updated_at?->toIso8601String() }}" class="text-sm">{{ $payout->updated_at?->format('d M Y') }}</time>
+                    <span class="block text-xs text-brand-slate">{{ $payout->updated_at?->format('H:i') }}</span>
+                </div>
+            </td>
+            <td class="td td-actions" data-label="">
+                <a class="btn-outline btn-sm !min-h-[48px] w-full !px-4 text-sm md:w-auto" href="{{ route('school.payouts.show', $s + ['payout' => $payout->id]) }}">View<span class="sr-only"> payout {{ $payout->reference }}</span></a>
+            </td>
+        </tr>
+    @empty
+        <x-slot:empty>
+            @if($status === 'pending' && ! $q && ! $dateFrom && ! $dateTo)
+                <x-admin.empty title="No pending payouts" description="Nothing is waiting to be sent. New payouts appear here as soon as a payment is confirmed." icon="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z">
+                    <a class="btn-outline" href="{{ route('school.payouts.index', $s) }}">Show all payouts</a>
+                </x-admin.empty>
+            @elseif($status === 'attention' && ! $q && ! $dateFrom && ! $dateTo)
+                <x-admin.empty title="Nothing needs your attention" description="No payout has failed or is under review." icon="M5 12.5l4.5 4.5L19 7">
+                    <a class="btn-outline" href="{{ route('school.payouts.index', $s) }}">Show all payouts</a>
+                </x-admin.empty>
+            @elseif($activeFilters)
+                <x-admin.empty title="No payouts match these filters" description="Try a wider date range, another status or a different reference." icon="M21 21l-4.3-4.3M11 18a7 7 0 100-14 7 7 0 000 14z">
+                    <a class="btn-outline" href="{{ route('school.payouts.index', $s) }}">Reset filters</a>
+                </x-admin.empty>
+            @else
+                <x-admin.empty title="No payouts yet" description="A payout is created the moment a payment is confirmed. Your share of each confirmed payment will appear here." icon="M3 10h18M5 6h14a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2zm3 8h3">
+                    <a class="btn-outline" href="{{ route('school.transactions.index', $s) }}">View transactions</a>
+                </x-admin.empty>
+            @endif
+        </x-slot:empty>
+    @endforelse
+    @if($payouts->hasPages())
+        <x-slot:footer>{{ $payouts->links() }}</x-slot:footer>
+    @endif
+</x-admin.table>
 @endsection

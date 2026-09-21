@@ -86,7 +86,7 @@ class TenantIsolationTest extends TestCase
     public function test_school_a_cannot_open_school_b_transactions_page(): void
     {
         $this->actingAsAlpha()
-            ->get('/s/beta/transactions')
+            ->get('/admin/beta/transactions')
             ->assertNotFound();
     }
 
@@ -102,7 +102,7 @@ class TenantIsolationTest extends TestCase
             'meta_data' => ['base_amount' => 10000],
         ]);
 
-        $response = $this->actingAsAlpha()->get('/s/alpha/transactions');
+        $response = $this->actingAsAlpha()->get('/admin/alpha/transactions');
 
         $response->assertOk();
         $response->assertSee('AlphaPayerName');
@@ -115,7 +115,7 @@ class TenantIsolationTest extends TestCase
         // The search form used to post to a global, un-scoped route.
         // NB: the query itself is echoed back into the search input, so assert on
         // fields that only appear when a matching row is actually rendered.
-        $response = $this->actingAsAlpha()->get('/s/alpha/transactions?q=BetaPayerName');
+        $response = $this->actingAsAlpha()->get('/admin/alpha/transactions?q=BetaPayerName');
 
         $response->assertOk();
         $response->assertDontSee('betaparent@private.test');
@@ -130,14 +130,14 @@ class TenantIsolationTest extends TestCase
     public function test_school_a_cannot_view_school_b_category_edit_page(): void
     {
         $this->actingAsAlpha()
-            ->get("/s/alpha/categories/{$this->betaCategory->id}/edit")
+            ->get("/admin/alpha/categories/{$this->betaCategory->id}/edit")
             ->assertNotFound();
     }
 
     public function test_school_a_cannot_update_school_b_category(): void
     {
         $this->actingAsAlpha()
-            ->put("/s/alpha/categories/{$this->betaCategory->id}", ['name' => 'Hijacked'])
+            ->put("/admin/alpha/categories/{$this->betaCategory->id}", ['name' => 'Hijacked'])
             ->assertNotFound();
 
         $this->assertDatabaseHas('categories', [
@@ -149,7 +149,7 @@ class TenantIsolationTest extends TestCase
     public function test_school_a_cannot_delete_school_b_category(): void
     {
         $this->actingAsAlpha()
-            ->delete("/s/alpha/categories/{$this->betaCategory->id}")
+            ->delete("/admin/alpha/categories/{$this->betaCategory->id}")
             ->assertNotFound();
 
         $this->assertDatabaseHas('categories', ['id' => $this->betaCategory->id]);
@@ -159,7 +159,7 @@ class TenantIsolationTest extends TestCase
     {
         // Swapping the school segment must not help: the middleware rejects it.
         $this->actingAsAlpha()
-            ->delete("/s/beta/categories/{$this->betaCategory->id}")
+            ->delete("/admin/beta/categories/{$this->betaCategory->id}")
             ->assertNotFound();
 
         $this->assertDatabaseHas('categories', ['id' => $this->betaCategory->id]);
@@ -168,7 +168,7 @@ class TenantIsolationTest extends TestCase
     public function test_school_a_cannot_update_or_delete_school_b_subcategory(): void
     {
         $this->actingAsAlpha()
-            ->put("/s/alpha/subcategories/{$this->betaSubcategory->id}", [
+            ->put("/admin/alpha/subcategories/{$this->betaSubcategory->id}", [
                 'category_id' => $this->betaCategory->id,
                 'name' => 'Hijacked',
                 'price' => 1,
@@ -176,7 +176,7 @@ class TenantIsolationTest extends TestCase
             ->assertNotFound();
 
         $this->actingAsAlpha()
-            ->delete("/s/alpha/subcategories/{$this->betaSubcategory->id}")
+            ->delete("/admin/alpha/subcategories/{$this->betaSubcategory->id}")
             ->assertNotFound();
 
         $this->assertDatabaseHas('subcategories', [
@@ -189,7 +189,7 @@ class TenantIsolationTest extends TestCase
     {
         // category_id passes `exists:categories,id` but belongs to another school.
         $this->actingAsAlpha()
-            ->post('/s/alpha/subcategories', [
+            ->post('/admin/alpha/subcategories', [
                 'category_id' => $this->betaCategory->id,
                 'name' => 'Smuggled',
                 'price' => 500,
@@ -206,21 +206,21 @@ class TenantIsolationTest extends TestCase
     public function test_school_can_manage_its_own_categories(): void
     {
         $this->actingAsAlpha()
-            ->post('/s/alpha/categories', ['name' => 'AlphaFees'])
-            ->assertRedirect('/s/alpha/categories');
+            ->post('/admin/alpha/categories', ['name' => 'AlphaFees'])
+            ->assertRedirect('/admin/alpha/categories');
 
         $own = Category::where('school_id', $this->alpha->id)->firstOrFail();
         $this->assertSame('AlphaFees', $own->name);
 
-        $this->actingAsAlpha()->get('/s/alpha/categories')->assertOk()->assertSee('AlphaFees');
-        $this->actingAsAlpha()->get("/s/alpha/categories/{$own->id}/edit")->assertOk();
+        $this->actingAsAlpha()->get('/admin/alpha/categories')->assertOk()->assertSee('AlphaFees');
+        $this->actingAsAlpha()->get("/admin/alpha/categories/{$own->id}/edit")->assertOk();
 
         $this->actingAsAlpha()
-            ->put("/s/alpha/categories/{$own->id}", ['name' => 'AlphaFeesRenamed'])
-            ->assertRedirect('/s/alpha/categories');
+            ->put("/admin/alpha/categories/{$own->id}", ['name' => 'AlphaFeesRenamed'])
+            ->assertRedirect('/admin/alpha/categories');
         $this->assertDatabaseHas('categories', ['id' => $own->id, 'name' => 'AlphaFeesRenamed']);
 
-        $this->actingAsAlpha()->delete("/s/alpha/categories/{$own->id}")->assertRedirect('/s/alpha/categories');
+        $this->actingAsAlpha()->delete("/admin/alpha/categories/{$own->id}")->assertRedirect('/admin/alpha/categories');
         $this->assertDatabaseMissing('categories', ['id' => $own->id]);
     }
 
@@ -229,7 +229,7 @@ class TenantIsolationTest extends TestCase
         Category::create(['name' => 'AlphaOnlyCategory', 'school_id' => $this->alpha->id]);
 
         $this->actingAsAlpha()
-            ->get('/s/alpha/categories')
+            ->get('/admin/alpha/categories')
             ->assertOk()
             ->assertSee('AlphaOnlyCategory')
             ->assertDontSee('BetaOnlyCategory');
@@ -269,14 +269,14 @@ class TenantIsolationTest extends TestCase
 
     public function test_anonymous_user_is_sent_to_login_for_management_pages(): void
     {
-        $this->get('/s/alpha/categories')->assertRedirect(route('admin.login'));
-        $this->get('/s/alpha/transactions')->assertRedirect(route('admin.login'));
+        $this->get('/admin/alpha/categories')->assertRedirect(route('admin.login'));
+        $this->get('/admin/alpha/transactions')->assertRedirect(route('admin.login'));
     }
 
     public function test_session_referencing_a_deleted_school_is_rejected(): void
     {
         $this->withSession(['school_admin_id' => 999999])
-            ->get('/s/alpha/categories')
+            ->get('/admin/alpha/categories')
             ->assertRedirect(route('admin.login'));
     }
 

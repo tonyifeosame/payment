@@ -40,12 +40,15 @@ class PayoutLedgerTest extends TestCase
         Payout::create(['school_id' => $this->alpha->id, 'transaction_id' => $review->id, 'reference' => 'PO-review', 'amount' => 0, 'status' => Payout::NEEDS_REVIEW, 'last_error' => 'No base_amount recorded']);
         Payout::create(['school_id' => $this->beta->id, 'transaction_id' => $betaTx->id, 'reference' => 'PO-beta', 'amount' => 900000, 'status' => Payout::SUCCESS]);
 
-        $page = $this->actingAsSchoolAdmin($this->alpha)->get('/s/alpha/payouts')->assertOk();
+        $page = $this->actingAsSchoolAdmin($this->alpha)->get('/admin/alpha/payouts')->assertOk();
 
-        $page->assertSee('PO-paid')->assertSee('TRF_abc')->assertSee('Paid')->assertSee('ref-paid')->assertSee('Adaeze Okonkwo');
-        $page->assertSee('PO-failed')->assertSee('Failed')->assertSee('Recipient not available')->assertSee('2 attempts');
-        $page->assertSee('PO-review')->assertSee('Under review');
+        $page->assertSee('PO-paid')->assertSee('Paid')->assertSee('ref-paid')->assertSee('Adaeze Okonkwo');
+        $page->assertSee('PO-failed')->assertSee('Failed');
+        $page->assertSee('PO-review')->assertSee('Needs review');
         $page->assertSee('50,000.00');
+
+        // Provider identifiers, raw errors and attempt counters are internal and never rendered.
+        $page->assertDontSee('TRF_abc')->assertDontSee('Recipient not available')->assertDontSee('No base_amount recorded')->assertDontSee('2 attempts');
 
         $page->assertDontSee('PO-beta')->assertDontSee('ref-beta')->assertDontSee('900,000.00');
     }
@@ -57,12 +60,12 @@ class PayoutLedgerTest extends TestCase
         Payout::create(['school_id' => $this->alpha->id, 'transaction_id' => $t->id, 'reference' => 'PO-1', 'amount' => 1, 'status' => Payout::SUCCESS]);
         Payout::create(['school_id' => $this->alpha->id, 'transaction_id' => $u->id, 'reference' => 'PO-2', 'amount' => 1, 'status' => Payout::PENDING]);
 
-        $this->actingAsSchoolAdmin($this->alpha)->get('/s/alpha/payouts?status=pending')->assertOk()->assertSee('PO-2')->assertDontSee('PO-1');
-        $this->actingAsSchoolAdmin($this->alpha)->get('/s/alpha/payouts?status=bogus')->assertOk()->assertSee('PO-1')->assertSee('PO-2');
+        $this->actingAsSchoolAdmin($this->alpha)->get('/admin/alpha/payouts?status=pending')->assertOk()->assertSee('PO-2')->assertDontSee('PO-1');
+        $this->actingAsSchoolAdmin($this->alpha)->get('/admin/alpha/payouts?status=bogus')->assertOk()->assertSee('PO-1')->assertSee('PO-2');
 
-        $this->actingAsSchoolAdmin($this->alpha)->get('/s/beta/payouts')->assertNotFound();
+        $this->actingAsSchoolAdmin($this->alpha)->get('/admin/beta/payouts')->assertNotFound();
         $this->flushSession();
-        $this->get('/s/alpha/payouts')->assertRedirect('/admin/login');
+        $this->get('/admin/alpha/payouts')->assertRedirect('/admin/login');
     }
 
     public function test_ledger_amount_is_the_school_share_not_the_gross_charge(): void
@@ -75,7 +78,7 @@ class PayoutLedgerTest extends TestCase
         $this->assertEquals(51250.00, (float) $t->amount);
 
         $this->actingAsSchoolAdmin($this->alpha)
-            ->get('/s/alpha/payouts')
+            ->get('/admin/alpha/payouts')
             ->assertOk()
             ->assertSee('50,000.00')
             ->assertDontSee('51,250.00');
@@ -87,8 +90,9 @@ class PayoutLedgerTest extends TestCase
         $payout = Payout::create(['school_id' => $this->alpha->id, 'transaction_id' => $t->id, 'reference' => 'PO-x', 'amount' => 1, 'status' => Payout::PENDING]);
 
         foreach (['post', 'put', 'patch', 'delete'] as $method) {
-            $this->actingAsSchoolAdmin($this->alpha)->{$method}('/s/alpha/payouts')->assertStatus(405);
-            $this->actingAsSchoolAdmin($this->alpha)->{$method}("/s/alpha/payouts/{$payout->id}")->assertNotFound();
+            $this->actingAsSchoolAdmin($this->alpha)->{$method}('/admin/alpha/payouts')->assertStatus(405);
+            // The detail page is GET-only: every write method is rejected.
+            $this->actingAsSchoolAdmin($this->alpha)->{$method}("/admin/alpha/payouts/{$payout->id}")->assertStatus(405);
         }
 
         $this->assertSame(Payout::PENDING, $payout->fresh()->status);

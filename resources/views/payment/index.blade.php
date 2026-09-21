@@ -109,7 +109,7 @@
             </section>
         @endif
 
-        <form id="paymentForm" action="{{ route('school.payment.initialize', ['school' => $school->slug]) }}" method="POST" class="mt-6 grid gap-5 lg:grid-cols-12 lg:gap-8">
+        <form id="paymentForm" action="{{ route(request()->routeIs('public.payment') ? 'public.payment.initialize' : 'school.payment.initialize', ['school' => $school->slug]) }}" method="POST" class="mt-6 grid gap-5 lg:grid-cols-12 lg:gap-8">
             @csrf
 
             <div class="space-y-5 lg:col-span-7">

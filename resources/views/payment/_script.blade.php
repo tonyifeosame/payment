@@ -44,7 +44,7 @@
     const termSelect = document.getElementById('academic_term_id');
     const sTerm = document.getElementById('summaryTerm');
     const sStudent = document.getElementById('summaryStudent');
-    const studentSearchUrl = {!! json_encode(route('school.payment.student-search', ['school' => $school->slug])) !!};
+    const studentSearchUrl = {!! json_encode(route(request()->routeIs('public.payment') ? 'public.payment.student-search' : 'school.payment.student-search', ['school' => $school->slug])) !!};
     const studentSearchLimit = {{ \App\Http\Controllers\PaymentController::STUDENT_SEARCH_LIMIT }};
 
     function selectedTermId() { return termSelect && termSelect.value ? Number(termSelect.value) : null; }

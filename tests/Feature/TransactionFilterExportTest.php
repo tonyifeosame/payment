@@ -67,7 +67,7 @@ class TransactionFilterExportTest extends TestCase
 
     private function list(string $query = '')
     {
-        return $this->actingAsSchoolAdmin($this->alpha)->get('/s/alpha/transactions'.($query ? '?'.$query : ''));
+        return $this->actingAsSchoolAdmin($this->alpha)->get('/admin/alpha/transactions'.($query ? '?'.$query : ''));
     }
 
     public function test_default_list_shows_only_successful_payments(): void
@@ -129,14 +129,14 @@ class TransactionFilterExportTest extends TestCase
         $this->list('term_id='.$betaTerm->id)->assertOk()->assertDontSee('ref-beta');
         $this->list('session_id='.$betaTerm->academic_session_id)->assertOk()->assertDontSee('ref-beta');
         $this->list('category_id='.$beta->category_id)->assertOk()->assertDontSee('ref-beta');
-        $this->actingAsSchoolAdmin($this->alpha)->get('/s/beta/transactions')->assertNotFound();
+        $this->actingAsSchoolAdmin($this->alpha)->get('/admin/beta/transactions')->assertNotFound();
     }
 
     public function test_export_contains_only_the_schools_rows_with_student_and_fee_columns(): void
     {
         Payout::create(['school_id' => $this->alpha->id, 'transaction_id' => $this->tuition->id, 'reference' => 'PO-tuition', 'amount' => 50000, 'status' => Payout::SUCCESS]);
 
-        $response = $this->actingAsSchoolAdmin($this->alpha)->get('/s/alpha/transactions/export?status=all');
+        $response = $this->actingAsSchoolAdmin($this->alpha)->get('/admin/alpha/transactions/export?status=all');
 
         $response->assertOk();
         $this->assertStringStartsWith('text/csv', (string) $response->headers->get('Content-Type'));
@@ -150,9 +150,15 @@ class TransactionFilterExportTest extends TestCase
             'Student', 'Admission Number', 'Class', 'Session', 'Term',
             'Category', 'Fee Type', 'Quantity',
             'Payer Name', 'Payer Email', 'Payment Method',
-            'Fee Amount (NGN)', 'Service Fee (NGN)', 'Total Charged (NGN)',
+            'Fee Amount (NGN)',
             'Payout Status', 'Payout Reference',
         ], $rows[0]);
+
+        // The platform service fee and the gross charge are never exported to the school.
+        $this->assertStringNotContainsString('Service Fee', $csv);
+        $this->assertStringNotContainsString('Total Charged', $csv);
+        $this->assertStringNotContainsString('1250.00', $csv);
+        $this->assertStringNotContainsString('51250.00', $csv);
 
         $byRef = collect(array_slice($rows, 1))->keyBy(0);
         $this->assertEqualsCanonicalizing(['ref-tuition', 'ref-uniform', 'ref-pending'], $byRef->keys()->all());
@@ -169,17 +175,16 @@ class TransactionFilterExportTest extends TestCase
         $this->assertSame('JSS 1 Tuition', $tuition[10]);
         $this->assertSame('Parent Okonkwo', $tuition[12]);
         $this->assertSame('50000.00', $tuition[15]);
-        $this->assertSame('1250.00', $tuition[16]);
-        $this->assertSame('51250.00', $tuition[17]);
-        $this->assertSame('success', $tuition[18]);
-        $this->assertSame('PO-tuition', $tuition[19]);
+        $this->assertSame('success', $tuition[16]);
+        $this->assertSame('PO-tuition', $tuition[17]);
+        $this->assertCount(18, $tuition);
 
         $this->assertStringNotContainsString('beta@private.test', $csv);
     }
 
     public function test_export_honours_the_same_filters_as_the_list(): void
     {
-        $csv = $this->actingAsSchoolAdmin($this->alpha)->get('/s/alpha/transactions/export?q=Adaeze')->streamedContent();
+        $csv = $this->actingAsSchoolAdmin($this->alpha)->get('/admin/alpha/transactions/export?q=Adaeze')->streamedContent();
 
         $this->assertStringContainsString('ref-tuition', $csv);
         $this->assertStringNotContainsString('ref-uniform', $csv);
@@ -188,7 +193,7 @@ class TransactionFilterExportTest extends TestCase
 
     public function test_export_is_protected_like_the_list(): void
     {
-        $this->get('/s/alpha/transactions/export')->assertRedirect('/admin/login');
-        $this->actingAsSchoolAdmin($this->alpha)->get('/s/beta/transactions/export')->assertNotFound();
+        $this->get('/admin/alpha/transactions/export')->assertRedirect('/admin/login');
+        $this->actingAsSchoolAdmin($this->alpha)->get('/admin/beta/transactions/export')->assertNotFound();
     }
 }

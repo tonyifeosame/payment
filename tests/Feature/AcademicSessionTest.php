@@ -33,8 +33,8 @@ class AcademicSessionTest extends TestCase
     public function test_creating_a_session_creates_its_three_terms_and_sets_the_current_term(): void
     {
         $this->actingAsSchoolAdmin($this->alpha)
-            ->post('/s/alpha/sessions', ['name' => '2026/2027'])
-            ->assertRedirect('/s/alpha/sessions');
+            ->post('/admin/alpha/sessions', ['name' => '2026/2027'])
+            ->assertRedirect('/admin/alpha/sessions');
 
         $session = AcademicSession::where('school_id', $this->alpha->id)->where('name', '2026/2027')->firstOrFail();
 
@@ -54,7 +54,7 @@ class AcademicSessionTest extends TestCase
         $first = $this->makeSessionWithTerms($this->alpha, '2025/2026');
         $current = $this->alpha->fresh()->current_academic_term_id;
 
-        $this->actingAsSchoolAdmin($this->alpha)->post('/s/alpha/sessions', ['name' => '2026/2027']);
+        $this->actingAsSchoolAdmin($this->alpha)->post('/admin/alpha/sessions', ['name' => '2026/2027']);
 
         $this->assertSame($current, $this->alpha->fresh()->current_academic_term_id);
         $this->assertSame($first->terms()->where('number', 1)->value('id'), $current);
@@ -64,8 +64,8 @@ class AcademicSessionTest extends TestCase
     public function test_session_name_must_be_two_consecutive_years(string $name): void
     {
         $this->actingAsSchoolAdmin($this->alpha)
-            ->from('/s/alpha/sessions')
-            ->post('/s/alpha/sessions', ['name' => $name])
+            ->from('/admin/alpha/sessions')
+            ->post('/admin/alpha/sessions', ['name' => $name])
             ->assertSessionHasErrors('name');
 
         $this->assertDatabaseCount('academic_sessions', 0);
@@ -89,13 +89,13 @@ class AcademicSessionTest extends TestCase
 
         // Alpha may also have 2026/2027…
         $this->actingAsSchoolAdmin($this->alpha)
-            ->post('/s/alpha/sessions', ['name' => '2026/2027'])
+            ->post('/admin/alpha/sessions', ['name' => '2026/2027'])
             ->assertSessionHasNoErrors();
 
         // …but not twice.
         $this->actingAsSchoolAdmin($this->alpha)
-            ->from('/s/alpha/sessions')
-            ->post('/s/alpha/sessions', ['name' => '2026/2027'])
+            ->from('/admin/alpha/sessions')
+            ->post('/admin/alpha/sessions', ['name' => '2026/2027'])
             ->assertSessionHasErrors('name');
 
         $this->assertSame(1, AcademicSession::where('school_id', $this->alpha->id)->count());
@@ -104,8 +104,8 @@ class AcademicSessionTest extends TestCase
     public function test_end_date_cannot_precede_start_date(): void
     {
         $this->actingAsSchoolAdmin($this->alpha)
-            ->from('/s/alpha/sessions')
-            ->post('/s/alpha/sessions', ['name' => '2026/2027', 'starts_on' => '2026-09-14', 'ends_on' => '2026-09-01'])
+            ->from('/admin/alpha/sessions')
+            ->post('/admin/alpha/sessions', ['name' => '2026/2027', 'starts_on' => '2026-09-14', 'ends_on' => '2026-09-01'])
             ->assertSessionHasErrors('ends_on');
     }
 
@@ -115,8 +115,8 @@ class AcademicSessionTest extends TestCase
         $second = $session->terms()->where('number', 2)->firstOrFail();
 
         $this->actingAsSchoolAdmin($this->alpha)
-            ->post("/s/alpha/terms/{$second->id}/current")
-            ->assertRedirect('/s/alpha/sessions');
+            ->post("/admin/alpha/terms/{$second->id}/current")
+            ->assertRedirect('/admin/alpha/sessions');
 
         $this->assertSame($second->id, $this->alpha->fresh()->current_academic_term_id);
     }
@@ -128,11 +128,11 @@ class AcademicSessionTest extends TestCase
         $before = $this->alpha->fresh()->current_academic_term_id;
 
         $this->actingAsSchoolAdmin($this->alpha)
-            ->post("/s/alpha/terms/{$betaTerm->id}/current")
+            ->post("/admin/alpha/terms/{$betaTerm->id}/current")
             ->assertNotFound();
 
         $this->actingAsSchoolAdmin($this->alpha)
-            ->post("/s/beta/terms/{$betaTerm->id}/current")
+            ->post("/admin/beta/terms/{$betaTerm->id}/current")
             ->assertNotFound();
 
         $this->assertSame($before, $this->alpha->fresh()->current_academic_term_id);
@@ -145,13 +145,13 @@ class AcademicSessionTest extends TestCase
         $this->makeSessionWithTerms($this->beta, '2031/2032');
 
         $this->actingAsSchoolAdmin($this->alpha)
-            ->get('/s/alpha/sessions')
+            ->get('/admin/alpha/sessions')
             ->assertOk()
             ->assertSee('2024/2025')
             ->assertDontSee('2031/2032');
 
         $this->flushSession();
-        $this->get('/s/alpha/sessions')->assertRedirect('/admin/login');
+        $this->get('/admin/alpha/sessions')->assertRedirect('/admin/login');
     }
 
     public function test_a_fee_can_be_tied_to_own_term_but_not_to_another_schools_term(): void
@@ -161,15 +161,15 @@ class AcademicSessionTest extends TestCase
         $category = \App\Models\Category::create(['school_id' => $this->alpha->id, 'name' => 'School Fees']);
 
         $this->actingAsSchoolAdmin($this->alpha)
-            ->post('/s/alpha/subcategories', [
+            ->post('/admin/alpha/subcategories', [
                 'category_id' => $category->id, 'name' => 'Tuition', 'price' => 50000,
                 'academic_term_id' => $alphaTerm->id,
             ])
-            ->assertRedirect('/s/alpha/subcategories');
+            ->assertRedirect('/admin/alpha/subcategories');
         $this->assertDatabaseHas('subcategories', ['name' => 'Tuition', 'academic_term_id' => $alphaTerm->id, 'school_id' => $this->alpha->id]);
 
         $this->actingAsSchoolAdmin($this->alpha)
-            ->post('/s/alpha/subcategories', [
+            ->post('/admin/alpha/subcategories', [
                 'category_id' => $category->id, 'name' => 'Smuggled', 'price' => 1,
                 'academic_term_id' => $betaTerm->id,
             ])
@@ -178,7 +178,7 @@ class AcademicSessionTest extends TestCase
 
         // Term is optional: a general fee has none.
         $this->actingAsSchoolAdmin($this->alpha)
-            ->post('/s/alpha/subcategories', ['category_id' => $category->id, 'name' => 'Uniform', 'price' => 3000])
+            ->post('/admin/alpha/subcategories', ['category_id' => $category->id, 'name' => 'Uniform', 'price' => 3000])
             ->assertSessionHasNoErrors();
         $this->assertDatabaseHas('subcategories', ['name' => 'Uniform', 'academic_term_id' => null]);
     }

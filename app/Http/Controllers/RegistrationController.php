@@ -58,7 +58,7 @@ class RegistrationController extends Controller
         // Build tenant-aware links and email them to the school admin
         $links = [
             'dashboard' => route('school.dashboard', ['school' => $school->slug]),
-            'payment' => route('school.payment.index', ['school' => $school->slug]),
+            'payment' => route('public.payment', ['school' => $school->slug]),
             'categories' => route('school.categories.index', ['school' => $school->slug]),
             'subcategories' => route('school.subcategories.index', ['school' => $school->slug]),
             'transactions' => route('school.transactions.index', ['school' => $school->slug]),

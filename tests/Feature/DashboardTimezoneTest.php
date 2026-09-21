@@ -97,7 +97,7 @@ class DashboardTimezoneTest extends TestCase
         $this->makeSuccessfulTransaction($this->school, ['paid_at' => Carbon::parse('2026-09-15 23:20:00')]);
 
         $this->actingAsSchoolAdmin($this->school)
-            ->get('/s/alpha/dashboard')
+            ->get('/admin/alpha/dashboard')
             ->assertOk()
             ->assertSee('16 Sep, 00:20')
             ->assertDontSee('15 Sep, 23:20');

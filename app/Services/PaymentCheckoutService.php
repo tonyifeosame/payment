@@ -136,9 +136,10 @@ class PaymentCheckoutService
      *
      * Required once the school has a roster; optional (null) before that. The id
      * arrives from the page's autocomplete, but it is only a claim: an id that is
-     * not one of this school's students is a 404 (fail closed), exactly like a
-     * foreign fee or term id. Nothing else the browser sends about the student —
-     * `student_name`, `admission_number`, `class` — is read at all.
+     * not one of this school's ACTIVE students is a 404 (fail closed), exactly like
+     * a foreign fee or term id — a graduated student or one who has left cannot be
+     * paid for, however the id was obtained. Nothing else the browser sends about
+     * the student — `student_name`, `admission_number`, `class` — is read at all.
      */
     private function resolveStudent(School $school, array $input): ?Student
     {
@@ -153,7 +154,7 @@ class PaymentCheckoutService
             return null;
         }
 
-        $student = Student::forSchool($school)->find((int) $studentId);
+        $student = Student::forSchool($school)->payable()->find((int) $studentId);
 
         if (! $student) {
             abort(404);

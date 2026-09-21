@@ -40,15 +40,15 @@ class DashboardTest extends TestCase
 
     public function test_dashboard_requires_login_and_the_right_school(): void
     {
-        $this->get('/s/alpha/dashboard')->assertRedirect('/admin/login');
-        $this->actingAsSchoolAdmin($this->alpha)->get('/s/beta/dashboard')->assertNotFound();
-        $this->actingAsSchoolAdmin($this->alpha)->get('/s/alpha/dashboard')->assertOk()->assertSee('Dashboard');
+        $this->get('/admin/alpha/dashboard')->assertRedirect('/admin/login');
+        $this->actingAsSchoolAdmin($this->alpha)->get('/admin/beta/dashboard')->assertNotFound();
+        $this->actingAsSchoolAdmin($this->alpha)->get('/admin/alpha/dashboard')->assertOk()->assertSee('Dashboard');
     }
 
     public function test_login_lands_on_the_dashboard(): void
     {
         $this->post('/admin/login', ['name' => 'alpha school', 'password' => 'password123'])
-            ->assertRedirect('/s/alpha/dashboard');
+            ->assertRedirect('/admin/alpha/dashboard');
     }
 
     public function test_totals_are_tenant_scoped_and_only_count_successful_payments(): void
@@ -104,12 +104,12 @@ class DashboardTest extends TestCase
 
         // The page honours ?term= for its own terms only.
         $this->actingAsSchoolAdmin($this->alpha)
-            ->get('/s/alpha/dashboard?term='.$second->id)
+            ->get('/admin/alpha/dashboard?term='.$second->id)
             ->assertOk()
             ->assertSee('Second Term, 2026/2027');
 
         $betaTerm = $this->makeSessionWithTerms($this->beta)->terms()->first();
-        $page = $this->actingAsSchoolAdmin($this->alpha)->get('/s/alpha/dashboard?term='.$betaTerm->id)->assertOk();
+        $page = $this->actingAsSchoolAdmin($this->alpha)->get('/admin/alpha/dashboard?term='.$betaTerm->id)->assertOk();
         // Falls back to the school's own current term rather than using beta's.
         $page->assertSee('First Term, 2026/2027');
     }
@@ -134,7 +134,7 @@ class DashboardTest extends TestCase
         $this->assertCount(3, $summary['recent']);
 
         $this->actingAsSchoolAdmin($this->alpha)
-            ->get('/s/alpha/dashboard')
+            ->get('/admin/alpha/dashboard')
             ->assertOk()
             ->assertSee('50,000.00')
             ->assertDontSee('500,000.00');

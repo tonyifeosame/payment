@@ -57,25 +57,25 @@ class SchoolSettingsTest extends TestCase
 
     public function test_settings_page_requires_the_owning_admin(): void
     {
-        $this->get('/s/alpha/settings')->assertRedirect('/admin/login');
-        $this->put('/s/alpha/settings', $this->profile(['name' => 'Hijacked']))->assertRedirect('/admin/login');
+        $this->get('/admin/alpha/settings')->assertRedirect('/admin/login');
+        $this->put('/admin/alpha/settings', $this->profile(['name' => 'Hijacked']))->assertRedirect('/admin/login');
 
-        $this->actingAsSchoolAdmin($this->beta)->get('/s/alpha/settings')->assertNotFound();
-        $this->actingAsSchoolAdmin($this->beta)->put('/s/alpha/settings', $this->profile(['name' => 'Hijacked']))->assertNotFound();
-        $this->actingAsSchoolAdmin($this->beta)->put('/s/alpha/settings/bank', $this->bank())->assertNotFound();
+        $this->actingAsSchoolAdmin($this->beta)->get('/admin/alpha/settings')->assertNotFound();
+        $this->actingAsSchoolAdmin($this->beta)->put('/admin/alpha/settings', $this->profile(['name' => 'Hijacked']))->assertNotFound();
+        $this->actingAsSchoolAdmin($this->beta)->put('/admin/alpha/settings/bank', $this->bank())->assertNotFound();
 
         $this->assertDatabaseHas('schools', ['id' => $this->alpha->id, 'name' => 'Alpha School', 'account_number' => '0123456789']);
     }
 
     public function test_admin_can_update_profile_branding_and_logo(): void
     {
-        $this->actingAsSchoolAdmin($this->alpha)->get('/s/alpha/settings')->assertOk()->assertSee('Alpha School');
+        $this->actingAsSchoolAdmin($this->alpha)->get('/admin/alpha/settings')->assertOk()->assertSee('Alpha School');
 
         $this->actingAsSchoolAdmin($this->alpha)
-            ->put('/s/alpha/settings', $this->profile([
+            ->put('/admin/alpha/settings', $this->profile([
                 'logo' => UploadedFile::fake()->image('logo.png', 200, 200),
             ]))
-            ->assertRedirect('/s/alpha/settings')
+            ->assertRedirect('/admin/alpha/settings')
             ->assertSessionHasNoErrors();
 
         $school = $this->alpha->fresh();
@@ -90,7 +90,7 @@ class SchoolSettingsTest extends TestCase
         $this->get('/s/alpha/payment')->assertOk()->assertSee('/s/alpha/logo', false)->assertSee('0801 234 5678');
 
         // And can be removed.
-        $this->actingAsSchoolAdmin($this->alpha)->put('/s/alpha/settings', $this->profile(['remove_logo' => 1]));
+        $this->actingAsSchoolAdmin($this->alpha)->put('/admin/alpha/settings', $this->profile(['remove_logo' => 1]));
         $this->assertNull($this->alpha->fresh()->logo_path);
         Storage::disk('local')->assertMissing('school-logos/'.$school->id.'.png');
         $this->get('/s/alpha/logo')->assertNotFound();
@@ -99,18 +99,18 @@ class SchoolSettingsTest extends TestCase
     public function test_profile_validation(): void
     {
         $this->actingAsSchoolAdmin($this->alpha)
-            ->from('/s/alpha/settings')
-            ->put('/s/alpha/settings', $this->profile(['name' => 'beta school'])) // taken, case-insensitive
+            ->from('/admin/alpha/settings')
+            ->put('/admin/alpha/settings', $this->profile(['name' => 'beta school'])) // taken, case-insensitive
             ->assertSessionHasErrors('name');
 
         $this->actingAsSchoolAdmin($this->alpha)
-            ->from('/s/alpha/settings')
-            ->put('/s/alpha/settings', $this->profile(['email' => 'nope']))
+            ->from('/admin/alpha/settings')
+            ->put('/admin/alpha/settings', $this->profile(['email' => 'nope']))
             ->assertSessionHasErrors('email');
 
         $this->actingAsSchoolAdmin($this->alpha)
-            ->from('/s/alpha/settings')
-            ->put('/s/alpha/settings', $this->profile(['logo' => UploadedFile::fake()->create('evil.php', 10, 'text/plain')]))
+            ->from('/admin/alpha/settings')
+            ->put('/admin/alpha/settings', $this->profile(['logo' => UploadedFile::fake()->create('evil.php', 10, 'text/plain')]))
             ->assertSessionHasErrors('logo');
 
         $this->assertDatabaseHas('schools', ['id' => $this->alpha->id, 'name' => 'Alpha School', 'logo_path' => null]);
@@ -119,7 +119,7 @@ class SchoolSettingsTest extends TestCase
     public function test_profile_update_cannot_touch_bank_details_or_the_slug(): void
     {
         $this->actingAsSchoolAdmin($this->alpha)
-            ->put('/s/alpha/settings', $this->profile([
+            ->put('/admin/alpha/settings', $this->profile([
                 'account_number' => '1111111111',
                 'bank_code' => '999',
                 'account_name' => 'Attacker',
@@ -150,8 +150,8 @@ class SchoolSettingsTest extends TestCase
         ]);
 
         $this->actingAsSchoolAdmin($this->alpha)
-            ->put('/s/alpha/settings/bank', $this->bank())
-            ->assertRedirect('/s/alpha/settings')
+            ->put('/admin/alpha/settings/bank', $this->bank())
+            ->assertRedirect('/admin/alpha/settings')
             ->assertSessionHasNoErrors();
 
         $school = $this->alpha->fresh();
@@ -173,9 +173,9 @@ class SchoolSettingsTest extends TestCase
         Http::fake(['*/bank/resolve*' => Http::response(['status' => true, 'data' => ['account_name' => 'X']])]);
 
         $this->actingAsSchoolAdmin($this->alpha)
-            ->from('/s/alpha/settings')
-            ->put('/s/alpha/settings/bank', $this->bank(['current_password' => 'wrong']))
-            ->assertRedirect('/s/alpha/settings')
+            ->from('/admin/alpha/settings')
+            ->put('/admin/alpha/settings/bank', $this->bank(['current_password' => 'wrong']))
+            ->assertRedirect('/admin/alpha/settings')
             ->assertSessionHasErrors('current_password');
 
         $this->assertDatabaseHas('schools', ['id' => $this->alpha->id, 'account_number' => '0123456789', 'paystack_recipient_code' => 'RCP_old']);
@@ -189,8 +189,8 @@ class SchoolSettingsTest extends TestCase
         Http::fake(['*/bank/resolve*' => Http::response(['status' => false, 'message' => 'Could not resolve account name. Check parameters or try again.'], 422)]);
 
         $this->actingAsSchoolAdmin($this->alpha)
-            ->from('/s/alpha/settings')
-            ->put('/s/alpha/settings/bank', $this->bank())
+            ->from('/admin/alpha/settings')
+            ->put('/admin/alpha/settings/bank', $this->bank())
             ->assertSessionHasErrors('account_number');
 
         $this->assertDatabaseHas('schools', ['id' => $this->alpha->id, 'account_number' => '0123456789', 'account_name' => 'Acct Alpha School', 'paystack_recipient_code' => 'RCP_old']);
@@ -203,8 +203,8 @@ class SchoolSettingsTest extends TestCase
         Http::fake(fn () => throw new \Illuminate\Http\Client\ConnectionException('timeout'));
 
         $this->actingAsSchoolAdmin($this->alpha)
-            ->from('/s/alpha/settings')
-            ->put('/s/alpha/settings/bank', $this->bank())
+            ->from('/admin/alpha/settings')
+            ->put('/admin/alpha/settings/bank', $this->bank())
             ->assertSessionHasErrors('account_number');
 
         $this->assertDatabaseHas('schools', ['id' => $this->alpha->id, 'account_number' => '0123456789', 'paystack_recipient_code' => 'RCP_old']);
@@ -213,8 +213,8 @@ class SchoolSettingsTest extends TestCase
     public function test_bank_change_validates_the_account_number_shape(): void
     {
         $this->actingAsSchoolAdmin($this->alpha)
-            ->from('/s/alpha/settings')
-            ->put('/s/alpha/settings/bank', $this->bank(['account_number' => '12345']))
+            ->from('/admin/alpha/settings')
+            ->put('/admin/alpha/settings/bank', $this->bank(['account_number' => '12345']))
             ->assertSessionHasErrors('account_number');
     }
 }

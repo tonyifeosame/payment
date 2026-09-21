@@ -56,7 +56,7 @@ class RegistrationSecurityTest extends TestCase
         $response = $this->post('/registration', $this->payload());
 
         // Phase 1: a new school lands on its dashboard, not the category list.
-        $response->assertRedirect('/s/new-school/dashboard');
+        $response->assertRedirect('/admin/new-school/dashboard');
         $this->assertNotNull(session('school_admin_id'));
         $this->assertDatabaseHas('schools', ['slug' => 'new-school']);
     }
@@ -87,15 +87,15 @@ class RegistrationSecurityTest extends TestCase
         $this->assertNotNull(session('school_admin_id'));
 
         // ...and is confined to their own tenant.
-        $this->get('/s/victim/categories')->assertNotFound();
-        $this->get('/s/victim/transactions')->assertNotFound();
-        $this->get("/s/attacker-school/categories/{$victimCategory->id}/edit")->assertNotFound();
-        $this->delete("/s/attacker-school/categories/{$victimCategory->id}")->assertNotFound();
+        $this->get('/admin/victim/categories')->assertNotFound();
+        $this->get('/admin/victim/transactions')->assertNotFound();
+        $this->get("/admin/attacker-school/categories/{$victimCategory->id}/edit")->assertNotFound();
+        $this->delete("/admin/attacker-school/categories/{$victimCategory->id}")->assertNotFound();
 
         $this->assertDatabaseHas('categories', ['id' => $victimCategory->id, 'name' => 'VictimCategory']);
 
         // Their own transactions page must not contain the victim's payers.
-        $this->get('/s/attacker-school/transactions')
+        $this->get('/admin/attacker-school/transactions')
             ->assertOk()
             ->assertDontSee('VictimPayerName')
             ->assertDontSee('victimparent@private.test');

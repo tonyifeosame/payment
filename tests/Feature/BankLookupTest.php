@@ -253,7 +253,7 @@ class BankLookupTest extends TestCase
         ], 200)]);
 
         $this->post('/registration', $this->registrationPayload(['account_name' => 'Somebody Else']))
-            ->assertRedirect('/s/new-school/dashboard');
+            ->assertRedirect('/admin/new-school/dashboard');
 
         $school = School::where('slug', 'new-school')->firstOrFail();
         $this->assertSame('RESOLVED SCHOOL LTD', $school->account_name);

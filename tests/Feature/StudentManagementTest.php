@@ -43,8 +43,8 @@ class StudentManagementTest extends TestCase
     public function test_admin_can_create_a_student_for_their_own_school(): void
     {
         $this->actingAsSchoolAdmin($this->alpha)
-            ->post('/s/alpha/students', $this->payload())
-            ->assertRedirect('/s/alpha/students');
+            ->post('/admin/alpha/students', $this->payload())
+            ->assertRedirect('/admin/alpha/students');
 
         // Normalised on the way in, and attached to the acting school — not to any
         // school_id in the request.
@@ -59,7 +59,7 @@ class StudentManagementTest extends TestCase
     public function test_a_school_id_in_the_request_is_ignored(): void
     {
         $this->actingAsSchoolAdmin($this->alpha)
-            ->post('/s/alpha/students', $this->payload(['school_id' => $this->beta->id]));
+            ->post('/admin/alpha/students', $this->payload(['school_id' => $this->beta->id]));
 
         $this->assertDatabaseHas('students', ['admission_number' => 'A/2026/001', 'school_id' => $this->alpha->id]);
         $this->assertDatabaseMissing('students', ['admission_number' => 'A/2026/001', 'school_id' => $this->beta->id]);
@@ -68,9 +68,9 @@ class StudentManagementTest extends TestCase
     public function test_required_fields_are_validated(): void
     {
         $this->actingAsSchoolAdmin($this->alpha)
-            ->from('/s/alpha/students/create')
-            ->post('/s/alpha/students', ['full_name' => '', 'admission_number' => '', 'class_name' => ''])
-            ->assertRedirect('/s/alpha/students/create')
+            ->from('/admin/alpha/students/create')
+            ->post('/admin/alpha/students', ['full_name' => '', 'admission_number' => '', 'class_name' => ''])
+            ->assertRedirect('/admin/alpha/students/create')
             ->assertSessionHasErrors(['full_name', 'admission_number', 'class_name']);
 
         $this->assertDatabaseCount('students', 1); // only the seeded beta student
@@ -81,8 +81,8 @@ class StudentManagementTest extends TestCase
         $this->makeStudent($this->alpha, 'A/2026/001', 'First');
 
         $this->actingAsSchoolAdmin($this->alpha)
-            ->from('/s/alpha/students/create')
-            ->post('/s/alpha/students', $this->payload(['admission_number' => ' a/2026/001 ', 'full_name' => 'Second']))
+            ->from('/admin/alpha/students/create')
+            ->post('/admin/alpha/students', $this->payload(['admission_number' => ' a/2026/001 ', 'full_name' => 'Second']))
             ->assertSessionHasErrors('admission_number');
 
         $this->assertDatabaseMissing('students', ['full_name' => 'Second']);
@@ -92,7 +92,7 @@ class StudentManagementTest extends TestCase
     {
         // Beta already has B/001. Alpha may use it too.
         $this->actingAsSchoolAdmin($this->alpha)
-            ->post('/s/alpha/students', $this->payload(['admission_number' => 'B/001']))
+            ->post('/admin/alpha/students', $this->payload(['admission_number' => 'B/001']))
             ->assertSessionHasNoErrors();
 
         $this->assertSame(2, Student::where('admission_number', 'B/001')->count());
@@ -117,8 +117,8 @@ class StudentManagementTest extends TestCase
         $betaSession = $this->makeSessionWithTerms($this->beta);
 
         $this->actingAsSchoolAdmin($this->alpha)
-            ->from('/s/alpha/students/create')
-            ->post('/s/alpha/students', $this->payload(['academic_session_id' => $betaSession->id]))
+            ->from('/admin/alpha/students/create')
+            ->post('/admin/alpha/students', $this->payload(['academic_session_id' => $betaSession->id]))
             ->assertSessionHasErrors('academic_session_id');
     }
 
@@ -128,26 +128,26 @@ class StudentManagementTest extends TestCase
         $this->makeStudent($this->alpha, 'A/2026/002', 'Alpha Student Two', 'JSS 2');
 
         $this->actingAsSchoolAdmin($this->alpha)
-            ->get('/s/alpha/students')
+            ->get('/admin/alpha/students')
             ->assertOk()
             ->assertSee('Alpha Student One')
             ->assertSee('Alpha Student Two')
             ->assertDontSee('Beta Only Student');
 
         $this->actingAsSchoolAdmin($this->alpha)
-            ->get('/s/alpha/students?q=two')
+            ->get('/admin/alpha/students?q=two')
             ->assertOk()
             ->assertSee('Alpha Student Two')
             ->assertDontSee('Alpha Student One');
 
         // Searching for beta's admission number from alpha finds nothing.
         $this->actingAsSchoolAdmin($this->alpha)
-            ->get('/s/alpha/students?q=B/001')
+            ->get('/admin/alpha/students?q=B/001')
             ->assertOk()
             ->assertDontSee('Beta Only Student');
 
         $this->actingAsSchoolAdmin($this->alpha)
-            ->get('/s/alpha/students?class=JSS+2')
+            ->get('/admin/alpha/students?class=JSS+2')
             ->assertOk()
             ->assertSee('Alpha Student Two')
             ->assertDontSee('Alpha Student One');
@@ -158,13 +158,13 @@ class StudentManagementTest extends TestCase
         $student = $this->makeStudent($this->alpha, 'A/2026/001', 'Old Name');
 
         $this->actingAsSchoolAdmin($this->alpha)
-            ->get("/s/alpha/students/{$student->id}/edit")
+            ->get("/admin/alpha/students/{$student->id}/edit")
             ->assertOk()
             ->assertSee('Old Name');
 
         $this->actingAsSchoolAdmin($this->alpha)
-            ->put("/s/alpha/students/{$student->id}", $this->payload(['full_name' => 'New Name', 'class_name' => 'JSS 3']))
-            ->assertRedirect('/s/alpha/students');
+            ->put("/admin/alpha/students/{$student->id}", $this->payload(['full_name' => 'New Name', 'class_name' => 'JSS 3']))
+            ->assertRedirect('/admin/alpha/students');
 
         $this->assertDatabaseHas('students', ['id' => $student->id, 'full_name' => 'New Name', 'class_name' => 'JSS 3']);
     }
@@ -175,7 +175,7 @@ class StudentManagementTest extends TestCase
 
         // Re-submitting the same admission number must not trip the unique rule.
         $this->actingAsSchoolAdmin($this->alpha)
-            ->put("/s/alpha/students/{$student->id}", $this->payload(['admission_number' => 'A/2026/001']))
+            ->put("/admin/alpha/students/{$student->id}", $this->payload(['admission_number' => 'A/2026/001']))
             ->assertSessionHasNoErrors();
     }
 
@@ -183,22 +183,22 @@ class StudentManagementTest extends TestCase
     {
         $id = $this->betaStudent->id;
 
-        $this->actingAsSchoolAdmin($this->alpha)->get("/s/alpha/students/{$id}")->assertNotFound();
-        $this->actingAsSchoolAdmin($this->alpha)->get("/s/alpha/students/{$id}/edit")->assertNotFound();
-        $this->actingAsSchoolAdmin($this->alpha)->put("/s/alpha/students/{$id}", $this->payload(['full_name' => 'Hijacked']))->assertNotFound();
+        $this->actingAsSchoolAdmin($this->alpha)->get("/admin/alpha/students/{$id}")->assertNotFound();
+        $this->actingAsSchoolAdmin($this->alpha)->get("/admin/alpha/students/{$id}/edit")->assertNotFound();
+        $this->actingAsSchoolAdmin($this->alpha)->put("/admin/alpha/students/{$id}", $this->payload(['full_name' => 'Hijacked']))->assertNotFound();
 
         // Via beta's own prefix, the middleware rejects the mismatched school.
-        $this->actingAsSchoolAdmin($this->alpha)->get("/s/beta/students/{$id}")->assertNotFound();
-        $this->actingAsSchoolAdmin($this->alpha)->get('/s/beta/students')->assertNotFound();
-        $this->actingAsSchoolAdmin($this->alpha)->put("/s/beta/students/{$id}", $this->payload(['full_name' => 'Hijacked']))->assertNotFound();
+        $this->actingAsSchoolAdmin($this->alpha)->get("/admin/beta/students/{$id}")->assertNotFound();
+        $this->actingAsSchoolAdmin($this->alpha)->get('/admin/beta/students')->assertNotFound();
+        $this->actingAsSchoolAdmin($this->alpha)->put("/admin/beta/students/{$id}", $this->payload(['full_name' => 'Hijacked']))->assertNotFound();
 
         $this->assertDatabaseHas('students', ['id' => $id, 'full_name' => 'Beta Only Student']);
     }
 
     public function test_anonymous_user_is_sent_to_login(): void
     {
-        $this->get('/s/alpha/students')->assertRedirect('/admin/login');
-        $this->post('/s/alpha/students', $this->payload())->assertRedirect('/admin/login');
+        $this->get('/admin/alpha/students')->assertRedirect('/admin/login');
+        $this->post('/admin/alpha/students', $this->payload())->assertRedirect('/admin/login');
         $this->assertDatabaseCount('students', 1);
     }
 }
