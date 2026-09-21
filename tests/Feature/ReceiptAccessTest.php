@@ -95,7 +95,7 @@ class ReceiptAccessTest extends TestCase
 
     public function test_admin_of_another_school_cannot_view_the_receipt(): void
     {
-        $this->withSession(['school_admin_id' => $this->beta->id])
+        $this->withSession(\App\Support\SchoolSession::payloadFor($this->beta))
             ->get("/payment/receipt/{$this->alphaTransaction->id}")
             ->assertNotFound();
     }
@@ -186,7 +186,7 @@ class ReceiptAccessTest extends TestCase
 
     public function test_owning_school_admin_can_view_the_receipt(): void
     {
-        $this->withSession(['school_admin_id' => $this->alpha->id])
+        $this->withSession(\App\Support\SchoolSession::payloadFor($this->alpha))
             ->get("/payment/receipt/{$this->alphaTransaction->id}")
             ->assertOk()
             ->assertSee('PrivatePayerName');

@@ -9,6 +9,7 @@ use App\Models\Transaction;
 use App\Services\AcademicPeriodService;
 use App\Services\PaymentCheckoutService;
 use App\Services\PaymentSettlementService;
+use App\Support\SchoolSession;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -26,9 +27,9 @@ class PaymentController extends Controller
      * rendered a form posting to the un-scoped initialize endpoint. It now renders
      * the acting school's own page, so the data and the form target are both scoped.
      */
-    public function index()
+    public function index(Request $request)
     {
-        $school = School::find(session('school_admin_id'));
+        $school = SchoolSession::school($request);
 
         if (! $school) {
             return redirect()->route('admin.login')->with('error', 'Please log in.');
@@ -299,8 +300,9 @@ class PaymentController extends Controller
             return;
         }
 
-        // 3. The admin of the school that owns the transaction.
-        $schoolId = session('school_admin_id');
+        // 3. The admin of the school that owns the transaction (a session revoked by
+        //    a password change no longer counts — see SchoolSession).
+        $schoolId = SchoolSession::school($request)?->id;
         if ($schoolId && $transaction->school_id !== null
             && (int) $transaction->school_id === (int) $schoolId) {
             return;

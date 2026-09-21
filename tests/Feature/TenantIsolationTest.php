@@ -74,7 +74,7 @@ class TenantIsolationTest extends TestCase
 
     private function actingAsAlpha(): self
     {
-        $this->withSession(['school_admin_id' => $this->alpha->id]);
+        $this->withSession(\App\Support\SchoolSession::payloadFor($this->alpha));
 
         return $this;
     }

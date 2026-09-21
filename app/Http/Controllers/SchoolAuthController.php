@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Mail\SchoolPasswordResetMail;
 use App\Models\School;
+use App\Support\SchoolSession;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
@@ -23,20 +24,22 @@ class SchoolAuthController extends Controller
             'password' => 'required|string',
         ]);
 
-        // Find school by name (case-insensitive)
-        $school = School::whereRaw('LOWER(name) = LOWER(?)', [$credentials['name']])->first();
+        // The one school with this name, case-insensitively. Two matches (legacy
+        // duplicates) is treated as no match: never sign in to "the first one".
+        $school = School::findUniqueByName($credentials['name']);
         if (! $school || ! $school->admin_password || ! Hash::check($credentials['password'], $school->admin_password)) {
             return back()->withInput()->with('error', 'Invalid school name or password.');
         }
 
-        session(['school_admin_id' => $school->id]);
+        // Fresh session id (fixation protection), then the school context.
+        SchoolSession::login($request, $school);
 
         return redirect()->route('school.dashboard', ['school' => $school])->with('success', 'Logged in successfully.');
     }
 
     public function logout(Request $request)
     {
-        $request->session()->forget('school_admin_id');
+        SchoolSession::logout($request);
 
         return redirect()->route('admin.login')->with('success', 'Logged out.');
     }
@@ -48,12 +51,9 @@ class SchoolAuthController extends Controller
      */
     public function app(Request $request)
     {
-        $schoolId = session('school_admin_id');
-        $school = $schoolId ? School::find($schoolId) : null;
+        $school = SchoolSession::school($request);
 
         if (! $school) {
-            $request->session()->forget('school_admin_id');
-
             return redirect()->route('admin.login');
         }
 
@@ -102,7 +102,9 @@ class SchoolAuthController extends Controller
     {
         $request->validate(['email' => 'required|email']);
 
-        $school = School::where('email', $request->email)->first();
+        // Exactly one school with this email (case-insensitive); an ambiguous email
+        // gets the same neutral message and no link.
+        $school = School::findUniqueByEmail($request->email);
 
         if ($school) {
             $token = Password::createToken($school);
@@ -127,7 +129,7 @@ class SchoolAuthController extends Controller
             'password' => 'required|confirmed|min:8',
         ]);
 
-        $school = School::where('email', $request->email)->first();
+        $school = School::findUniqueByEmail($request->email);
 
         if (! $school) {
             return back()->withErrors(['email' => 'The provided email does not match our records.']);
@@ -143,6 +145,11 @@ class SchoolAuthController extends Controller
         $school->save();
 
         Password::broker()->deleteToken($school);
+
+        // Every session authenticated under the old password — including one in
+        // this browser — now fails the fingerprint check; start this one clean.
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
 
         return redirect()->route('admin.login')->with('status', 'Your password has been reset successfully.');
     }

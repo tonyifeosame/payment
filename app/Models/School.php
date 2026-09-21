@@ -7,6 +7,7 @@ use Illuminate\Contracts\Auth\CanResetPassword;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 class School extends Model implements CanResetPassword
@@ -44,6 +45,57 @@ class School extends Model implements CanResetPassword
     public function getRouteKeyName()
     {
         return 'slug';
+    }
+
+    // -----------------------------------------------------------------------
+    // Identity lookups (H4). The login identifier is the school NAME and the
+    // password-reset identifier is the school EMAIL, both compared
+    // case-insensitively. Each is unique that way for every school created since
+    // the case-insensitive unique indexes were added; for historical rows the
+    // migration refuses to run over duplicates, so ambiguity should not exist —
+    // but these lookups still fail closed: two matches is treated as no match,
+    // never as "the first one".
+    // -----------------------------------------------------------------------
+
+    /** The one school with this name (case-insensitive), or null when none or several. */
+    public static function findUniqueByName(?string $name): ?self
+    {
+        return self::findUniqueBy('name', $name);
+    }
+
+    /** The one school with this email (case-insensitive), or null when none or several. */
+    public static function findUniqueByEmail(?string $email): ?self
+    {
+        return self::findUniqueBy('email', $email);
+    }
+
+    /** Case-insensitive uniqueness scope for validation: other schools with this value. */
+    public static function whereSameIgnoringCase(string $column, string $value, ?int $exceptId = null): \Illuminate\Database\Eloquent\Builder
+    {
+        return self::query()
+            ->whereRaw('LOWER('.$column.') = LOWER(?)', [trim($value)])
+            ->when($exceptId !== null, fn ($q) => $q->whereKeyNot($exceptId));
+    }
+
+    private static function findUniqueBy(string $column, ?string $value): ?self
+    {
+        $value = trim((string) $value);
+        if ($value === '') {
+            return null;
+        }
+
+        $matches = self::whereSameIgnoringCase($column, $value)->limit(2)->get();
+
+        if ($matches->count() > 1) {
+            Log::warning('Ambiguous school '.$column.' lookup refused (duplicate legacy rows)', [
+                'column' => $column,
+                'school_ids' => $matches->pluck('id')->all(),
+            ]);
+
+            return null;
+        }
+
+        return $matches->first();
     }
 
     public function categories()

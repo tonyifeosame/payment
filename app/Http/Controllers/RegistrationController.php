@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Mail\SchoolLinksMail;
 use App\Models\School;
 use App\Services\PaystackService;
+use App\Support\SchoolSession;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash; // This seems unused, but I'll leave it.
 use Illuminate\Support\Facades\Mail;
@@ -20,8 +22,26 @@ class RegistrationController extends Controller
     public function store(Request $request, PaystackService $paystack)
     {
         $data = $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => 'required|email|max:255',
+            // Name is the login identifier and email the password-reset identifier:
+            // both unique case-insensitively (H4). The database enforces the same
+            // rule (unique indexes on LOWER(name) / LOWER(email)); the catch below
+            // turns a lost race into the same validation message.
+            'name' => [
+                'required', 'string', 'max:255',
+                function ($attribute, $value, $fail) {
+                    if (School::whereSameIgnoringCase('name', $value)->exists()) {
+                        $fail('A school with this name is already registered. Choose a distinct name — it is your login name.');
+                    }
+                },
+            ],
+            'email' => [
+                'required', 'email', 'max:255',
+                function ($attribute, $value, $fail) {
+                    if (School::whereSameIgnoringCase('email', $value)->exists()) {
+                        $fail('A school is already registered with this email address.');
+                    }
+                },
+            ],
             'account_number' => 'required|string|min:10|max:12',
             'bank' => 'required|string|max:100',
             'bank_code' => 'required|string',
@@ -50,10 +70,16 @@ class RegistrationController extends Controller
         // Hash password before save
         $data['admin_password'] = Hash::make($data['admin_password']);
 
-        $school = School::create($data);
+        try {
+            $school = School::create($data);
+        } catch (UniqueConstraintViolationException) {
+            // Two registrations raced past validation; the database kept one.
+            return back()->withInput($request->except(['admin_password', 'admin_password_confirmation']))
+                ->withErrors(['name' => 'A school with this name or email address was registered a moment ago. Choose a distinct name and email.']);
+        }
 
-        // Automatically log in the new school admin
-        session(['school_admin_id' => $school->id]);
+        // Automatically log in the new school admin (fresh session id).
+        SchoolSession::login($request, $school);
 
         // Build tenant-aware links and email them to the school admin
         $links = [

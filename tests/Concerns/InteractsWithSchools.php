@@ -31,9 +31,10 @@ trait InteractsWithSchools
         ], $overrides));
     }
 
+    /** Exactly the session a real login produces: school id + password fingerprint. */
     protected function actingAsSchoolAdmin(School $school): static
     {
-        $this->withSession(['school_admin_id' => $school->id]);
+        $this->withSession(\App\Support\SchoolSession::payloadFor($school));
 
         return $this;
     }

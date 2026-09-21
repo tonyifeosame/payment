@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\School;
 use App\Services\SchoolBankDetailsService;
+use App\Support\SchoolSession;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
@@ -31,15 +32,20 @@ class SchoolSettingsController extends Controller
             'name' => [
                 'required', 'string', 'max:255',
                 function ($attribute, $value, $fail) use ($school) {
-                    $taken = School::whereRaw('LOWER(name) = LOWER(?)', [$value])
-                        ->whereKeyNot($school->id)
-                        ->exists();
-                    if ($taken) {
+                    if (School::whereSameIgnoringCase('name', $value, $school->id)->exists()) {
                         $fail('Another school is already registered with this name.');
                     }
                 },
             ],
-            'email' => ['required', 'email', 'max:255'],
+            // Email is the password-reset identifier: unique case-insensitively (H4).
+            'email' => [
+                'required', 'email', 'max:255',
+                function ($attribute, $value, $fail) use ($school) {
+                    if (School::whereSameIgnoringCase('email', $value, $school->id)->exists()) {
+                        $fail('Another school is already registered with this email address.');
+                    }
+                },
+            ],
             'phone' => ['nullable', 'string', 'max:30'],
             'address' => ['nullable', 'string', 'max:255'],
             'receipt_footer' => ['nullable', 'string', 'max:500'],
@@ -126,6 +132,11 @@ class SchoolSettingsController extends Controller
         }
 
         $school->forceFill(['admin_password' => Hash::make($validator->validated()['password'])])->save();
+
+        // This session stays signed in under the new password (new session id, new
+        // fingerprint); every other session for this school is revoked on its next
+        // request by the fingerprint check in EnsureSchoolAdmin (H6).
+        SchoolSession::refresh($request, $school);
 
         return redirect()->route('school.settings.edit', ['school' => $school->slug])
             ->with('success', 'Your password has been changed.')

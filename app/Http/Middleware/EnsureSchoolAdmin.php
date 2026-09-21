@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\School;
+use App\Support\SchoolSession;
 use Closure;
 use Illuminate\Http\Request;
 
@@ -18,17 +19,11 @@ class EnsureSchoolAdmin
      */
     public function handle(Request $request, Closure $next)
     {
-        $schoolId = session('school_admin_id');
-        if (! $schoolId) {
-            return redirect()->route('admin.login')->with('error', 'Please log in.');
-        }
-
-        // The session may reference a school that has since been deleted.
-        $school = School::find($schoolId);
+        // No session, a deleted school, or a session that predates the school's
+        // current password (H6) all mean "not signed in".
+        $school = SchoolSession::school($request);
         if (! $school) {
-            $request->session()->forget('school_admin_id');
-
-            return redirect()->route('admin.login')->with('error', 'Please log in.');
+            return redirect()->route('admin.login')->with('error', $request->session()->get('error', 'Please log in.'));
         }
 
         // If the route binds a school, it must be the authenticated one.
