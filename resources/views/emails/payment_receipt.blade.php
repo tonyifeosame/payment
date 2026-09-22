@@ -229,7 +229,8 @@ This payment has not been confirmed as successful. The details recorded for it a
 </table>
 <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="border-collapse: collapse;">
 <tr>
-<td style="padding: 20px 4px 0; font-size: 13px; line-height: 1.5; color: #6C6C89; {{ $font }}">This receipt is official proof of payment for the transaction above. Keep it for your records and quote the reference in any enquiry to the school.</td>
+{{-- L3: see payment/receipt.blade.php. --}}
+<td style="padding: 20px 4px 0; font-size: 13px; line-height: 1.5; color: #6C6C89; {{ $font }}">@if($isSuccess)This receipt is official proof of payment for the transaction above. Keep it for your records and quote the reference in any enquiry to the school.@else This is a record of a payment attempt, not proof of payment. Quote the reference in any enquiry to the school.@endif</td>
 </tr>
 @if($school?->receipt_footer)
 <tr>

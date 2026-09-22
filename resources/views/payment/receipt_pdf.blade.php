@@ -219,7 +219,12 @@
 </div>
 
 <div class="footer">
-    <div>This receipt is official proof of payment for the transaction above. Keep it for your records and quote the reference in any enquiry to the school.</div>
+    {{-- L3: see payment/receipt.blade.php. --}}
+    @if($isSuccess)
+        <div>This receipt is official proof of payment for the transaction above. Keep it for your records and quote the reference in any enquiry to the school.</div>
+    @else
+        <div>This is a record of a payment attempt, not proof of payment. Quote the reference in any enquiry to the school.</div>
+    @endif
     @if($school?->receipt_footer)
         <div class="notice">{{ $school->receipt_footer }}</div>
     @endif

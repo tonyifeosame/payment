@@ -74,6 +74,11 @@ class SharePaymentLinkTest extends TestCase
 
     public function test_the_shared_link_opens_the_public_payment_page_without_login(): void
     {
+        // A payable fee, so the checkout form renders: with nothing payable the
+        // page shows its empty state instead (L6), and the form fields this
+        // asserts on would legitimately be absent.
+        $this->makeFee($this->alpha, 'Uniform', 'Shirt', 3000);
+
         $this->get($this->alpha->paymentUrl())->assertOk()->assertSee('Alpha School')->assertSee('admission_number', false);
     }
 }

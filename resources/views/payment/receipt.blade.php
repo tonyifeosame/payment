@@ -245,7 +245,13 @@
         </div>
 
         <footer class="mt-10 space-y-3 text-center text-xs text-brand-slate">
-            <p>This receipt is official proof of payment. Keep it for your records and quote the reference in any enquiry to the school.</p>
+            {{-- L3: only a settled payment is proof of one. A pending or failed
+                 receipt is a record of an attempt, and says so instead. --}}
+            @if($isSuccess)
+                <p>This receipt is official proof of payment. Keep it for your records and quote the reference in any enquiry to the school.</p>
+            @else
+                <p>This is a record of a payment attempt, not proof of payment. Quote the reference in any enquiry to the school.</p>
+            @endif
             @if($school?->receipt_footer)
                 <p class="whitespace-pre-line">{{ $school->receipt_footer }}</p>
             @endif

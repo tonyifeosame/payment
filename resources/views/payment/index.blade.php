@@ -37,6 +37,11 @@
     };
     $inputClass = fn (string $field, string $base = 'field-input') => $base.($errors->has($field) ? ' field-input-error' : '');
     $hasSessions = $sessionsForJs->isNotEmpty();
+    // L6: can this school actually be paid? $categoriesForJs carries only fees with
+    // an amount set (M4 filters out drafts), so a school with categories but no
+    // priced fee has nothing payable — and the form would render as an empty
+    // dropdown with no explanation.
+    $hasPayableFees = $categoriesForJs->contains(fn ($c) => count($c['subcategories']) > 0);
 @endphp
 
     {{-- Top bar: brand + trust cue. Deliberately not a link — parents arriving from a
@@ -108,6 +113,21 @@
                 </ul>
             </section>
         @endif
+
+        @unless($hasPayableFees)
+            {{-- L6: nothing to pay for yet. Better to say so plainly than to show a
+                 form whose dropdowns are empty. The school's own contact details are
+                 in the footer below, so a parent has somewhere to go. --}}
+            <section class="mt-6 rounded-3xl border border-brand-ash/60 bg-white p-6 text-center sm:p-8" aria-labelledby="no-fees-heading">
+                <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-brand-fog" aria-hidden="true">
+                    <svg class="h-6 w-6 text-brand-slate" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><path d="M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>
+                </div>
+                <h2 id="no-fees-heading" class="mt-4 font-display text-xl font-bold tracking-tight text-brand-obsidian">No fees are available to pay yet</h2>
+                <p class="mx-auto mt-2 max-w-md text-brand-slate">
+                    {{ $school->name }} has not published any fees for online payment. Please check back later, or contact the school if you were expecting to pay now.
+                </p>
+            </section>
+        @else
 
         <form id="paymentForm" action="{{ route(request()->routeIs('public.payment') ? 'public.payment.initialize' : 'school.payment.initialize', ['school' => $school->slug]) }}" method="POST" class="mt-6 grid gap-5 lg:grid-cols-12 lg:gap-8">
             @csrf
@@ -319,6 +339,7 @@
                 </div>
             </div>
         </form>
+        @endunless
 
         <footer class="mt-10 space-y-1 text-center text-xs text-brand-slate">
             @if($school->address)<p>{{ $school->address }}</p>@endif
@@ -327,6 +348,11 @@
         </footer>
     </main>
 
+{{-- L6: the script caches the form's elements unconditionally, so it is only
+     loaded when the form is actually on the page. Without this the empty state
+     would fill the console with TypeErrors on missing nodes. --}}
+@if($hasPayableFees)
 @include('payment._script')
+@endif
 </body>
 </html>

@@ -286,7 +286,13 @@ class TenantIsolationTest extends TestCase
 
     public function test_public_school_payment_page_is_reachable_without_login(): void
     {
-        Category::create(['name' => 'AlphaPublicFee', 'school_id' => $this->alpha->id]);
+        $category = Category::create(['name' => 'AlphaPublicFee', 'school_id' => $this->alpha->id]);
+        // The category only reaches the form when the school has something payable
+        // in it (L6); an empty category renders the empty state instead.
+        Subcategory::create([
+            'category_id' => $category->id, 'school_id' => $this->alpha->id,
+            'name' => 'AlphaPublicSubcategory', 'price' => 50000,
+        ]);
 
         $this->get('/s/alpha/payment')
             ->assertOk()
@@ -295,11 +301,22 @@ class TenantIsolationTest extends TestCase
 
     public function test_public_payment_page_shows_only_that_schools_fees(): void
     {
-        Category::create(['name' => 'AlphaPublicFee', 'school_id' => $this->alpha->id]);
+        $category = Category::create(['name' => 'AlphaPublicFee', 'school_id' => $this->alpha->id]);
+        Subcategory::create([
+            'category_id' => $category->id, 'school_id' => $this->alpha->id,
+            'name' => 'AlphaPublicSubcategory', 'price' => 50000,
+        ]);
 
+        // Asserted positively as well as negatively: without a payable fee of its
+        // own, alpha's page would render the empty state (L6) and beta's category
+        // would be absent because NOTHING rendered — which would prove nothing
+        // about tenant scoping.
         $this->get('/s/alpha/payment')
             ->assertOk()
-            ->assertDontSee('BetaOnlyCategory');
+            ->assertSee('AlphaPublicFee')
+            ->assertSee('AlphaPublicSubcategory')
+            ->assertDontSee('BetaOnlyCategory')
+            ->assertDontSee('BetaOnlySubcategory');
     }
 
     public function test_public_payment_initialize_route_still_accepts_parents(): void

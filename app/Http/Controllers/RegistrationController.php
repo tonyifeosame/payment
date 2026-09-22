@@ -94,9 +94,14 @@ class RegistrationController extends Controller
             try {
                 Mail::to($school->email)->send(new SchoolLinksMail($school, $links));
             } catch (\Throwable $e) {
-                // Log and surface a friendly message
+                // L4: the exception is reported, never shown. It used to be flashed
+                // verbatim, putting SMTP host, port and provider errors on an
+                // unauthenticated registrant's screen. The school is registered and
+                // signed in either way, so this is a notice, not a failure — and the
+                // links are on the dashboard they are about to land on. Same
+                // handling as the password-reset send (SchoolAuthController).
                 report($e);
-                session()->flash('error', 'Email delivery failed: '.$e->getMessage());
+                session()->flash('error', 'Your account is ready, but we could not email your links just now. You can find them on your dashboard.');
             }
         }
 
