@@ -221,7 +221,12 @@ Route::prefix('admin/{school:slug}')->middleware(EnsureSchoolAdmin::class)->scop
 // /s/ is what lets the admin app scope become admin-only in a later stage.
 Route::prefix('pay/{school:slug}')->group(function () {
     Route::get('/', [PaymentController::class, 'indexSchool'])->name('public.payment');
-    Route::post('/initialize', [PaymentController::class, 'initializeSchool'])->name('public.payment.initialize');
+    // payment-initialize (bootstrap/app.php): 10/min and 60/hour per client IP,
+    // one bucket for this and the legacy URL below. It runs before the controller,
+    // so a throttled submit creates no pending transaction and never calls Paystack.
+    Route::post('/initialize', [PaymentController::class, 'initializeSchool'])
+        ->middleware('throttle:payment-initialize')
+        ->name('public.payment.initialize');
     Route::get('/student-search', [PaymentController::class, 'studentSearch'])
         ->middleware('throttle:60,1,student-search')
         ->name('public.payment.student-search');
@@ -230,7 +235,9 @@ Route::prefix('pay/{school:slug}')->group(function () {
 // Tenant-aware public payment routes per school (legacy URLs, kept as-is)
 Route::prefix('s/{school:slug}')->group(function () use ($schoolAdminRoutes) {
     Route::get('/payment', [PaymentController::class, 'indexSchool'])->name('school.payment.index');
-    Route::post('/payment/initialize', [PaymentController::class, 'initializeSchool'])->name('school.payment.initialize');
+    Route::post('/payment/initialize', [PaymentController::class, 'initializeSchool'])
+        ->middleware('throttle:payment-initialize') // same bucket as /pay/{school}/initialize
+        ->name('school.payment.initialize');
     // Public student autocomplete for the payment form. Throttled per IP because it
     // is unauthenticated and lists (a capped number of) this school's students by
     // name. The browser debounces, so a parent typing a name costs a handful of hits.

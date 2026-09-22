@@ -1,8 +1,10 @@
 <?php
 
+use App\Support\PaymentInitializeLimiter;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Route;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -36,6 +38,17 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->validateCsrfTokens(except: [
             'paystack/webhook',
         ]);
+    })
+    ->booted(function (): void {
+        // Named rate limiters are registered here because this file is the
+        // active bootstrap: bootstrap/providers.php points at a provider that is
+        // not autoloadable (it sits outside app/), so nothing in it ever runs.
+        //
+        // payment-initialize: 10/min and 60/hour per client IP, shared by the
+        // canonical and legacy checkout POSTs (see PaymentInitializeLimiter).
+        // Counters live in the default cache store — the database in production
+        // — so every web instance sees the same buckets.
+        RateLimiter::for(PaymentInitializeLimiter::NAME, PaymentInitializeLimiter::limits(...));
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

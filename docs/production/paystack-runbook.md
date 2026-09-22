@@ -42,7 +42,7 @@ every secret `sync: false` on purpose, so nothing secret is in the repo.
 | `PAYSTACK_PAYMENT_URL` | `https://api.paystack.co` | API base |
 | `DB_CONNECTION` / `DATABASE_URL` | `pgsql` / the Render Postgres | one database shared by all services — it is also the queue and the lock store |
 | `QUEUE_CONNECTION` | `database` | payout transfers and receipt emails are queued jobs; the worker service drains them |
-| `CACHE_STORE` | `database` | `InitiateSchoolPayout` is a unique job; the lock must be shared by web, worker and cron |
+| `CACHE_STORE` | `database` | `InitiateSchoolPayout` is a unique job; the lock must be shared by web, worker and cron. The per-IP rate limiters (section 7) count in this store too, so the limit holds across every web instance |
 | `SESSION_DRIVER` / `SESSION_SECURE_COOKIE` | `database` / `true` | admin sessions over HTTPS only |
 | `MAIL_MAILER`, `MAIL_HOST`, `MAIL_PORT`, `MAIL_SCHEME`, `MAIL_USERNAME`, `MAIL_PASSWORD` | your SMTP provider | receipts (worker), password resets and bank-change notices (web) |
 | `MAIL_FROM_ADDRESS` / `MAIL_FROM_NAME` | a real sender on your domain | receipts and password resets come from it; the contact form delivers to it |
@@ -300,6 +300,20 @@ payout), then `payouts:retry`. A Paystack rejection naming the recipient
   not printed; `last_error` is a short message; the school-facing UI never
   renders either. `paystack:check` and the recovery commands print references,
   masked account endings and one-line messages only.
+- Payment initialization is rate-limited per client IP: **10 submits per
+  minute and 60 per hour**, one shared `payment-initialize` bucket for
+  `POST /pay/{school}/initialize` and the legacy
+  `POST /s/{school}/payment/initialize` (registered in `bootstrap/app.php`,
+  limits in `App\Support\PaymentInitializeLimiter`). The throttle runs before
+  the controller, so a throttled submit creates **no** pending transaction and
+  makes **no** Paystack call; the parent gets a `429` with `Retry-After`, the
+  payment form re-rendered with their input and a plain-language message. The
+  key is the client IP from `X-Forwarded-For` (Render's edge is a trusted
+  proxy), never the proxy address, school, student or session. Counters live in
+  the cache — the database-backed store in production (`CACHE_STORE=database`,
+  section 1) — so all web instances share the same buckets; `php artisan
+  cache:clear` resets them. The student-search autocomplete keeps its own,
+  separate 60/min bucket; the callback and the webhook are not throttled.
 - Least privilege: only the operator who runs payouts needs Render shell access;
   school admins have no path to any of these commands (no HTTP route exists).
 - Tickets and chat: reference payouts by `PO-…` and transactions by their
