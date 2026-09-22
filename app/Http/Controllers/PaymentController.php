@@ -58,18 +58,26 @@ class PaymentController extends Controller
         // Only ids, names, prices and the fee's term reach the browser. The term id
         // lets the page hide fees that are not payable in the chosen term; the
         // server re-checks the same rule on submit.
+        //
+        // Fees with no amount set are left out entirely. They are valid drafts on
+        // the admin side (the fee list shows them as "Not set"), but a parent must
+        // never be offered one: it would render as "₦0" and end in Paystack's
+        // refusal and a generic error. PaymentCheckoutService refuses the same fee
+        // on submit, so this is presentation, not the guarantee.
         $categoriesForJs = $categories->map(function ($c) {
             return [
                 'id' => $c->id,
                 'name' => $c->name,
-                'subcategories' => $c->subcategories->map(function ($s) {
-                    return [
-                        'id' => $s->id,
-                        'name' => $s->name,
-                        'price' => (float) $s->price,
-                        'term_id' => $s->academic_term_id,
-                    ];
-                })->values(),
+                'subcategories' => $c->subcategories
+                    ->filter(fn ($s) => $s->price !== null && (float) $s->price > 0)
+                    ->map(function ($s) {
+                        return [
+                            'id' => $s->id,
+                            'name' => $s->name,
+                            'price' => (float) $s->price,
+                            'term_id' => $s->academic_term_id,
+                        ];
+                    })->values(),
             ];
         })->values();
 

@@ -53,6 +53,20 @@ class PaymentCheckoutService
             throw ValidationException::withMessages(['subcategory_id' => 'The selected fee is not payable for the selected term.']);
         }
 
+        // A fee whose amount has not been set is a DRAFT: the admin list shows it as
+        // "Not set", and a school is meant to be able to create the fee type before
+        // deciding the figure. Draft or not, it is not payable. Without this the
+        // price cast to 0.0, a zero-value pending row was written and Paystack was
+        // asked to charge 0 — so the only thing refusing the payment was the
+        // provider. Checked here, before the row and before the call. The public
+        // page hides these fees too (PaymentController::renderPaymentPage); this is
+        // the server-side half of that pair, exactly as the term rule above.
+        if ($subcategory->price === null || (float) $subcategory->price <= 0) {
+            throw ValidationException::withMessages([
+                'subcategory_id' => 'This fee does not have an amount set yet. Please contact the school.',
+            ]);
+        }
+
         $student = $this->resolveStudent($school, $input);
 
         // Enforce quantity for school fees
