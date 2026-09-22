@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class School extends Model implements CanResetPassword
 {
@@ -44,6 +45,60 @@ class School extends Model implements CanResetPassword
     public function getRouteKeyName()
     {
         return 'slug';
+    }
+
+    /**
+     * URL segments routes/web.php owns under /admin/, which a school slug may
+     * therefore never be (L10).
+     *
+     * The slug is this model's route key, so `/admin/{slug}/…` competes for the
+     * same space as the literal admin routes. Only ONE of them actually shadows
+     * a school today: `admin/reset-password/{token}` is registered before the
+     * `admin/{school:slug}` prefix and its wildcard swallows the segment after
+     * it, so every page of a school slugged `reset-password` resolves to the
+     * password-reset form instead. `login`, `logout`, `forgot-password` and
+     * `manifest` are fixed two-segment paths and do not collide — they are
+     * reserved anyway, because what made reset-password dangerous was a wildcard
+     * child being added to a segment that had looked safe.
+     *
+     * Reserving a segment costs a school nothing: it only applies when the whole
+     * name slugifies to exactly that word, and the existing -1/-2 loop gives it
+     * the next free slug.
+     */
+    public const RESERVED_SLUGS = [
+        'admin',
+        'login',
+        'logout',
+        'forgot-password',
+        'reset-password',
+        'manifest',
+    ];
+
+    /**
+     * The slug a school registering under this name should get.
+     *
+     * The one place a slug is minted. Keeps the long-standing behaviour — append
+     * -1, -2, … until the slug is free — and treats a reserved segment as though
+     * it were already taken, so "Reset Password" becomes `reset-password-1`.
+     */
+    public static function availableSlugFor(string $name): string
+    {
+        $base = Str::slug($name);
+        $slug = $base;
+        $i = 1;
+
+        while (self::slugIsUnavailable($slug)) {
+            $slug = $base.'-'.($i++);
+        }
+
+        return $slug;
+    }
+
+    /** Taken by another school, or owned by the router. */
+    public static function slugIsUnavailable(string $slug): bool
+    {
+        return in_array($slug, self::RESERVED_SLUGS, true)
+            || self::where('slug', $slug)->exists();
     }
 
     // -----------------------------------------------------------------------

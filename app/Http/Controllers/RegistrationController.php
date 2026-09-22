@@ -10,7 +10,6 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash; // This seems unused, but I'll leave it.
 use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Str;
 
 class RegistrationController extends Controller
 {
@@ -50,14 +49,10 @@ class RegistrationController extends Controller
             'admin_password' => 'required|string|min:8|confirmed',
         ]);
 
-        // Generate unique slug from name
-        $base = Str::slug($data['name']);
-        $slug = $base;
-        $i = 1;
-        while (School::where('slug', $slug)->exists()) {
-            $slug = $base.'-'.($i++);
-        }
-        $data['slug'] = $slug;
+        // The slug is minted in one place (L10): School::availableSlugFor keeps the
+        // -1/-2 collision behaviour and additionally refuses the URL segments
+        // routes/web.php owns, so a school can never be slugged into one of them.
+        $data['slug'] = School::availableSlugFor($data['name']);
 
         // Resolve account name server-side to ensure integrity
         $resolve = $paystack->resolveAccount($data['account_number'], $data['bank_code']);
