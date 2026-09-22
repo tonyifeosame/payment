@@ -3,10 +3,12 @@
 namespace Tests\Feature;
 
 use App\Models\School;
+use App\Support\SchoolSession;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
@@ -140,7 +142,48 @@ class BankLookupTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_a_valid_account_returns_the_name_paystack_resolved(): void
+    public function test_a_valid_account_is_looked_up_with_the_secret_key(): void
+    {
+        Http::fake(['*/bank/resolve*' => Http::response([
+            'status' => true,
+            'data' => ['account_name' => 'RESOLVED SCHOOL LTD', 'account_number' => '0123456789'],
+        ], 200)]);
+
+        $this->getJson('/api/resolve-account?account_number=0123456789&bank_code=058')->assertOk();
+
+        Http::assertSent(fn (Request $r) => str_contains($r->url(), '/bank/resolve')
+            && $r->hasHeader('Authorization', 'Bearer sk_test_fake')
+            && $r['account_number'] === '0123456789'
+            && $r['bank_code'] === '058');
+    }
+
+    /**
+     * M2: the resolved NAME goes to signed-in admins only; an anonymous caller
+     * (the registration form) is told the number resolves and nothing more, so
+     * the endpoint cannot be used to harvest account-holder names. The full
+     * disclosure rules live in BankResolveDisclosureTest.
+     */
+    public function test_a_valid_account_returns_the_name_to_a_signed_in_admin(): void
+    {
+        Http::fake(['*/bank/resolve*' => Http::response([
+            'status' => true,
+            'data' => ['account_name' => 'RESOLVED SCHOOL LTD', 'account_number' => '0123456789'],
+        ], 200)]);
+
+        $school = School::create([
+            'name' => 'Alpha School',
+            'slug' => 'alpha',
+            'email' => 'alpha@example.test',
+            'admin_password' => Hash::make('password123'),
+        ]);
+
+        $this->withSession(SchoolSession::payloadFor($school))
+            ->getJson('/api/resolve-account?account_number=0123456789&bank_code=058')
+            ->assertOk()
+            ->assertJson(['ok' => true, 'account_name' => 'RESOLVED SCHOOL LTD', 'account_number' => '0123456789']);
+    }
+
+    public function test_a_valid_account_returns_no_name_to_an_anonymous_caller(): void
     {
         Http::fake(['*/bank/resolve*' => Http::response([
             'status' => true,
@@ -149,12 +192,7 @@ class BankLookupTest extends TestCase
 
         $this->getJson('/api/resolve-account?account_number=0123456789&bank_code=058')
             ->assertOk()
-            ->assertJson(['ok' => true, 'account_name' => 'RESOLVED SCHOOL LTD', 'account_number' => '0123456789']);
-
-        Http::assertSent(fn (Request $r) => str_contains($r->url(), '/bank/resolve')
-            && $r->hasHeader('Authorization', 'Bearer sk_test_fake')
-            && $r['account_number'] === '0123456789'
-            && $r['bank_code'] === '058');
+            ->assertExactJson(['ok' => true, 'verified' => true]);
     }
 
     public function test_an_invalid_account_is_rejected_with_paystacks_reason(): void

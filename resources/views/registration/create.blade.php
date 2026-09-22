@@ -215,16 +215,20 @@
                                     <p id="account_number-help" class="field-help">10-digit NUBAN account number.</p>
                                 </div>
                                 <div>
-                                    <label for="account_name" class="field-label">Account name</label>
+                                    <label for="account_name" class="field-label">Account check</label>
                                     <div class="relative">
                                         <input id="account_name" name="account_name" type="text" value="{{ old('account_name') }}" readonly
-                                               placeholder="Shown after verification" autocomplete="off"
+                                               placeholder="Checked once the bank and number are entered" autocomplete="off"
                                                class="{{ $inputClass('account_name') }} pr-11 bg-brand-fog text-brand-slate"
-                                               aria-describedby="account_name-help account_name_message">
+                                               aria-describedby="account_name-help account_name_confirmation account_name_message">
                                         <div id="account_name_status" class="pointer-events-none absolute right-4 top-1/2 mt-1 flex -translate-y-1/2 items-center" aria-hidden="true"></div>
                                     </div>
+                                    {{-- The account-holder name is disclosed to signed-in admins only (M2), so
+                                         registration confirms the number resolved and nothing more. This is the
+                                         visible confirmation; the field itself stays empty and read-only. --}}
+                                    <p id="account_name_confirmation" class="mt-1.5 text-sm font-semibold text-green-800 hidden" role="status" aria-live="polite"></p>
                                     <p id="account_name_message" class="field-error hidden" aria-live="polite"></p>
-                                    <p id="account_name-help" class="field-help">Filled in automatically once the bank and account number are entered.</p>
+                                    <p id="account_name-help" class="field-help">We check the number with your bank as you type. The account name is confirmed with your bank when you register.</p>
                                     <span id="account_name_live" class="sr-only" aria-live="polite"></span>
                                 </div>
                             </div>
@@ -263,6 +267,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const accountNameInput = document.getElementById('account_name');
     const accountNameStatus = document.getElementById('account_name_status');
     const accountNameMessage = document.getElementById('account_name_message');
+    const accountNameConfirmation = document.getElementById('account_name_confirmation');
     const accountNameLive = document.getElementById('account_name_live');
     const toggleAdminPw = document.getElementById('toggle_admin_pw');
     const adminPassword = document.getElementById('admin_password');
@@ -286,6 +291,14 @@ document.addEventListener('DOMContentLoaded', function() {
     function showAccountMessage(text) {
         accountNameMessage.textContent = text || '';
         accountNameMessage.classList.toggle('hidden', !text);
+    }
+
+    // The visible "we checked this number" confirmation. Separate from the
+    // read-only field, which stays empty: the account NAME is disclosed to
+    // signed-in admins only (M2), and nothing here should be submitted.
+    function showAccountConfirmation(text) {
+        accountNameConfirmation.textContent = text || '';
+        accountNameConfirmation.classList.toggle('hidden', !text);
     }
 
     // Screen-reader announcement of the verification state.
@@ -354,6 +367,7 @@ document.addEventListener('DOMContentLoaded', function() {
             accountNameInput.value = '';
             accountNameInput.placeholder = defaultAccountNamePlaceholder;
             accountNameStatus.innerHTML = '';
+            showAccountConfirmation('');
             showAccountMessage('');
             announce('');
         }
@@ -375,8 +389,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
         accountNameInput.value = '';
         accountNameInput.placeholder = 'Verifying...';
+        showAccountConfirmation('');
         showAccountMessage('');
-        announce('Verifying account name.');
+        announce('Checking the account number.');
         accountNameStatus.innerHTML = icons.spinner;
 
         try {
@@ -386,20 +401,27 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const data = await response.json();
 
-            if (data.ok && data.account_name) {
-                accountNameInput.value = data.account_name;
+            if (data.ok && (data.verified || data.account_name)) {
+                // Deliberately NOT a claim that the account is active, funded or
+                // in good standing — only that the bank recognised the number.
+                // The field stays empty so no UI string is submitted as
+                // account_name; the stored name is resolved server-side.
+                accountNameInput.value = '';
                 accountNameInput.placeholder = defaultAccountNamePlaceholder;
                 accountNameStatus.innerHTML = icons.ok;
-                announce('Account verified: ' + data.account_name);
+                showAccountConfirmation('✓ Account number confirmed');
+                announce('Account number confirmed.');
             } else {
                 accountNameStatus.innerHTML = icons.fail;
                 accountNameInput.placeholder = 'Not verified';
+                showAccountConfirmation('');
                 showAccountMessage(data.error || 'Verification failed');
             }
         } catch (error) {
             if (error.name !== 'AbortError') {
                 console.error('Error verifying account:', error);
                 accountNameInput.placeholder = 'Not verified';
+                showAccountConfirmation('');
                 showAccountMessage('Could not reach the verification service. Please try again.');
                 accountNameStatus.innerHTML = icons.warn;
             }

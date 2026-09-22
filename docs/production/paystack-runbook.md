@@ -400,9 +400,28 @@ Two things to know operationally:
   registration and settings forms already display. The two buckets are separate
   from each other and from `payment-initialize`. The server-side re-verification
   on `POST /registration` (10/hour) and `PUT /settings/bank` (5/hour) is
-  unchanged and still bounds those paths. Not yet done, tracked separately: a
-  global ceiling on outbound resolutions, and caching the bank list (which needs
-  `country` whitelisted first, or the cache key is caller-controlled).
+  unchanged and still bounds those paths.
+- **`/api/resolve-account` discloses the account-holder NAME only to a signed-in
+  school admin.** It cannot be authenticated outright — registration is open
+  self-service and the school does not exist yet — but the disclosure could be
+  restricted, and was: an anonymous caller (the registration form) receives
+  `{"ok":true,"verified":true}` and nothing else, so the endpoint can no longer
+  be used to harvest names by running one known account number against the ~25
+  Nigerian bank codes. A signed-in admin, editing the payout account they own,
+  still gets the full `account_name`/`account_number`. A session revoked by a
+  password change or reset (H6), one whose school has been deleted, and a
+  session id carrying no fingerprint are all treated as anonymous — the check is
+  `SchoolSession::school()`, not the raw id. Failure responses are byte-identical
+  for both callers, so a failed lookup reveals nothing a successful one does not.
+  Integrity is unaffected: `RegistrationController` and `SchoolBankDetailsService`
+  both re-resolve server-side and store Paystack's answer, never the browser's.
+  The registration form now shows "✓ Account number confirmed" rather than a
+  name — deliberately not a claim that the account is active, funded or in good
+  standing, only that the bank recognised the number. `GET /api/banks` stays
+  fully public: it is the list of banks Paystack can pay out to and there is
+  nothing in it to enumerate. Not yet done, tracked separately: a global ceiling
+  on outbound resolutions, and caching the bank list (which needs `country`
+  whitelisted first, or the cache key is caller-controlled).
 - Password reset is rate-limited per client IP, each side in its own bucket:
   `POST /admin/forgot-password` **5/hour** (`password-reset-request`) and
   `POST /admin/reset-password` **10/hour** (`password-reset`). Only the POSTs are

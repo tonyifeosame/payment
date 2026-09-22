@@ -238,6 +238,10 @@
             const r = await fetch(`/api/resolve-account?account_number=${acct.value}&bank_code=${bankCode.value}`);
             const d = await r.json();
             if (d.ok && d.account_name) setResolved('Account name: ' + d.account_name, true);
+            // The name is disclosed to signed-in admins only (M2). If this session
+            // was revoked mid-edit, the answer comes back confirmed-but-unnamed —
+            // report that honestly rather than as a failed check.
+            else if (d.ok && d.verified) setResolved('Account number confirmed. Sign in again to see the account name.', true);
             else setResolved(d.error || 'Could not verify this account', false);
         } catch (e) { setResolved('Could not verify this account', false); }
     }
