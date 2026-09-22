@@ -106,11 +106,25 @@ class SchoolAuthController extends Controller
         // gets the same neutral message and no link.
         $school = School::findUniqueByEmail($request->email);
 
-        if ($school) {
+        // Password::createToken() deletes the school's existing token before it
+        // inserts the new one, so every request here invalidates the link the
+        // previous one emailed. Unguarded, a caller who knows a school's address
+        // can keep an admin from ever completing a reset. The broker's own
+        // throttle window (config/auth.php: passwords.users.throttle) is the
+        // check PasswordBroker::sendResetLink() applies for exactly this reason;
+        // createToken() bypasses it, so it is applied here instead. Inside the
+        // window the live token and the link already in the admin's inbox stand.
+        if ($school && ! Password::broker()->getRepository()->recentlyCreatedToken($school)) {
             $token = Password::createToken($school);
             $resetLink = url("/admin/reset-password/{$token}?email=".urlencode($request->email));
 
-            Mail::to($request->email)->send(new SchoolPasswordResetMail($school, $resetLink));
+            try {
+                Mail::to($request->email)->send(new SchoolPasswordResetMail($school, $resetLink));
+            } catch (\Throwable $e) {
+                // A mail outage must not become a 500 on the recovery flow, nor an
+                // oracle: the caller gets the same neutral answer either way.
+                report($e);
+            }
         }
 
         return back()->with('status', 'If your email is in our system, you will receive a password reset link.');
@@ -131,14 +145,17 @@ class SchoolAuthController extends Controller
 
         $school = School::findUniqueByEmail($request->email);
 
+        // One message for "no such school" and for "bad token". Two distinct ones
+        // made this endpoint an unauthenticated oracle for which addresses are
+        // registered schools — answerable with any junk token.
+        $invalid = fn () => back()->withErrors(['email' => 'This password reset link is invalid or has expired.']);
+
         if (! $school) {
-            return back()->withErrors(['email' => 'The provided email does not match our records.']);
+            return $invalid();
         }
 
-        $response = Password::broker()->tokenExists($school, $request->token);
-
-        if (! $response) {
-            return back()->withErrors(['email' => 'The password reset token is invalid.']);
+        if (! Password::broker()->tokenExists($school, $request->token)) {
+            return $invalid();
         }
 
         $school->admin_password = Hash::make($request->password);

@@ -128,10 +128,19 @@ Route::get('/admin', [SchoolAuthController::class, 'app'])->name('admin.home');
 // Legacy compatibility only (the previous manifest's start URL); not referenced by
 // the current manifest. Same action as /admin.
 Route::get('/s/_app', [SchoolAuthController::class, 'app'])->name('admin.app');
+// Password reset. Both POSTs are unauthenticated: the request side sends mail to
+// an address the caller names, and the reset side accepts a token. Throttled per
+// IP like every other credential-accepting or mail-sending endpoint here, each in
+// its own named bucket. Only the POSTs are limited; the forms themselves are not,
+// so a locked-out admin still sees the page and its message.
 Route::get('admin/forgot-password', [SchoolAuthController::class, 'showLinkRequestForm'])->name('admin.password.request');
-Route::post('admin/forgot-password', [SchoolAuthController::class, 'sendResetLinkEmail'])->name('admin.password.email');
+Route::post('admin/forgot-password', [SchoolAuthController::class, 'sendResetLinkEmail'])
+    ->middleware('throttle:5,60,password-reset-request') // mail flooding + token rotation against a known school
+    ->name('admin.password.email');
 Route::get('admin/reset-password/{token}', [SchoolAuthController::class, 'showResetForm'])->name('admin.password.reset');
-Route::post('admin/reset-password', [SchoolAuthController::class, 'reset'])->name('admin.password.update');
+Route::post('admin/reset-password', [SchoolAuthController::class, 'reset'])
+    ->middleware('throttle:10,60,password-reset') // a little higher: one token, several fumbled confirmations
+    ->name('admin.password.update');
 
 // ---------------------------------------------------------------------------
 // Authenticated school-admin routes (URL migration, stage 2).

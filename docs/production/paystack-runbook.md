@@ -332,6 +332,24 @@ payout), then `payouts:retry`. A Paystack rejection naming the recipient
   unchanged and still bounds those paths. Not yet done, tracked separately: a
   global ceiling on outbound resolutions, and caching the bank list (which needs
   `country` whitelisted first, or the cache key is caller-controlled).
+- Password reset is rate-limited per client IP, each side in its own bucket:
+  `POST /admin/forgot-password` **5/hour** (`password-reset-request`) and
+  `POST /admin/reset-password` **10/hour** (`password-reset`). Only the POSTs are
+  limited — both forms still render, so a locked-out admin sees the page and its
+  message. Token brute force was never the risk (64 random hex characters); the
+  risks were mail flooding a customer's inbox on our sending reputation, and
+  **reset denial**: `Password::createToken()` deletes the school's existing token
+  before inserting the new one, so repeated requests invalidate the link already
+  in the admin's inbox. The controller therefore also honours the broker's own
+  window (`config/auth.php` → `passwords.users.throttle`, 60s) via
+  `recentlyCreatedToken()` before minting — **a second request inside 60s sends
+  no new mail and keeps the live link working**, with the same neutral response.
+  The reset endpoint answers "no such school" and "bad token" identically, so it
+  cannot be used to enumerate which addresses are registered schools. An SMTP
+  failure is reported and answered neutrally rather than becoming a `500`.
+  *Operator note:* an admin locked out by the 5/hour limit has no self-service
+  path until it decays — same remedy as `admin-login` (wait, or `php artisan
+  cache:clear`). Mail is still sent synchronously from the request.
 - Least privilege: only the operator who runs payouts needs Render shell access;
   school admins have no path to any of these commands (no HTTP route exists).
 - Tickets and chat: reference payouts by `PO-…` and transactions by their
