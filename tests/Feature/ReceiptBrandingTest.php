@@ -6,8 +6,6 @@ use App\Mail\PaymentReceiptMail;
 use App\Models\School;
 use App\Models\Transaction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
 use Tests\Concerns\InteractsWithSchools;
 use Tests\TestCase;
@@ -27,8 +25,6 @@ class ReceiptBrandingTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-
-        Storage::fake('local');
 
         $this->alpha = $this->makeSchool('Alpha School', 'alpha', [
             'phone' => '0801 234 5678',
@@ -79,8 +75,7 @@ class ReceiptBrandingTest extends TestCase
 
     public function test_receipt_page_shows_the_logo_when_the_school_has_one(): void
     {
-        Storage::disk('local')->putFileAs('school-logos', UploadedFile::fake()->image('logo.png', 120, 120), $this->alpha->id.'.png');
-        $this->alpha->forceFill(['logo_path' => 'school-logos/'.$this->alpha->id.'.png'])->save();
+        $this->giveLogo($this->alpha);
 
         $this->get(URL::signedRoute('payment.receipt', ['transaction' => $this->transaction->id]))
             ->assertOk()
@@ -89,8 +84,7 @@ class ReceiptBrandingTest extends TestCase
 
     public function test_pdf_download_is_a_real_pdf_with_the_same_content(): void
     {
-        Storage::disk('local')->putFileAs('school-logos', UploadedFile::fake()->image('logo.png', 120, 120), $this->alpha->id.'.png');
-        $this->alpha->forceFill(['logo_path' => 'school-logos/'.$this->alpha->id.'.png'])->save();
+        $this->giveLogo($this->alpha);
 
         $response = $this->get(URL::signedRoute('payment.receipt.download', ['transaction' => $this->transaction->id]));
 

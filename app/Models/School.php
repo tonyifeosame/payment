@@ -7,8 +7,8 @@ use Illuminate\Contracts\Auth\CanResetPassword;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 
 class School extends Model implements CanResetPassword
 {
@@ -26,7 +26,6 @@ class School extends Model implements CanResetPassword
         'bank_code',
         'paystack_recipient_code',
         'address',
-        'logo_path',
         'receipt_footer',
         'current_academic_term_id',
     ];
@@ -156,19 +155,41 @@ class School extends Model implements CanResetPassword
         return $this->students()->exists();
     }
 
+    /**
+     * The school's logo row (H3). Lives in its own table so the (up to ~1.4 MB
+     * of base64) image is never dragged along with the School itself, which is
+     * loaded on nearly every request.
+     */
+    public function logo(): HasOne
+    {
+        return $this->hasOne(SchoolLogo::class);
+    }
+
     /** Memoised per instance: the layout asks several times per request. */
     private ?bool $logoExists = null;
 
     public function hasLogo(): bool
     {
-        if ($this->logo_path === null) {
-            return false;
+        if ($this->relationLoaded('logo')) {
+            return $this->logo !== null;
         }
 
-        return $this->logoExists ??= Storage::disk('local')->exists($this->logo_path);
+        return $this->logoExists ??= $this->logo()->exists();
     }
 
-    /** Public URL that streams the logo, or null. Safe for parents and emails. */
+    /** Forget the memoised answer after the logo row changes. */
+    public function forgetLogoState(): void
+    {
+        $this->logoExists = null;
+        $this->unsetRelation('logo');
+    }
+
+    /**
+     * Public URL that streams the logo, or null. Safe for parents and emails.
+     * The `v` query string is a cache-buster: it changes with the school row,
+     * which every logo change touches, so a replaced logo is fetched afresh even
+     * though the URL is otherwise stable and cached for a day.
+     */
     public function logoUrl(): ?string
     {
         return $this->hasLogo() ? route('school.logo', ['school' => $this->slug, 'v' => $this->updated_at?->timestamp]) : null;
@@ -179,14 +200,7 @@ class School extends Model implements CanResetPassword
      */
     public function logoDataUri(): ?string
     {
-        if (! $this->hasLogo()) {
-            return null;
-        }
-
-        $disk = Storage::disk('local');
-        $mime = $disk->mimeType($this->logo_path) ?: 'image/png';
-
-        return 'data:'.$mime.';base64,'.base64_encode($disk->get($this->logo_path));
+        return $this->hasLogo() ? $this->logo?->dataUri() : null;
     }
 
     /**

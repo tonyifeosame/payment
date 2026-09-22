@@ -82,17 +82,22 @@ class SchoolSettingsTest extends TestCase
         $this->assertSame('0801 234 5678', $school->phone);
         $this->assertSame('1 Alpha Road, Lagos', $school->address);
         $this->assertSame('Fees are not refundable.', $school->receipt_footer);
-        $this->assertSame('school-logos/'.$school->id.'.png', $school->logo_path);
-        Storage::disk('local')->assertExists($school->logo_path);
+        // H3: the logo is a database row, never a file — nothing on the container
+        // filesystem, so it is the same on the web, worker and cron services and
+        // survives a redeploy.
+        $this->assertTrue($school->hasLogo());
+        $this->assertDatabaseHas('school_logos', ['school_id' => $school->id, 'mime' => 'image/png']);
+        $this->assertSame([], Storage::disk('local')->allFiles());
 
         // The logo is publicly served and referenced on the payment page.
         $this->get('/s/alpha/logo')->assertOk()->assertHeader('Content-Type', 'image/png');
         $this->get('/s/alpha/payment')->assertOk()->assertSee('/s/alpha/logo', false)->assertSee('0801 234 5678');
 
-        // And can be removed.
+        // And can be removed: the row goes, the school does not.
         $this->actingAsSchoolAdmin($this->alpha)->put('/admin/alpha/settings', $this->profile(['remove_logo' => 1]));
-        $this->assertNull($this->alpha->fresh()->logo_path);
-        Storage::disk('local')->assertMissing('school-logos/'.$school->id.'.png');
+        $this->assertFalse($this->alpha->fresh()->hasLogo());
+        $this->assertDatabaseMissing('school_logos', ['school_id' => $school->id]);
+        $this->assertDatabaseHas('schools', ['id' => $school->id, 'name' => 'Alpha School']);
         $this->get('/s/alpha/logo')->assertNotFound();
     }
 
@@ -113,7 +118,8 @@ class SchoolSettingsTest extends TestCase
             ->put('/admin/alpha/settings', $this->profile(['logo' => UploadedFile::fake()->create('evil.php', 10, 'text/plain')]))
             ->assertSessionHasErrors('logo');
 
-        $this->assertDatabaseHas('schools', ['id' => $this->alpha->id, 'name' => 'Alpha School', 'logo_path' => null]);
+        $this->assertDatabaseHas('schools', ['id' => $this->alpha->id, 'name' => 'Alpha School']);
+        $this->assertDatabaseMissing('school_logos', ['school_id' => $this->alpha->id]);
     }
 
     public function test_profile_update_cannot_touch_bank_details_or_the_slug(): void

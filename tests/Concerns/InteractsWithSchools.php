@@ -5,10 +5,12 @@ namespace Tests\Concerns;
 use App\Models\AcademicSession;
 use App\Models\Category;
 use App\Models\School;
+use App\Models\SchoolLogo;
 use App\Models\Student;
 use App\Models\Subcategory;
 use App\Models\Transaction;
 use App\Services\AcademicPeriodService;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Hash;
 
 /**
@@ -29,6 +31,15 @@ trait InteractsWithSchools
             'bank' => 'GTB',
             'bank_code' => '058',
         ], $overrides));
+    }
+
+    /** A stored logo (H3): the school_logos row an upload would have produced. */
+    protected function giveLogo(School $school, string $name = 'logo.png', int $width = 120, int $height = 120): SchoolLogo
+    {
+        $logo = SchoolLogo::create(['school_id' => $school->id] + SchoolLogo::attributesFor(UploadedFile::fake()->image($name, $width, $height)));
+        $school->forgetLogoState();
+
+        return $logo;
     }
 
     /** Exactly the session a real login produces: school id + password fingerprint. */

@@ -3,11 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Models\School;
+use App\Models\SchoolLogo;
 use App\Services\SchoolBankDetailsService;
 use App\Support\SchoolSession;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 
 /**
@@ -16,9 +16,6 @@ use Illuminate\Support\Facades\Validator;
  */
 class SchoolSettingsController extends Controller
 {
-    /** Where logos live on the private disk. Served back through school.logo. */
-    private const LOGO_DIR = 'school-logos';
-
     public function edit(School $school)
     {
         return view('settings.edit', ['school' => $school]);
@@ -61,20 +58,26 @@ class SchoolSettingsController extends Controller
             'receipt_footer' => $data['receipt_footer'] ?? null,
         ]);
 
-        if ($request->boolean('remove_logo') && $school->logo_path) {
-            Storage::disk('local')->delete($school->logo_path);
-            $school->logo_path = null;
+        // The logo lives in school_logos (H3), one row per school, so it is the
+        // same on every container and survives deploys. A change also bumps the
+        // school's updated_at: that is what rotates the cache-busting `v` in
+        // logoUrl(), which the row itself would not do since none of its own
+        // columns change.
+        $logoChanged = false;
+
+        if ($request->boolean('remove_logo') && $school->hasLogo()) {
+            $school->logo()->delete();
+            $logoChanged = true;
         }
 
         if ($request->hasFile('logo')) {
-            $file = $request->file('logo');
-            // One file per school, named by id rather than by the uploaded name.
-            $path = self::LOGO_DIR.'/'.$school->id.'.'.strtolower($file->extension());
-            if ($school->logo_path && $school->logo_path !== $path) {
-                Storage::disk('local')->delete($school->logo_path);
-            }
-            Storage::disk('local')->putFileAs(self::LOGO_DIR, $file, basename($path));
-            $school->logo_path = $path;
+            $school->logo()->updateOrCreate([], SchoolLogo::attributesFor($request->file('logo')));
+            $logoChanged = true;
+        }
+
+        if ($logoChanged) {
+            $school->forgetLogoState();
+            $school->updated_at = $school->freshTimestamp();
         }
 
         $school->save();
@@ -145,17 +148,32 @@ class SchoolSettingsController extends Controller
 
     /**
      * Stream the school's logo. Public: it appears on the parent-facing payment page
-     * and the receipt. Only the logo file is ever read — the path comes from the
-     * school row, never from the request.
+     * and the receipt. Only the logo row is ever read — it is keyed by the bound
+     * school, never by anything from the request.
+     *
+     * Conditional requests: the ETag is a hash of the stored bytes and
+     * Last-Modified the row's timestamp, so a browser (or mail client) that
+     * already holds the image gets a 304 without the body being re-sent.
      */
-    public function logo(School $school)
+    public function logo(Request $request, School $school)
     {
-        if (! $school->hasLogo()) {
+        $logo = $school->logo;
+
+        if ($logo === null) {
             abort(404);
         }
 
-        return Storage::disk('local')->response($school->logo_path, null, [
+        $response = response(null, 200, [
+            'Content-Type' => $logo->mime,
             'Cache-Control' => 'public, max-age=86400',
+            'ETag' => $logo->etag(),
+            'Last-Modified' => $logo->updated_at->toRfc7231String(),
         ]);
+
+        if ($response->isNotModified($request)) {
+            return $response;
+        }
+
+        return $response->setContent($logo->bytes());
     }
 }
