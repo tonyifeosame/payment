@@ -198,6 +198,26 @@ class Transaction extends Model
     }
 
     /**
+     * The school's share of a payment, for SUM()ing in reports (L9).
+     *
+     * receiptBreakdown() is the authority on what a payment was worth to a
+     * school, and for a row with no usable `base_amount` in its metadata it
+     * answers "the whole charge" — there is nothing to split by, so nothing was
+     * the platform's. Aggregate queries read `fee_amount` instead, which those
+     * rows do not have: they predate the column and the backfill migration could
+     * only populate the ones whose metadata let it. `COALESCE(fee_amount,
+     * amount)` is the same fallback in SQL, so a total and the rows it totals
+     * can no longer disagree.
+     *
+     * Deliberately NOT used for money movement: payouts derive every figure from
+     * receiptBreakdown() itself and never read this column (see PayoutService).
+     */
+    public static function netAmountExpression(): string
+    {
+        return 'COALESCE(transactions.fee_amount, transactions.amount)';
+    }
+
+    /**
      * Apply the transaction-list filters. Shared by the list page and the CSV
      * export so the file always contains exactly what the screen showed.
      *

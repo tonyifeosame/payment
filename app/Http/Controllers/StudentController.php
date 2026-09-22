@@ -100,10 +100,14 @@ class StudentController extends Controller
             ->paginate(20)
             ->withQueryString();
 
+        // The same net expression the dashboard uses (L9). Read straight from
+        // fee_amount, this total sat directly above a list of the very payments it
+        // totals — each of which shows receiptBreakdown()'s figure — and a legacy
+        // row contributed nothing to the total while showing its full amount below.
         $totalPaid = (float) Transaction::forSchool($school)
             ->successful()
             ->where('student_id', $student->id)
-            ->sum('fee_amount');
+            ->sum(DB::raw(Transaction::netAmountExpression()));
 
         return view('students.show', compact('school', 'student', 'transactions', 'totalPaid', 'showAttempts', 'otherAttempts'));
     }

@@ -17,7 +17,10 @@ use Illuminate\Support\Facades\DB;
  *
  * Two figures are shown for every collection total:
  *   gross — what parents were charged (transactions.amount)
- *   net   — the school's share (transactions.fee_amount), i.e. what is paid out
+ *   net   — the school's share (Transaction::netAmountExpression(), i.e.
+ *           fee_amount, falling back to the whole charge for legacy rows that
+ *           never had one — the same fallback receiptBreakdown() applies, so the
+ *           tiles and the rows beneath them agree), i.e. what is paid out
  */
 class SchoolDashboardService
 {
@@ -80,7 +83,7 @@ class SchoolDashboardService
             ->select(
                 DB::raw("COALESCE(category_name, 'Uncategorised') as category"),
                 DB::raw('SUM(amount) as gross'),
-                DB::raw('SUM(COALESCE(fee_amount, 0)) as net'),
+                DB::raw('SUM('.Transaction::netAmountExpression().') as net'),
                 DB::raw('COUNT(*) as count'),
             )
             ->groupBy(DB::raw("COALESCE(category_name, 'Uncategorised')"))
@@ -115,7 +118,7 @@ class SchoolDashboardService
     /** @return array{gross: float, net: float, count: int} */
     private function totals($query): array
     {
-        $row = $query->selectRaw('COALESCE(SUM(amount), 0) as gross, COALESCE(SUM(fee_amount), 0) as net, COUNT(*) as count')->first();
+        $row = $query->selectRaw('COALESCE(SUM(amount), 0) as gross, COALESCE(SUM('.Transaction::netAmountExpression().'), 0) as net, COUNT(*) as count')->first();
 
         return [
             'gross' => round((float) ($row->gross ?? 0), 2),

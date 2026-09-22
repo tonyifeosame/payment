@@ -356,6 +356,60 @@ Two things to know operationally:
   stay on UTC day boundaries. Changing them would change which payouts a manual
   run picks up. If you pass `--day`, you are naming a UTC day.
 
+## 6c. Net reporting on legacy transactions (L9)
+
+**What changed.** The dashboard's net tiles, its category breakdown and a
+student's "total paid" summed `transactions.fee_amount` directly. The
+transaction list, the CSV export, the receipts and the dashboard's own
+recent-payments list read `Transaction::receiptBreakdown()` instead, which for a
+payment whose metadata carries no usable `base_amount` answers **"the whole
+charge"** — there is nothing to split by, so nothing was the platform's. The
+aggregates now use the same fallback, `COALESCE(fee_amount, amount)`
+(`Transaction::netAmountExpression()`).
+
+**Which records are affected.** Only transactions where `fee_amount IS NULL`.
+These predate the column, and the backfill migration
+(`2026_09_12_000200_add_student_and_period_context_to_fees_and_transactions`)
+could only populate a row whose `meta_data` contained a numeric `base_amount`;
+it skipped the rest, which is why they are still null. Every payment taken since
+writes `fee_amount` at checkout, so no new row can be in this state.
+
+**What the numbers do.** For those rows only, the reported **net changes from
+₦0 to the full transaction amount**. Net figures can therefore only go up, never
+down. Gross totals, counts, the transaction list, the CSV, receipts, payouts and
+every money movement are **unchanged** — this aligns the aggregates with the
+interpretation the rest of the application already used. No transaction,
+payment or payout record is modified, and there is no data migration.
+
+**Before deploying, count what will move.** Read-only; run against production:
+
+```sql
+-- How many payments will start reporting a non-zero net, and how much in total.
+SELECT COUNT(*)            AS affected_rows,
+       COALESCE(SUM(amount), 0) AS net_total_increase
+FROM transactions
+WHERE fee_amount IS NULL
+  AND status = 'success';
+
+-- The same rows, per school, to know who sees a change.
+SELECT s.name, COUNT(*) AS rows, COALESCE(SUM(t.amount), 0) AS net_increase
+FROM transactions t
+JOIN schools s ON s.id = t.school_id
+WHERE t.fee_amount IS NULL AND t.status = 'success'
+GROUP BY s.name
+ORDER BY net_increase DESC;
+
+-- To inspect individual rows before the deploy.
+SELECT id, school_id, reference, amount, paid_at, created_at
+FROM transactions
+WHERE fee_amount IS NULL AND status = 'success'
+ORDER BY id;
+```
+
+**Zero rows means no school sees any change at all.** If rows are returned, tell
+the affected schools that their historical net totals were understated and now
+match the transaction list and CSV they could already export.
+
 ## 7. Security
 
 - Never commit a Paystack key. `.env` is ignored; `render.yaml` declares keys
