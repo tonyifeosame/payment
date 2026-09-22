@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\BusinessTime;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -234,29 +235,20 @@ class Transaction extends Model
             }
         }
 
-        $from = self::parseDate($filters['date_from'] ?? null);
-        $to = self::parseDate($filters['date_to'] ?? null);
+        // A date filter is a business day in the reporting zone, converted to
+        // storage time for the comparison (M3, App\Support\BusinessTime). Parsed
+        // as UTC these bounds were an hour late, so a payment the list dated to
+        // one day was filtered as if it belonged to the next.
+        $from = BusinessTime::startOfDay($filters['date_from'] ?? null);
+        $to = BusinessTime::endOfDay($filters['date_to'] ?? null);
         if ($from) {
-            $query->whereRaw(self::paidAtExpression().' >= ?', [$from->startOfDay()]);
+            $query->whereRaw(self::paidAtExpression().' >= ?', [$from]);
         }
         if ($to) {
-            $query->whereRaw(self::paidAtExpression().' <= ?', [$to->endOfDay()]);
+            $query->whereRaw(self::paidAtExpression().' <= ?', [$to]);
         }
 
         return $query;
-    }
-
-    private static function parseDate(?string $value): ?Carbon
-    {
-        if (! is_string($value) || trim($value) === '') {
-            return null;
-        }
-
-        try {
-            return Carbon::createFromFormat('Y-m-d', trim($value)) ?: null;
-        } catch (\Throwable) {
-            return null;
-        }
     }
 
     /** True when this payment has recorded money against a real student. */

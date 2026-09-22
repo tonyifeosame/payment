@@ -144,7 +144,8 @@ class PayoutPageTest extends TestCase
         $page->assertSee('Paid out')->assertSee('PO-success')->assertSee('₦50,000.00')
             ->assertDontSee('₦51,250.00')->assertDontSee('₦1,250.00')->assertDontSee('ervice fee')
             ->assertSee('ref-success')->assertSee('Adaeze Okonkwo')->assertSee('A/2026/001')->assertSee('JSS 1 Tuition')->assertSee('Parent success')
-            ->assertSee('10 Sep 2026, 09:05')->assertSee('10 Sep 2026, 09:20')
+            // Stored 09:05/09:20 UTC, shown on the school's clock (M3): WAT is UTC+1.
+            ->assertSee('10 Sep 2026, 10:05')->assertSee('10 Sep 2026, 10:20')
             ->assertSee('Payment confirmed')->assertSee('Payout queued')->assertSee('Payout sent to bank')->assertSee('Payout paid')
             ->assertSee('GTB')->assertSee('····6789')->assertSee('Alpha School Ltd')->assertDontSee('0123456789')
             ->assertSee('/payment/receipt/'.$this->p['success']->transaction_id)
@@ -155,7 +156,7 @@ class PayoutPageTest extends TestCase
         $show('processing')->assertSee('Being processed')->assertSee('Processing at bank');
         $show('failed')->assertSee('Needs attention')->assertSee('Payout failed')->assertSee('What you can do')->assertSee('contact support')->assertSee('PO-failed');
         $show('review')->assertSee('Needs review')->assertSee('Payout under review')->assertSee('Being determined')->assertDontSee('₦0.00');
-        $show('reversed')->assertSee('Reversed')->assertSee('Payout reversed')->assertSee('11 Sep 2026, 09:00');
+        $show('reversed')->assertSee('Reversed')->assertSee('Payout reversed')->assertSee('11 Sep 2026, 10:00');
 
         foreach (['success', 'failed', 'review', 'reversed'] as $key) {
             $html = $show($key)->getContent();

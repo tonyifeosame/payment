@@ -107,12 +107,12 @@
     class="xl:[&_table]:w-full xl:[&_table]:table-fixed md:[&_.th]:px-3 md:[&_.td]:px-3"
     stacked>
     @forelse($payouts as $payout)
-        @php $t = $payout->transaction; @endphp
+        @php $t = $payout->transaction; $createdAt = \App\Support\BusinessTime::display($payout->created_at); $updatedAt = \App\Support\BusinessTime::display($payout->updated_at); @endphp
         <tr>
             <td class="td" data-label="Date">
                 <div class="min-w-0">
-                    <time datetime="{{ $payout->created_at?->toIso8601String() }}" class="whitespace-nowrap font-medium">{{ $payout->created_at?->format('d M Y') }}</time>
-                    <span class="block text-xs text-brand-slate">{{ $payout->created_at?->format('H:i') }}</span>
+                    <time datetime="{{ $createdAt?->toIso8601String() }}" class="whitespace-nowrap font-medium">{{ $createdAt?->format('d M Y') }}</time>
+                    <span class="block text-xs text-brand-slate">{{ $createdAt?->format('H:i') }}</span>
                 </div>
             </td>
             <td class="td" data-label="Payment">
@@ -143,8 +143,8 @@
             <td class="td" data-label="Status">@include('admin._badge', ['status' => $payout->status, 'label' => $labels[$payout->status] ?? ucfirst($payout->status)])</td>
             <td class="td" data-label="Updated">
                 <div class="min-w-0">
-                    <time datetime="{{ $payout->updated_at?->toIso8601String() }}" class="text-sm">{{ $payout->updated_at?->format('d M Y') }}</time>
-                    <span class="block text-xs text-brand-slate">{{ $payout->updated_at?->format('H:i') }}</span>
+                    <time datetime="{{ $updatedAt?->toIso8601String() }}" class="text-sm">{{ $updatedAt?->format('d M Y') }}</time>
+                    <span class="block text-xs text-brand-slate">{{ $updatedAt?->format('H:i') }}</span>
                 </div>
             </td>
             <td class="td td-actions" data-label="">

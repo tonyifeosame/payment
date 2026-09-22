@@ -32,12 +32,13 @@
             <div>
                 <h2 id="payment-heading" class="font-display text-lg font-bold tracking-tight">Payment</h2>
                 <p class="mt-1 text-sm text-brand-slate">
-                    @if($isPaid && $t->paid_at)
-                        Confirmed <time datetime="{{ $t->paid_at->toIso8601String() }}">{{ $t->paid_at->format('d M Y \a\t H:i') }}</time>
+                    @php $confirmedAt = \App\Support\BusinessTime::display($t->paid_at); $startedAt = \App\Support\BusinessTime::display($t->created_at); @endphp
+                    @if($isPaid && $confirmedAt)
+                        Confirmed <time datetime="{{ $confirmedAt->toIso8601String() }}">{{ $confirmedAt->format('d M Y \a\t H:i') }}</time>
                     @elseif($isPaid)
-                        Confirmed · started <time datetime="{{ $t->created_at?->toIso8601String() }}">{{ $t->created_at?->format('d M Y \a\t H:i') }}</time>
+                        Confirmed · started <time datetime="{{ $startedAt?->toIso8601String() }}">{{ $startedAt?->format('d M Y \a\t H:i') }}</time>
                     @else
-                        Started <time datetime="{{ $t->created_at?->toIso8601String() }}">{{ $t->created_at?->format('d M Y \a\t H:i') }}</time>
+                        Started <time datetime="{{ $startedAt?->toIso8601String() }}">{{ $startedAt?->format('d M Y \a\t H:i') }}</time>
                     @endif
                 </p>
             </div>

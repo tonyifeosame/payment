@@ -125,7 +125,7 @@
             class="xl:[&_table]:w-full xl:[&_table]:table-fixed md:[&_.th]:px-3 md:[&_.td]:px-3"
             stacked>
             @forelse($stats['recent'] as $t)
-                @php $when = ($t->paid_at ?? $t->created_at)?->timezone($tz); @endphp
+                @php $when = \App\Support\BusinessTime::display($t->paid_at ?? $t->created_at); @endphp
                 <tr>
                     <td class="td" data-label="Date">
                         <time datetime="{{ $when?->toIso8601String() }}">{{ $when?->format('d M, H:i') }}</time>

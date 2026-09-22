@@ -6,8 +6,8 @@ use App\Models\Payout;
 use App\Models\School;
 use App\Services\PaymentTimeline;
 use App\Services\SchoolDashboardService;
+use App\Support\BusinessTime;
 use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
 
 /**
  * Read-only payout ledger for a school.
@@ -47,8 +47,9 @@ class PayoutController extends Controller
             $status = '';
         }
         $q = trim((string) $request->input('q', ''));
-        $from = $this->date($request->input('date_from'));
-        $to = $this->date($request->input('date_to'));
+        // Business days in the reporting zone, converted to storage time (M3).
+        $from = BusinessTime::startOfDay($request->input('date_from'));
+        $to = BusinessTime::endOfDay($request->input('date_to'));
 
         $payouts = Payout::where('school_id', $school->id)
             ->when($status !== '' && isset(self::STATUS_GROUPS[$status]), fn ($query) => $query->whereIn('status', self::STATUS_GROUPS[$status]))
@@ -67,8 +68,8 @@ class PayoutController extends Controller
                             ->orWhere('email', 'like', $like)));
                 });
             })
-            ->when($from, fn ($query) => $query->where('payouts.created_at', '>=', $from->startOfDay()))
-            ->when($to, fn ($query) => $query->where('payouts.created_at', '<=', $to->endOfDay()))
+            ->when($from, fn ($query) => $query->where('payouts.created_at', '>=', $from))
+            ->when($to, fn ($query) => $query->where('payouts.created_at', '<=', $to))
             ->with('transaction')
             ->orderByDesc('created_at')
             ->orderByDesc('id')
@@ -80,8 +81,11 @@ class PayoutController extends Controller
             'payouts' => $payouts,
             'status' => $status,
             'q' => $q,
-            'dateFrom' => $from?->format('Y-m-d'),
-            'dateTo' => $to?->format('Y-m-d'),
+            // Echoed back into the filter form and chips, so they have to read as
+            // the day the admin typed — the bounds above are the same instants in
+            // storage time, which is the previous date for an early-morning start.
+            'dateFrom' => BusinessTime::display($from)?->format('Y-m-d'),
+            'dateTo' => BusinessTime::display($to)?->format('Y-m-d'),
             'labels' => self::STATUS_LABELS,
             'summary' => $dashboard->payoutSummary($school),
         ]);
@@ -112,18 +116,5 @@ class PayoutController extends Controller
             'state' => $timeline->payoutState($payout),
             'timeline' => $transaction ? $timeline->forTransaction($transaction) : [],
         ]);
-    }
-
-    private function date($value): ?Carbon
-    {
-        if (! is_string($value) || ! preg_match('/^\d{4}-\d{2}-\d{2}$/', trim($value))) {
-            return null;
-        }
-
-        try {
-            return Carbon::createFromFormat('Y-m-d', trim($value)) ?: null;
-        } catch (\Throwable) {
-            return null;
-        }
     }
 }

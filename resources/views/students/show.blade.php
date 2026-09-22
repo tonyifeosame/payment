@@ -39,7 +39,8 @@
                 </div>
                 <div class="flex items-baseline justify-between gap-4 py-2.5">
                     <dt class="text-brand-slate">Added</dt>
-                    <dd class="text-right font-medium"><time datetime="{{ $student->created_at?->toIso8601String() }}">{{ $student->created_at?->format('d M Y') }}</time></dd>
+                    @php $studentCreatedAt = \App\Support\BusinessTime::display($student->created_at); @endphp
+                    <dd class="text-right font-medium"><time datetime="{{ $studentCreatedAt?->toIso8601String() }}">{{ $studentCreatedAt?->format('d M Y') }}</time></dd>
                 </div>
             </dl>
         </section>
@@ -98,7 +99,7 @@
             class="md:[&_.th]:px-3 md:[&_.td]:px-3 xl:[&_.th]:px-2.5 xl:[&_.td]:px-2.5"
             stacked>
             @forelse($transactions as $t)
-                @php $b = $t->receiptBreakdown(); $when = $t->paid_at ?? $t->created_at; @endphp
+                @php $b = $t->receiptBreakdown(); $when = \App\Support\BusinessTime::display($t->paid_at ?? $t->created_at); @endphp
                 <tr>
                     <td class="td" data-label="Date">
                         <div class="min-w-0">

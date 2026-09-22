@@ -141,7 +141,8 @@
             @foreach($recent as $run)
                 <li class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-3">
                     <span><span class="font-semibold">{{ $run->fromSession?->name ?? '—' }} → {{ $run->toSession?->name }}</span> <span class="text-brand-slate">· {{ $run->promoted_count }} promoted, {{ $run->graduated_count }} graduated, {{ $run->excluded_count }} excluded</span></span>
-                    <time datetime="{{ $run->created_at->toIso8601String() }}" class="text-xs text-brand-slate">{{ $run->created_at->format('d M Y, H:i') }}</time>
+                    @php $runAt = \App\Support\BusinessTime::display($run->created_at); @endphp
+                    <time datetime="{{ $runAt->toIso8601String() }}" class="text-xs text-brand-slate">{{ $runAt->format('d M Y, H:i') }}</time>
                 </li>
             @endforeach
         </ul>

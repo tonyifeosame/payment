@@ -6,6 +6,7 @@ use App\Models\AcademicTerm;
 use App\Models\Payout;
 use App\Models\School;
 use App\Models\Transaction;
+use App\Support\BusinessTime;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -41,7 +42,7 @@ class SchoolDashboardService
         // expressed in storage time — a Lagos wall-clock string bound as-is would
         // be an hour late.
         $now = Carbon::now(self::reportingTimezone());
-        $storageTz = config('app.timezone', 'UTC');
+        $storageTz = BusinessTime::storageZone();
         $startOfToday = $now->copy()->startOfDay()->setTimezone($storageTz);
         $startOfWeek = $now->copy()->startOfWeek()->setTimezone($storageTz);
         $paidAt = Transaction::paidAtExpression();
@@ -99,10 +100,16 @@ class SchoolDashboardService
         ];
     }
 
-    /** The timezone school admins think in; see config/fees.php. */
+    /**
+     * The timezone school admins think in; see config/fees.php.
+     *
+     * Kept as the dashboard's entry point (views and tests reference it), but the
+     * definition now lives in App\Support\BusinessTime, which every other
+     * reporting surface reads too (M3).
+     */
     public static function reportingTimezone(): string
     {
-        return (string) config('fees.reporting_timezone', 'Africa/Lagos');
+        return BusinessTime::zone();
     }
 
     /** @return array{gross: float, net: float, count: int} */

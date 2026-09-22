@@ -146,7 +146,7 @@ class TransactionFilterExportTest extends TestCase
         $rows = array_map('str_getcsv', array_filter(explode("\n", trim(ltrim($csv, "\xEF\xBB\xBF")))));
 
         $this->assertSame([
-            'Reference', 'Paystack Reference', 'Date Paid', 'Status',
+            'Reference', 'Paystack Reference', 'Date Paid (WAT)', 'Status',
             'Student', 'Admission Number', 'Class', 'Session', 'Term',
             'Category', 'Fee Type', 'Quantity',
             'Payer Name', 'Payer Email', 'Payment Method',

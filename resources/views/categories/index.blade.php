@@ -54,7 +54,8 @@
                         </div>
                     </td>
                     <td class="td" data-label="Added">
-                        <time datetime="{{ $category->created_at?->toIso8601String() }}" class="whitespace-nowrap">{{ $category->created_at?->format('d M Y') }}</time>
+                        @php $createdAt = \App\Support\BusinessTime::display($category->created_at); @endphp
+                        <time datetime="{{ $createdAt?->toIso8601String() }}" class="whitespace-nowrap">{{ $createdAt?->format('d M Y') }}</time>
                     </td>
                     <td class="td td-actions" data-label="">
                         <div class="flex w-full gap-2 md:w-auto md:justify-end">

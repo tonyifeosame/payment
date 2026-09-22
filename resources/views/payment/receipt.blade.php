@@ -10,7 +10,7 @@
                   ?? optional($transaction->category)->school
                   ?? optional($transaction->subcategory)->school;
         $receipt = $transaction->receiptBreakdown();
-        $paidAt = $transaction->paid_at ?? $transaction->created_at;
+        $paidAt = \App\Support\BusinessTime::display($transaction->paid_at ?? $transaction->created_at);
         $isSuccess = $transaction->status === 'success';
         $money = fn ($n) => '₦'.number_format((float) $n, 2);
         // Paystack channels arrive as snake_case ("bank_transfer"); the pre-settlement
@@ -120,7 +120,7 @@
                     </div>
                     <div class="receipt-row">
                         <dt>Date</dt>
-                        <dd>{{ $paidAt?->format('d M Y, h:i A') ?? '—' }}</dd>
+                        <dd>{{ $paidAt ? $paidAt->format('d M Y, h:i A').' '.\App\Support\BusinessTime::label() : '—' }}</dd>
                     </div>
                     @if($method)
                         <div class="receipt-row">

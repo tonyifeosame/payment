@@ -7,6 +7,12 @@
     $isPaid = $payout->status === \App\Models\Payout::SUCCESS;
     $underReview = $payout->status === \App\Models\Payout::NEEDS_REVIEW;
     $account = $school->account_number ? '····'.substr((string) $school->account_number, -4) : null;
+    // Every timestamp on this page is shown on the school's clock (M3).
+    $payoutCreatedAt = \App\Support\BusinessTime::display($payout->created_at);
+    $payoutInitiatedAt = \App\Support\BusinessTime::display($payout->initiated_at);
+    $payoutCompletedAt = \App\Support\BusinessTime::display($payout->completed_at);
+    $payoutUpdatedAt = \App\Support\BusinessTime::display($payout->updated_at);
+    $transactionPaidAt = $t ? \App\Support\BusinessTime::display($t->paid_at ?? $t->created_at) : null;
 @endphp
 
 @section('title', 'Payout '.($payout->reference ?? $payout->id))
@@ -57,23 +63,23 @@
             </div>
             <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-3">
                 <dt class="text-brand-slate">Created</dt>
-                <dd class="font-medium"><time datetime="{{ $payout->created_at?->toIso8601String() }}">{{ $payout->created_at?->format('d M Y, H:i') }}</time></dd>
+                <dd class="font-medium"><time datetime="{{ $payoutCreatedAt?->toIso8601String() }}">{{ $payoutCreatedAt?->format('d M Y, H:i') }}</time></dd>
             </div>
             @if($payout->initiated_at)
                 <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-3">
                     <dt class="text-brand-slate">Sent to bank</dt>
-                    <dd class="font-medium"><time datetime="{{ $payout->initiated_at->toIso8601String() }}">{{ $payout->initiated_at->format('d M Y, H:i') }}</time></dd>
+                    <dd class="font-medium"><time datetime="{{ $payoutInitiatedAt->toIso8601String() }}">{{ $payoutInitiatedAt->format('d M Y, H:i') }}</time></dd>
                 </div>
             @endif
             @if($payout->completed_at)
                 <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-3">
                     <dt class="text-brand-slate">{{ $isPaid ? 'Paid' : 'Closed' }}</dt>
-                    <dd class="font-medium"><time datetime="{{ $payout->completed_at->toIso8601String() }}">{{ $payout->completed_at->format('d M Y, H:i') }}</time></dd>
+                    <dd class="font-medium"><time datetime="{{ $payoutCompletedAt->toIso8601String() }}">{{ $payoutCompletedAt->format('d M Y, H:i') }}</time></dd>
                 </div>
             @endif
             <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-3">
                 <dt class="text-brand-slate">Last updated</dt>
-                <dd class="font-medium"><time datetime="{{ $payout->updated_at?->toIso8601String() }}">{{ $payout->updated_at?->format('d M Y, H:i') }}</time></dd>
+                <dd class="font-medium"><time datetime="{{ $payoutUpdatedAt?->toIso8601String() }}">{{ $payoutUpdatedAt?->format('d M Y, H:i') }}</time></dd>
             </div>
             @if($school->bank || $account)
                 <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-3">
@@ -98,7 +104,7 @@
             <dl class="mt-3 divide-y divide-brand-fog text-sm">
                 <div class="flex items-baseline justify-between gap-4 py-2.5">
                     <dt class="text-brand-slate">Paid on</dt>
-                    <dd class="text-right font-medium"><time datetime="{{ ($t->paid_at ?? $t->created_at)?->toIso8601String() }}">{{ ($t->paid_at ?? $t->created_at)?->format('d M Y, H:i') }}</time></dd>
+                    <dd class="text-right font-medium"><time datetime="{{ $transactionPaidAt?->toIso8601String() }}">{{ $transactionPaidAt?->format('d M Y, H:i') }}</time></dd>
                 </div>
                 <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-2.5">
                     <dt class="text-brand-slate">Reference</dt>

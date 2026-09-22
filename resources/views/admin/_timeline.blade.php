@@ -30,7 +30,8 @@
                                 {{ $step['label'] }}<span class="sr-only"> — {{ $stateText }}</span>
                             </p>
                             @if($step['at'])
-                                <time datetime="{{ $step['at']->toIso8601String() }}" class="text-xs text-brand-slate tabular-nums">{{ $step['at']->format('d M Y, H:i') }}</time>
+                                @php $stepAt = \App\Support\BusinessTime::display($step['at']); @endphp
+                                <time datetime="{{ $stepAt->toIso8601String() }}" class="text-xs text-brand-slate tabular-nums">{{ $stepAt->format('d M Y, H:i') }}</time>
                             @endif
                         </div>
                         <p class="mt-0.5 text-sm text-brand-slate">{{ $step['note'] }}</p>

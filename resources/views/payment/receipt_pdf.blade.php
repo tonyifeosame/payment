@@ -77,7 +77,7 @@
 @php
     // Same source of truth as the web receipt; nothing is recalculated here.
     $receipt = $transaction->receiptBreakdown();
-    $paidAt = $transaction->paid_at ?? $transaction->created_at;
+    $paidAt = \App\Support\BusinessTime::display($transaction->paid_at ?? $transaction->created_at);
     $isSuccess = $transaction->status === 'success';
     $money = fn ($n) => '₦'.number_format((float) $n, 2);
     $method = $transaction->payment_method
@@ -143,7 +143,7 @@
                 <h3>Payment</h3>
                 <table class="kv">
                     <tr><td class="k">Reference</td><td class="v mono">{{ $transaction->reference ?? '—' }}</td></tr>
-                    <tr><td class="k">Date</td><td class="v">{{ $paidAt?->format('d M Y, h:i A') ?? '—' }}</td></tr>
+                    <tr><td class="k">Date</td><td class="v">{{ $paidAt ? $paidAt->format('d M Y, h:i A').' '.\App\Support\BusinessTime::label() : '—' }}</td></tr>
                     @if($method)
                         <tr><td class="k">Method</td><td class="v">{{ $method }}</td></tr>
                     @endif

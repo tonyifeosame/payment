@@ -25,7 +25,7 @@
 
     // Same source of truth as the web receipt and the PDF; nothing is recalculated.
     $receipt = $transaction->receiptBreakdown();
-    $paidAt = $transaction->paid_at ?? $transaction->created_at;
+    $paidAt = \App\Support\BusinessTime::display($transaction->paid_at ?? $transaction->created_at);
     $isSuccess = $transaction->status === 'success';
     $money = fn ($n) => '₦'.number_format((float) $n, 2);
     $method = $transaction->payment_method
@@ -117,7 +117,7 @@ This payment has not been confirmed as successful. The details recorded for it a
 </tr>
 <tr>
 <td style="{{ $label }}">Date:</td>
-<td style="{{ $value }}">{{ $paidAt?->format('d M Y, h:i A') ?? '—' }}</td>
+<td style="{{ $value }}">{{ $paidAt ? $paidAt->format('d M Y, h:i A').' '.\App\Support\BusinessTime::label() : '—' }}</td>
 </tr>
 @if($method)
 <tr>

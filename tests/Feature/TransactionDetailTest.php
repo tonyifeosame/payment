@@ -137,7 +137,8 @@ class TransactionDetailTest extends TestCase
         $page = $this->show($this->paid)->assertOk();
         $page->assertSee('Paid out')->assertSee('PO-paid')->assertSee('₦50,000.00')
             ->assertSee('Payout queued')->assertSee('Payout sent to bank')->assertSee('Payout paid')
-            ->assertSee('10 Sep 2026, 09:05')->assertSee('10 Sep 2026, 09:20')
+            // Stored 09:05/09:20 UTC, shown on the school's clock (M3): WAT is UTC+1.
+            ->assertSee('10 Sep 2026, 10:05')->assertSee('10 Sep 2026, 10:20')
             ->assertDontSee('TRF_secret')->assertDontSee('987654')->assertDontSee('internal provider payload');
 
         $payout->forceFill(['status' => Payout::FAILED, 'last_error' => 'Paystack reported transfer status: failed (code 4xx)', 'completed_at' => '2026-09-10 09:30:00'])->save();

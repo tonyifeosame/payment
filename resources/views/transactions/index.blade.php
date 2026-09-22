@@ -151,7 +151,7 @@
     caption="Transactions for {{ $school->name }}, newest first"
     stacked>
     @forelse($transactions as $t)
-        @php $b = $t->receiptBreakdown(); $when = $t->paid_at ?? $t->created_at; @endphp
+        @php $b = $t->receiptBreakdown(); $when = \App\Support\BusinessTime::display($t->paid_at ?? $t->created_at); @endphp
         <tr>
             <td class="td" data-label="Date">
                 <div class="min-w-0">

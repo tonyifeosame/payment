@@ -46,7 +46,7 @@ every secret `sync: false` on purpose, so nothing secret is in the repo.
 | `SESSION_DRIVER` / `SESSION_SECURE_COOKIE` | `database` / `true` | admin sessions over HTTPS only |
 | `MAIL_MAILER`, `MAIL_HOST`, `MAIL_PORT`, `MAIL_SCHEME`, `MAIL_USERNAME`, `MAIL_PASSWORD` | your SMTP provider | receipts (worker), password resets and bank-change notices (web) |
 | `MAIL_FROM_ADDRESS` / `MAIL_FROM_NAME` | a real sender on your domain | receipts and password resets come from it; the contact form delivers to it |
-| `REPORTING_TIMEZONE` | `Africa/Lagos` (default) | dashboard business days |
+| `REPORTING_TIMEZONE` | `Africa/Lagos` (default) | the clock every reporting surface quotes — see "Timezones" below. Leave it unset unless the school base moves: the default is correct and `paystack:check` fails on an invalid identifier |
 | `PENDING_PAYMENT_EXPIRY_HOURS` | `24` (default) | how long a checkout may stay `pending` before the hourly cron verifies it with Paystack (section 5b); the answer, never the age, decides the outcome |
 | `LOG_CHANNEL` | `stderr` | Render keeps stderr; the container filesystem does not survive a deploy |
 | `SKIP_MIGRATIONS` | `true` on worker and cron only | only the web service runs `migrate --force` at start |
@@ -284,6 +284,36 @@ account resolution; the recipient code is cleared and re-created on the next
 payout), then `payouts:retry`. A Paystack rejection naming the recipient
 (closed account, name mismatch) is the same path. Payouts already
 `initiating`/`processing` keep the recipient they were sent with.
+
+## 6b. Timezones
+
+Timestamps are **stored in UTC** (`app.timezone`) and always will be: the
+columns carry no zone, `paid_at` is compared against Paystack's own instants,
+and every query compares against `now()`. Nothing converts on the way in.
+
+Conversion happens at the edge, in `App\Support\BusinessTime`, which reads
+`REPORTING_TIMEZONE` (`Africa/Lagos` — WAT, UTC+1, no DST). Every reporting
+surface goes through it: dashboard, transaction list and detail, student
+payment history, payout ledger and detail, the payment timeline, the web, PDF
+and email receipts, the CSV export, the categories list and the promotion
+history. Date filters go through the same helper, so a `date_from` is the start
+of that business day in the reporting zone, converted to storage time — the
+list, the export and the filters all agree on which day a payment belongs to.
+
+Before this (M3) only the dashboard converted, so a payment settled between
+00:00 and 01:00 Lagos was dated one day on the dashboard and the previous day
+on the ledger, the CSV and the parent's receipt.
+
+Two things to know operationally:
+
+- **Exports and receipts now read an hour later** than before for payments in
+  that late-night window. The stored instant did not change. The CSV column is
+  labelled `Date Paid (WAT)` and receipts print the zone next to the time, so an
+  old file and a new one can be told apart rather than silently disagreeing.
+- **`RunPayouts` is deliberately NOT converted.** Its `--day` and `--since`
+  filters are operator scoping for money movement, not presentation, and they
+  stay on UTC day boundaries. Changing them would change which payouts a manual
+  run picks up. If you pass `--day`, you are naming a UTC day.
 
 ## 7. Security
 

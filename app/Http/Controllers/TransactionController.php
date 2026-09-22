@@ -7,6 +7,7 @@ use App\Models\School;
 use App\Models\Transaction;
 use App\Services\AcademicPeriodService;
 use App\Services\PaymentTimeline;
+use App\Support\BusinessTime;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\URL;
@@ -90,15 +91,18 @@ class TransactionController extends Controller
         $filters = $this->filters($request);
         $query = $this->query($school, $filters)->with(['student', 'payout']);
 
-        $filename = sprintf('%s-transactions-%s.csv', $school->slug, now()->format('Ymd-His'));
+        // Dates in the export are the school's own clock (M3), including the one
+        // stamped into the filename.
+        $zone = BusinessTime::label();
+        $filename = sprintf('%s-transactions-%s.csv', $school->slug, BusinessTime::display(now())->format('Ymd-His'));
 
-        return response()->streamDownload(function () use ($query) {
+        return response()->streamDownload(function () use ($query, $zone) {
             $out = fopen('php://output', 'w');
             // UTF-8 BOM so Excel decodes names with diacritics correctly.
             fwrite($out, "\xEF\xBB\xBF");
 
             fputcsv($out, [
-                'Reference', 'Paystack Reference', 'Date Paid', 'Status',
+                'Reference', 'Paystack Reference', 'Date Paid ('.$zone.')', 'Status',
                 'Student', 'Admission Number', 'Class', 'Session', 'Term',
                 'Category', 'Fee Type', 'Quantity',
                 'Payer Name', 'Payer Email', 'Payment Method',
@@ -112,7 +116,7 @@ class TransactionController extends Controller
                     fputcsv($out, [
                         $t->reference,
                         $t->paystack_reference,
-                        optional($t->paid_at ?? $t->created_at)->format('Y-m-d H:i:s'),
+                        BusinessTime::display($t->paid_at ?? $t->created_at)?->format('Y-m-d H:i:s'),
                         $t->status,
                         $t->student_name ?? $t->student?->full_name,
                         $t->student_admission_number ?? $t->student?->admission_number,
