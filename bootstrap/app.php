@@ -5,6 +5,9 @@ use App\Support\PaymentInitializeLimiter;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Queue\Events\JobFailed;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Route;
 
@@ -59,6 +62,23 @@ return Application::configure(basePath: dirname(__DIR__))
         // open, and neither touches payment-initialize.
         RateLimiter::for(BankLookupLimiter::LIST_NAME, BankLookupLimiter::bankList(...));
         RateLimiter::for(BankLookupLimiter::RESOLVE_NAME, BankLookupLimiter::bankResolve(...));
+
+        // M5: every job that exhausts its retries says so, once, in one shape.
+        // Only InitiateSchoolPayout had a failed() hook, so a receipt mailable
+        // that gave up left nothing behind but a `failed_jobs` row nobody reads.
+        // This is the log side; `jobs:check` is what actually reaches a human.
+        // Deliberately identification only — never the payload, which carries the
+        // payer's email and the serialized transaction.
+        Queue::failing(function (JobFailed $event): void {
+            Log::critical('Queued job failed permanently', [
+                'connection' => $event->connectionName,
+                'queue' => $event->job->getQueue(),
+                'job' => $event->job->resolveName(),
+                'job_id' => $event->job->getJobId(),
+                'attempts' => $event->job->attempts(),
+                'exception' => $event->exception->getMessage(),
+            ]);
+        });
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

@@ -49,6 +49,9 @@ every secret `sync: false` on purpose, so nothing secret is in the repo.
 | `REPORTING_TIMEZONE` | `Africa/Lagos` (default) | the clock every reporting surface quotes — see "Timezones" below. Leave it unset unless the school base moves: the default is correct and `paystack:check` fails on an invalid identifier |
 | `PENDING_PAYMENT_EXPIRY_HOURS` | `24` (default) | how long a checkout may stay `pending` before the hourly cron verifies it with Paystack (section 5b); the answer, never the age, decides the outcome |
 | `LOG_CHANNEL` | `stderr` | Render keeps stderr; the container filesystem does not survive a deploy |
+| `OPERATIONS_ALERT_EMAIL` | optional; defaults to `MAIL_FROM_ADDRESS` | where the hourly `jobs:check` sends its notice (section 6a). The cron service carries the full `MAIL_*` set for this reason — without it `MAIL_MAILER` falls back to `log` and the alert would never leave the container |
+| `OPERATIONS_ALERT_COOLDOWN_MINUTES` | `360` (default) | how often the same unhealthy state may re-alert |
+| `HEALTH_FAILED_JOBS_THRESHOLD`, `HEALTH_QUEUE_DEPTH_THRESHOLD`, `HEALTH_STALLED_PAYOUTS_THRESHOLD`, `HEALTH_ATTENTION_PAYOUTS_THRESHOLD` | `1`, `100`, `1`, `1` (defaults) | the counts at which `jobs:check` reports unhealthy (`config/operations.php`) |
 | `SKIP_MIGRATIONS` | `true` on worker and cron only | only the web service runs `migrate --force` at start |
 
 Transfers need nothing beyond `PAYSTACK_SECRET_KEY`: the platform fee is
@@ -284,6 +287,44 @@ account resolution; the recipient code is cleared and re-created on the next
 payout), then `payouts:retry`. A Paystack rejection naming the recipient
 (closed account, name mismatch) is the same path. Payouts already
 `initiating`/`processing` keep the recipient they were sent with.
+
+## 6a. Queue health and operator alerts (M5)
+
+`php artisan jobs:check` is a **read-only** report, run hourly by the cron after
+the two reconciliation passes. It reports four things and exits non-zero when
+any threshold in `config/operations.php` is met:
+
+| Metric | Why it matters |
+|---|---|
+| rows in `failed_jobs` (+ age of the oldest) | work abandoned after its retries; `queue:failed` / `queue:retry` |
+| rows in `jobs` | a backlog means `laravel-queue-worker` is not draining |
+| payouts `pending` with **`attempts >= 1`** | **`payouts:run --dispatch` does NOT re-queue these** — it filters on `attempts = 0`. Only `payouts:retry` moves them |
+| payouts `failed` / `needs_review` | deliberate dead ends; `payouts:lookup`, then `payouts:retry` or `payouts:release` |
+
+**How you find out.** The check emails `OPERATIONS_ALERT_EMAIL` (falling back to
+`MAIL_FROM_ADDRESS`) when unhealthy, at most once per
+`OPERATIONS_ALERT_COOLDOWN_MINUTES` (default 360) so a persistent problem does
+not fill the inbox. Mail is the primary signal because it is the delivery path
+this application already proves in production.
+
+Its non-zero exit is a **secondary** signal. Render does support a "cron job
+execution fails" notification by email, but it is a **dashboard setting**
+(Integrations → Notifications, or the service's own Settings → Notifications,
+level "Only failure notifications") that cannot be declared in `render.yaml`,
+and its default state is not documented. **If you want that second channel,
+switch it on in the dashboard** — nothing in this repository can do it for you,
+and nothing here assumes it is on.
+
+`--json` gives the same report machine-readably; `--no-mail` reports and sets the
+exit code without sending. The command writes nothing — it runs on the cron
+container, which carries `SKIP_MIGRATIONS=true`.
+
+Separately, **every** job that exhausts its retries now writes one
+`Log::critical('Queued job failed permanently')` with the connection, queue, job
+name, job id and attempt count (`Queue::failing` in `bootstrap/app.php`).
+Previously only `InitiateSchoolPayout` did, so a receipt mailable that gave up
+left nothing but a `failed_jobs` row. The payload is deliberately never logged —
+it carries the payer's email and the serialized transaction.
 
 ## 6b. Timezones
 

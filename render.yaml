@@ -259,7 +259,8 @@ services:
     # `command:` is not a Blueprint field. A Docker-runtime service overrides the
     # image CMD with dockerCommand (the entrypoint still runs first and exec's it).
     #
-    # Two read-then-reconcile passes per hour, each safe to repeat:
+    # Two read-then-reconcile passes per hour, each safe to repeat, then a
+    # read-only health report:
     #   payouts:run --dispatch    payout obligations + stale `initiating` lookups
     #   payments:expire-pending   H5: checkouts pending for over
     #                             PENDING_PAYMENT_EXPIRY_HOURS (default 24) are
@@ -268,9 +269,19 @@ services:
     #                             failed/abandoned/unknown attempt is recorded as
     #                             failed, anything still open stays pending.
     #                             Never on age alone; never a charge or transfer.
-    # Both always run; the job's exit status is the first non-zero one, so a
-    # failure in either pass is visible in Render without hiding the other.
-    dockerCommand: sh -c 'php artisan payouts:run --dispatch; a=$?; php artisan payments:expire-pending; b=$?; if [ "$a" -ne 0 ]; then exit "$a"; fi; exit "$b"'
+    #   jobs:check                M5: failed jobs, queue depth, and the payouts
+    #                             the two passes above deliberately do NOT pick
+    #                             up (pending with attempts >= 1, failed,
+    #                             needs_review). Writes nothing. Exits non-zero
+    #                             and emails OPERATIONS_ALERT_EMAIL when any
+    #                             threshold is met; the mail is the signal we
+    #                             control, the exit code is for Render's own
+    #                             cron-failure notification where a workspace has
+    #                             it enabled (a dashboard setting, not a
+    #                             Blueprint one — see the runbook).
+    # All three always run; the job's exit status is the first non-zero one, so a
+    # failure in any pass is visible in Render without hiding the others.
+    dockerCommand: sh -c 'php artisan payouts:run --dispatch; a=$?; php artisan payments:expire-pending; b=$?; php artisan jobs:check; c=$?; if [ "$a" -ne 0 ]; then exit "$a"; fi; if [ "$b" -ne 0 ]; then exit "$b"; fi; exit "$c"'
     envVars:
       # See the worker's note: only the web service runs migrations.
       - key: SKIP_MIGRATIONS
@@ -310,6 +321,32 @@ services:
         sync: false
       - key: PAYSTACK_PAYMENT_URL
         value: https://api.paystack.co
+      # M5: the cron is the only container that sends operator alerts, so it needs
+      # the same mail configuration as the other two. Without these, MAIL_MAILER
+      # falls back to `log` (config/mail.php) and an unhealthy jobs:check would
+      # write its alert to stderr instead of reaching anyone — the exact blind
+      # spot this check exists to close. Same values as the web service.
+      - key: MAIL_MAILER
+        value: smtp
+      - key: MAIL_HOST
+        sync: false
+      - key: MAIL_PORT
+        sync: false
+      - key: MAIL_SCHEME
+        sync: false
+      - key: MAIL_USERNAME
+        sync: false
+      - key: MAIL_PASSWORD
+        sync: false
+      - key: MAIL_FROM_ADDRESS
+        sync: false
+      - key: MAIL_FROM_NAME
+        sync: false
+      # Where jobs:check sends its notice. Optional: unset, it falls back to
+      # MAIL_FROM_ADDRESS (config/operations.php), which is the same inbox the
+      # contact form already delivers to.
+      - key: OPERATIONS_ALERT_EMAIL
+        sync: false
 
 databases:
   - name: database

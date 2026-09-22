@@ -1,0 +1,134 @@
+# M5 — the suite, the style check and the PostgreSQL row-lock tests, on every push.
+#
+# Two test invocations on purpose. The suite is written for SQLite (RefreshDatabase
+# against :memory:, pinned in phpunit.xml) and converting it wholesale to PostgreSQL
+# is a much larger change with real risk. Instead the SQLite suite runs as it always
+# has, and PostgresRowLockTest — four tests that have never executed anywhere, because
+# they skip unless PGSQL_TEST_HOST is set — runs against a real postgres service.
+# Those four are the only place the production engine's `for update` behaviour is
+# asserted; SQLite compiles lockForUpdate() to an empty string.
+#
+# Pint runs against CHANGED PHP files only. A project-wide `pint --test` currently
+# fails on nine pre-existing files; fixing them is unrelated cleanup, so this gate
+# holds new work to the standard without pretending the backlog is clean.
+name: CI
+
+on:
+  push:
+    branches: [main, 'feature/**']
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # 8.2 is the composer.json floor; 8.4 is the forward check. Production
+        # runs whatever `dunglas/frankenphp` resolves to (the image is untagged),
+        # so neither is guaranteed to match it — see the runbook.
+        php: ['8.2', '8.4']
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: payment_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Pint needs the merge base to work out which files changed.
+          fetch-depth: 0
+
+      - name: Set up PHP ${{ matrix.php }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: pdo_sqlite, sqlite3, pdo_pgsql, mbstring, bcmath, intl, gd, zip
+          coverage: none
+
+      # Ask Composer where its cache actually is rather than hardcoding a path:
+      # COMPOSER_HOME differs between runner images (~/.cache/composer under XDG,
+      # ~/.composer otherwise), and a wrong path caches nothing while still
+      # reporting success.
+      - name: Resolve the Composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Composer packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ matrix.php }}-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-${{ matrix.php }}-
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress --no-ansi
+
+      - name: Prepare the application
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: Pint (changed files only)
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+          fi
+          # A new branch, a force push or a first commit gives no usable base.
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ] \
+             || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            BASE="$(git rev-parse HEAD^ 2>/dev/null || true)"
+          fi
+          if [ -z "$BASE" ]; then
+            echo "No comparable base commit; skipping the changed-file style check."
+            exit 0
+          fi
+          CHANGED="$(git diff --name-only --diff-filter=ACMR "$BASE" HEAD -- '*.php')"
+          if [ -z "$CHANGED" ]; then
+            echo "No PHP files changed."
+            exit 0
+          fi
+          echo "$CHANGED"
+          echo "$CHANGED" | xargs ./vendor/bin/pint --test
+
+      - name: Test suite (SQLite, as phpunit.xml pins it)
+        run: php artisan test
+
+      - name: PostgreSQL row-lock tests
+        env:
+          PGSQL_TEST_HOST: 127.0.0.1
+          PGSQL_TEST_PORT: 5432
+          PGSQL_TEST_DATABASE: payment_test
+          PGSQL_TEST_USERNAME: postgres
+          PGSQL_TEST_PASSWORD: postgres
+        # A skipped test reports success, which is exactly how these four went
+        # unnoticed for so long. Run them once and assert they actually ran.
+        run: |
+          set -o pipefail
+          OUT="$(php artisan test --filter=PostgresRowLockTest 2>&1)" || { echo "$OUT"; exit 1; }
+          echo "$OUT"
+          if echo "$OUT" | grep -qi "skipped"; then
+            echo "::error::PostgresRowLockTest skipped — the postgres service or PGSQL_TEST_* is misconfigured."
+            exit 1
+          fi
