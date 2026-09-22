@@ -56,9 +56,19 @@ Route::post('/registration', [RegistrationController::class, 'store'])
     ->middleware('throttle:10,60,registration')
     ->name('registration.store');
 
-// Paystack helper routes (server-side; uses secret key)
-Route::get('/api/banks', [PaystackController::class, 'banks'])->name('api.banks');
-Route::get('/api/resolve-account', [PaystackController::class, 'resolveAccount'])->name('api.resolve-account');
+// Paystack helper routes (server-side; uses secret key). Both are public and
+// every request that reaches the controller is an outbound call on the same key
+// that initialises payments and pays schools out, so both are throttled with
+// their own named bucket (limits in App\Support\BankLookupLimiter, registered in
+// bootstrap/app.php). The throttle runs before the controller, so a throttled
+// lookup never calls Paystack; the 429 is JSON in the {ok:false,error} shape the
+// registration and settings forms already display.
+Route::get('/api/banks', [PaystackController::class, 'banks'])
+    ->middleware('throttle:bank-list') // 20/min and 60/hour per client IP
+    ->name('api.banks');
+Route::get('/api/resolve-account', [PaystackController::class, 'resolveAccount'])
+    ->middleware('throttle:bank-resolve') // 10/min and 40/hour per IP, plus 60/hour per signed-in school
+    ->name('api.resolve-account');
 
 // Contact routes
 Route::get('/contact', function () {

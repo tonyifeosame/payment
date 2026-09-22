@@ -314,6 +314,24 @@ payout), then `payouts:retry`. A Paystack rejection naming the recipient
   section 1) — so all web instances share the same buckets; `php artisan
   cache:clear` resets them. The student-search autocomplete keeps its own,
   separate 60/min bucket; the callback and the webhook are not throttled.
+- The two public Paystack bank lookups are rate-limited as well, each in its own
+  bucket (registered in `bootstrap/app.php`, limits in
+  `App\Support\BankLookupLimiter`). `GET /api/banks` (`bank-list`): **20/min and
+  60/hour per client IP**. `GET /api/resolve-account` (`bank-resolve`):
+  **10/min and 40/hour per client IP**, plus **60/hour per signed-in school** —
+  one admin password per school means several admins are one credential across
+  many sessions and addresses, and only a school-keyed bucket counts them as
+  one. Both endpoints are unauthenticated and every request that reaches the
+  controller is an outbound call on the *same* secret key that initialises
+  payments and pays schools out, so the throttle runs before the controller: a
+  throttled lookup makes **no** Paystack call and returns a `429` with
+  `Retry-After` and a JSON body in the `{ok:false,error:"…"}` shape the
+  registration and settings forms already display. The two buckets are separate
+  from each other and from `payment-initialize`. The server-side re-verification
+  on `POST /registration` (10/hour) and `PUT /settings/bank` (5/hour) is
+  unchanged and still bounds those paths. Not yet done, tracked separately: a
+  global ceiling on outbound resolutions, and caching the bank list (which needs
+  `country` whitelisted first, or the cache key is caller-controlled).
 - Least privilege: only the operator who runs payouts needs Render shell access;
   school admins have no path to any of these commands (no HTTP route exists).
 - Tickets and chat: reference payouts by `PO-…` and transactions by their

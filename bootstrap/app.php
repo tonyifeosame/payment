@@ -1,5 +1,6 @@
 <?php
 
+use App\Support\BankLookupLimiter;
 use App\Support\PaymentInitializeLimiter;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -49,6 +50,15 @@ return Application::configure(basePath: dirname(__DIR__))
         // Counters live in the default cache store — the database in production
         // — so every web instance sees the same buckets.
         RateLimiter::for(PaymentInitializeLimiter::NAME, PaymentInitializeLimiter::limits(...));
+
+        // bank-list / bank-resolve: the two public Paystack lookup helpers behind
+        // the bank dropdown and the account-name preview. 20/min and 60/hour per
+        // IP for the list; 10/min and 40/hour per IP for resolution, plus 60/hour
+        // per signed-in school (see BankLookupLimiter). Two distinct limiter
+        // names, so the buckets are separate: exhausting one leaves the other
+        // open, and neither touches payment-initialize.
+        RateLimiter::for(BankLookupLimiter::LIST_NAME, BankLookupLimiter::bankList(...));
+        RateLimiter::for(BankLookupLimiter::RESOLVE_NAME, BankLookupLimiter::bankResolve(...));
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //
