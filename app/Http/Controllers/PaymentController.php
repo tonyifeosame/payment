@@ -11,6 +11,8 @@ use App\Services\PaymentCheckoutService;
 use App\Services\PaymentSettlementService;
 use App\Support\SchoolSession;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\URL;
@@ -190,9 +192,22 @@ class PaymentController extends Controller
         // instead of the message this method is clearly written to return.
         // The try/catch covers the other half: retry's flag only suppresses a failed
         // *response*, while a DNS or TCP failure still raises ConnectionException.
+        //
+        // L2: the predicate is the same classification PaystackService::lookupClient()
+        // uses — only a connection failure or a 5xx is worth another attempt. Without
+        // it retry() counted ANY 4xx as an attempt, so a definitive refusal was sent
+        // three times with the SAME reference. That mattered most in the case it was
+        // likeliest to hit: when a first attempt actually succeeded but its response
+        // was lost, the re-sends came back "Duplicate Transaction Reference" and the
+        // parent was told initialization had failed for a checkout that existed. The
+        // reference is unchanged — still the transaction's own durable reference, and
+        // still Paystack's idempotency key.
         try {
             $response = Http::withToken(config('services.paystack.secret_key'))
-                ->retry(3, 200, throw: false)
+                ->retry(3, 200, function (\Throwable $e) {
+                    return $e instanceof ConnectionException
+                        || ($e instanceof RequestException && $e->response->serverError());
+                }, throw: false)
                 ->connectTimeout(10)
                 ->timeout(25)
                 ->post(config('services.paystack.payment_url').'/transaction/initialize', $paystack);

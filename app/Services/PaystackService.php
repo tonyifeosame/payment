@@ -299,7 +299,26 @@ class PaystackService
             return ['outcome' => 'rejected', 'message' => 'Paystack secret key is not configured', 'data' => null, 'response' => null];
         }
 
-        $recipient = $school->paystack_recipient_code ?: $this->ensureRecipientForSchool($school);
+        // L11: recipient creation uses the retrying client(), which re-throws once
+        // its attempts are exhausted. That exception used to escape initiateTransfer
+        // entirely — past the try below, which only wraps the /transfer POST — and
+        // out of InitiateSchoolPayout::handle(), AFTER the payout had been claimed.
+        // The job failed, the payout sat in `initiating`, and only H1's hourly
+        // lookup eventually released it.
+        //
+        // `rejected` is the correct classification, not `unknown`: POST
+        // /transferrecipient creates a payout destination, it does not move money.
+        // Whatever happened to it, NO transfer was issued — the /transfer call
+        // below is not reached — so the claim can be released immediately and the
+        // payout is retryable by the existing operator tooling.
+        try {
+            $recipient = $school->paystack_recipient_code ?: $this->ensureRecipientForSchool($school);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return ['outcome' => 'rejected', 'message' => 'Could not reach Paystack to set up the payout recipient', 'data' => null, 'response' => null];
+        }
+
         if (! $recipient) {
             return ['outcome' => 'rejected', 'message' => 'Recipient not available', 'data' => null, 'response' => null];
         }
