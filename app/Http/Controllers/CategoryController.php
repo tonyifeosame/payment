@@ -4,7 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Models\Category;
 use App\Models\School;
+use App\Models\SchoolAuditEvent;
+use App\Support\RecordsSchoolAudit;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class CategoryController extends Controller
 {
@@ -74,11 +77,21 @@ class CategoryController extends Controller
             ->with('success', 'Category updated successfully!');
     }
 
-    public function destroySchool(School $school, Category $category)
+    public function destroySchool(Request $request, School $school, Category $category, RecordsSchoolAudit $audit)
     {
         $this->assertBelongsToSchool($school, $category);
 
-        $category->delete();
+        // Destructive and irreversible, so the audit event is the only remaining
+        // record of what was removed (M7, Tier 2).
+        DB::transaction(function () use ($category, $school, $audit, $request) {
+            $name = $category->name;
+
+            $category->delete();
+
+            $audit->record($school, SchoolAuditEvent::ACTION_CATEGORY_DELETED, 'category', $category->id, [
+                'name' => ['from' => $name, 'to' => null],
+            ], request: $request);
+        });
 
         return redirect()->route('school.categories.index', ['school' => $school->slug])
             ->with('success', 'Category deleted successfully.');

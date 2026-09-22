@@ -5,6 +5,8 @@ namespace App\Services;
 use App\Models\AcademicSession;
 use App\Models\AcademicTerm;
 use App\Models\School;
+use App\Models\SchoolAuditEvent;
+use App\Support\RecordsSchoolAudit;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -12,6 +14,8 @@ use Illuminate\Support\Facades\DB;
  */
 class AcademicPeriodService
 {
+    public function __construct(private RecordsSchoolAudit $audit) {}
+
     /**
      * Create a session and its three terms in one transaction. The first session a
      * school creates also becomes its current term (First Term), so the dashboard
@@ -55,7 +59,22 @@ class AcademicPeriodService
             abort(404);
         }
 
-        $school->forceFill(['current_academic_term_id' => $term->id])->save();
+        $previous = $school->current_academic_term_id;
+
+        if ((int) $previous === (int) $term->id) {
+            return; // already current: nothing changed, nothing to audit
+        }
+
+        // The current term decides which fees a parent is offered and what a
+        // payment is attributed to, so the change and its audit row commit
+        // together (M7).
+        DB::transaction(function () use ($school, $term, $previous) {
+            $school->forceFill(['current_academic_term_id' => $term->id])->save();
+
+            $this->audit->record($school, SchoolAuditEvent::ACTION_TERM_CHANGED, 'academic_term', $term->id, [
+                'current_academic_term_id' => ['from' => $previous, 'to' => $term->id],
+            ]);
+        });
     }
 
     /**

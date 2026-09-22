@@ -5,9 +5,12 @@ namespace App\Http\Controllers;
 use App\Models\AcademicTerm;
 use App\Models\Category;
 use App\Models\School;
+use App\Models\SchoolAuditEvent;
 use App\Models\Subcategory;
 use App\Services\AcademicPeriodService;
+use App\Support\RecordsSchoolAudit;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class SubcategoryController extends Controller
 {
@@ -90,20 +93,30 @@ class SubcategoryController extends Controller
     /**
      * Tenant-aware store for a given school.
      */
-    public function storeSchool(Request $request, School $school)
+    public function storeSchool(Request $request, School $school, RecordsSchoolAudit $audit)
     {
         $data = $this->validated($request);
 
         $category = $this->resolveOwnedCategory($school, $data['category_id']);
         $term = $this->resolveOwnedTerm($school, $data['academic_term_id'] ?? null);
 
-        Subcategory::create([
-            'category_id' => $category->id,
-            'name' => $data['name'],
-            'price' => $data['price'] ?? null,
-            'school_id' => $school->id,
-            'academic_term_id' => $term?->id,
-        ]);
+        // Fee row and audit row commit together (M7): the price is what parents
+        // are charged, so a change to it must never be recorded without the change
+        // itself, or the change happen without a record.
+        DB::transaction(function () use ($school, $category, $term, $data, $audit, $request) {
+            $fee = Subcategory::create([
+                'category_id' => $category->id,
+                'name' => $data['name'],
+                'price' => $data['price'] ?? null,
+                'school_id' => $school->id,
+                'academic_term_id' => $term?->id,
+            ]);
+
+            $audit->record($school, SchoolAuditEvent::ACTION_FEE_CREATED, 'subcategory', $fee->id, [
+                'name' => ['from' => null, 'to' => $fee->name],
+                'price' => ['from' => null, 'to' => $fee->price],
+            ], request: $request);
+        });
 
         return redirect()->route('school.subcategories.index', ['school' => $school->slug])
             ->with('success', 'Subcategory created successfully.');
@@ -119,7 +132,7 @@ class SubcategoryController extends Controller
         return view('subcategories.edit', compact('school', 'subcategory', 'categories', 'terms'));
     }
 
-    public function updateSchool(Request $request, School $school, Subcategory $subcategory)
+    public function updateSchool(Request $request, School $school, Subcategory $subcategory, RecordsSchoolAudit $audit)
     {
         $this->assertBelongsToSchool($school, $subcategory);
 
@@ -128,22 +141,55 @@ class SubcategoryController extends Controller
         $category = $this->resolveOwnedCategory($school, $data['category_id']);
         $term = $this->resolveOwnedTerm($school, $data['academic_term_id'] ?? null);
 
-        $subcategory->update([
-            'category_id' => $category->id,
-            'name' => $data['name'],
-            'price' => $data['price'] ?? null,
-            'academic_term_id' => $term?->id,
-        ]);
+        $before = [
+            'name' => $subcategory->name,
+            'price' => $subcategory->price,
+            'category_id' => $subcategory->category_id,
+            'academic_term_id' => $subcategory->academic_term_id,
+        ];
+
+        DB::transaction(function () use ($subcategory, $school, $category, $term, $data, $before, $audit, $request) {
+            $subcategory->update([
+                'category_id' => $category->id,
+                'name' => $data['name'],
+                'price' => $data['price'] ?? null,
+                'academic_term_id' => $term?->id,
+            ]);
+
+            // Only the fields that actually moved (M7) — an unchanged price is not
+            // a price change, even when the form resubmits it.
+            $changes = $audit->diff($before, [
+                'name' => $subcategory->name,
+                'price' => $subcategory->price,
+                'category_id' => $subcategory->category_id,
+                'academic_term_id' => $subcategory->academic_term_id,
+            ], ['name', 'price', 'category_id', 'academic_term_id']);
+
+            if ($changes !== []) {
+                $audit->record($school, SchoolAuditEvent::ACTION_FEE_UPDATED, 'subcategory', $subcategory->id, $changes, request: $request);
+            }
+        });
 
         return redirect()->route('school.subcategories.index', ['school' => $school->slug])
             ->with('success', 'Subcategory updated successfully.');
     }
 
-    public function destroySchool(School $school, Subcategory $subcategory)
+    public function destroySchool(Request $request, School $school, Subcategory $subcategory, RecordsSchoolAudit $audit)
     {
         $this->assertBelongsToSchool($school, $subcategory);
 
-        $subcategory->delete();
+        // The deleted row leaves nothing behind, so the audit event IS the record
+        // of what the fee was (M7, Tier 2).
+        DB::transaction(function () use ($subcategory, $school, $audit, $request) {
+            $deleted = [
+                'name' => ['from' => $subcategory->name, 'to' => null],
+                'price' => ['from' => $subcategory->price, 'to' => null],
+            ];
+
+            $subcategory->delete();
+
+            $audit->record($school, SchoolAuditEvent::ACTION_FEE_DELETED, 'subcategory', $subcategory->id, $deleted, request: $request);
+        });
 
         return redirect()->route('school.subcategories.index', ['school' => $school->slug])
             ->with('success', 'Subcategory deleted successfully.');

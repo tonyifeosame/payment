@@ -3,10 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Models\School;
+use App\Models\SchoolAuditEvent;
 use App\Models\SchoolLogo;
 use App\Services\SchoolBankDetailsService;
+use App\Support\RecordsSchoolAudit;
 use App\Support\SchoolSession;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 
@@ -21,7 +24,7 @@ class SchoolSettingsController extends Controller
         return view('settings.edit', ['school' => $school]);
     }
 
-    public function update(Request $request, School $school)
+    public function update(Request $request, School $school, RecordsSchoolAudit $audit)
     {
         $data = $request->validate([
             // Login is by school name, so a duplicate would make one school
@@ -49,6 +52,12 @@ class SchoolSettingsController extends Controller
             'logo' => ['nullable', 'file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:1024'],
             'remove_logo' => ['nullable', 'boolean'],
         ]);
+
+        // M7 audits the identity fields only: the name is the login identifier and
+        // the email is the password-reset identifier, so a change to either moves
+        // how this school is reached. Phone, address and receipt footer are
+        // presentation and are deliberately not recorded.
+        $identityBefore = ['name' => $school->name, 'email' => $school->email];
 
         $school->fill([
             'name' => $data['name'],
@@ -80,7 +89,19 @@ class SchoolSettingsController extends Controller
             $school->updated_at = $school->freshTimestamp();
         }
 
-        $school->save();
+        // Only the save and its audit row are transactional (M7). The logo writes
+        // above keep exactly the persistence behaviour they had — making them
+        // atomic with the profile would be a change to logo handling, which this
+        // finding has no business making.
+        $identityChanges = $audit->diff($identityBefore, ['name' => $school->name, 'email' => $school->email], ['name', 'email']);
+
+        DB::transaction(function () use ($school, $identityChanges, $audit, $request) {
+            $school->save();
+
+            if ($identityChanges !== []) {
+                $audit->record($school, SchoolAuditEvent::ACTION_PROFILE_CHANGED, 'school', $school->id, $identityChanges, request: $request);
+            }
+        });
 
         return redirect()->route('school.settings.edit', ['school' => $school->slug])
             ->with('success', 'School settings saved.');
@@ -112,7 +133,7 @@ class SchoolSettingsController extends Controller
      * and NO input is flashed, so no password ever round-trips through the session
      * or back into the page. The session is kept: this is a change, not a reset.
      */
-    public function updatePassword(Request $request, School $school)
+    public function updatePassword(Request $request, School $school, RecordsSchoolAudit $audit)
     {
         $validator = Validator::make($request->only(['current_password', 'password', 'password_confirmation']), [
             'current_password' => [
@@ -134,7 +155,14 @@ class SchoolSettingsController extends Controller
                 ->withFragment('security');
         }
 
-        $school->forceFill(['admin_password' => Hash::make($validator->validated()['password'])])->save();
+        // The new hash and its audit row commit together (M7). The event records
+        // THAT the password changed and nothing about it — no hash, no old or new
+        // value, not even a length. `changes` is null for exactly that reason.
+        DB::transaction(function () use ($school, $validator, $audit, $request) {
+            $school->forceFill(['admin_password' => Hash::make($validator->validated()['password'])])->save();
+
+            $audit->record($school, SchoolAuditEvent::ACTION_PASSWORD_CHANGED, 'school', $school->id, null, request: $request);
+        });
 
         // This session stays signed in under the new password (new session id, new
         // fingerprint); every other session for this school is revoked on its next

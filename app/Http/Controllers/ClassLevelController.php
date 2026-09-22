@@ -4,7 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Models\ClassLevel;
 use App\Models\School;
+use App\Models\SchoolAuditEvent;
 use App\Models\Student;
+use App\Support\RecordsSchoolAudit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -114,7 +116,7 @@ class ClassLevelController extends Controller
     }
 
     /** Only a class no student has ever been in may be deleted; otherwise deactivate it. */
-    public function destroy(School $school, ClassLevel $classLevel)
+    public function destroy(Request $request, School $school, ClassLevel $classLevel, RecordsSchoolAudit $audit)
     {
         $this->assertOwn($school, $classLevel);
 
@@ -122,13 +124,21 @@ class ClassLevelController extends Controller
             return $this->back($school, null, 'Students are in "'.$classLevel->name.'". Move them first, or deactivate the class instead.');
         }
 
-        DB::transaction(function () use ($school, $classLevel) {
+        // Reuses the transaction this method already had (M7): the audit row joins
+        // the existing boundary rather than opening a nested one.
+        DB::transaction(function () use ($school, $classLevel, $audit, $request) {
+            $name = $classLevel->name;
+
             $classLevel->delete();
             foreach ($school->classLevels()->get()->values() as $i => $level) {
                 if ($level->position !== $i + 1) {
                     $level->update(['position' => $i + 1]);
                 }
             }
+
+            $audit->record($school, SchoolAuditEvent::ACTION_CLASS_LEVEL_DELETED, 'class_level', $classLevel->id, [
+                'name' => ['from' => $name, 'to' => null],
+            ], request: $request);
         });
 
         return $this->back($school, 'Class "'.$classLevel->name.'" removed.');

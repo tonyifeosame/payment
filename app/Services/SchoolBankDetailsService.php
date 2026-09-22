@@ -4,8 +4,10 @@ namespace App\Services;
 
 use App\Mail\SchoolBankDetailsChangedMail;
 use App\Models\School;
+use App\Models\SchoolAuditEvent;
+use App\Support\RecordsSchoolAudit;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\ValidationException;
 
@@ -21,14 +23,18 @@ use Illuminate\Validation\ValidationException;
  *      account name is what we store — never a name typed into the form;
  *   3. the stored Paystack recipient code is cleared, so the next payout has to
  *      create a recipient for the NEW account. Nothing can keep paying the old one;
- *   4. the change is logged and the school's email is notified.
+ *   4. the change is written to the school audit trail (M7) in the same
+ *      transaction as the save, and the school's email is notified.
  *
  * Payouts already handed to Paystack (`initiating`/`processing`) are unaffected:
  * they carry the recipient they were sent with.
  */
 class SchoolBankDetailsService
 {
-    public function __construct(private PaystackService $paystack) {}
+    public function __construct(
+        private PaystackService $paystack,
+        private RecordsSchoolAudit $audit,
+    ) {}
 
     /**
      * @param  array{bank:string, bank_code:string, account_number:string, current_password:string}  $input
@@ -52,20 +58,37 @@ class SchoolBankDetailsService
             'account_name' => $school->account_name,
         ];
 
-        $school->forceFill([
-            'bank' => $input['bank'],
-            'bank_code' => $input['bank_code'],
-            'account_number' => $resolve['account_number'] ?? $input['account_number'],
-            'account_name' => $resolve['account_name'],
-            'paystack_recipient_code' => null,
-        ])->save();
+        // The save and its audit row commit together (M7). Paystack's lookup above
+        // and the notice below stay OUTSIDE: holding a transaction open across a
+        // network call would put the ledger's locks behind someone else's latency.
+        DB::transaction(function () use ($school, $input, $resolve, $previous) {
+            $school->forceFill([
+                'bank' => $input['bank'],
+                'bank_code' => $input['bank_code'],
+                'account_number' => $resolve['account_number'] ?? $input['account_number'],
+                'account_name' => $resolve['account_name'],
+                'paystack_recipient_code' => null,
+            ])->save();
 
-        Log::warning('School payout bank account changed', [
-            'school_id' => $school->id,
-            'previous_account_last4' => substr((string) $previous['account_number'], -4),
-            'new_account_last4' => substr((string) $school->account_number, -4),
-            'new_bank' => $school->bank,
-        ]);
+            // Replaces the Log::warning this method used to write: same facts, in a
+            // durable queryable row instead of a stderr line with no retention.
+            // Last four digits only — never the full number, never the recipient
+            // code, which the change has just cleared anyway.
+            $this->audit->record(
+                $school,
+                SchoolAuditEvent::ACTION_BANK_CHANGED,
+                'school',
+                $school->id,
+                [
+                    'bank' => ['from' => $previous['bank'], 'to' => $school->bank],
+                    'account_last4' => [
+                        'from' => $this->audit->lastFour($previous['account_number']),
+                        'to' => $this->audit->lastFour($school->account_number),
+                    ],
+                    'account_name' => ['from' => $previous['account_name'], 'to' => $school->account_name],
+                ]
+            );
+        });
 
         if (! empty($school->email)) {
             try {
