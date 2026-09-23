@@ -55,7 +55,7 @@ trait InteractsWithSchools
         return app(AcademicPeriodService::class)->createSession($school, $name);
     }
 
-    protected function makeFee(School $school, string $categoryName, string $feeName, float $price, ?int $termId = null): Subcategory
+    protected function makeFee(School $school, string $categoryName, string $feeName, float $price, ?int $termId = null, bool $allowsQuantity = false): Subcategory
     {
         $category = Category::firstOrCreate(['school_id' => $school->id, 'name' => $categoryName]);
 
@@ -65,6 +65,7 @@ trait InteractsWithSchools
             'name' => $feeName,
             'price' => $price,
             'academic_term_id' => $termId,
+            'allows_quantity' => $allowsQuantity,
         ]);
     }
 

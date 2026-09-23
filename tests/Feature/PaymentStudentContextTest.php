@@ -53,7 +53,7 @@ class PaymentStudentContextTest extends TestCase
         $this->alphaFirstTerm = $alphaSession->terms()->where('number', 1)->firstOrFail();
         $this->alphaSecondTerm = $alphaSession->terms()->where('number', 2)->firstOrFail();
         $this->alphaTermFee = $this->makeFee($this->alpha, 'School Fees', 'JSS 1 Tuition', 50000, $this->alphaFirstTerm->id);
-        $this->alphaGeneralFee = $this->makeFee($this->alpha, 'Uniform', 'Shirt', 3000, null);
+        $this->alphaGeneralFee = $this->makeFee($this->alpha, 'Uniform', 'Shirt', 3000, null, allowsQuantity: true);
         $this->alphaStudent = $this->makeStudent($this->alpha, 'A/2026/001', 'Adaeze Okonkwo', 'JSS 1');
 
         $this->betaTerm = $this->makeSessionWithTerms($this->beta, '2026/2027')->terms()->firstOrFail();
@@ -239,11 +239,18 @@ class PaymentStudentContextTest extends TestCase
         $this->assertSame('JSS 1', $t->student_class);
     }
 
-    public function test_school_fees_quantity_is_forced_to_one(): void
+    public function test_a_single_charge_fee_refuses_a_quantity_instead_of_rewriting_it(): void
     {
-        $this->pay(['quantity' => 5])->assertRedirect();
+        // L1: previously the quantity was silently rewritten to 1 because the
+        // category was named "School Fees". Now the fee's own setting decides, and
+        // a quantity the fee does not allow is refused, never quietly changed.
+        $this->from('/s/alpha/payment')
+            ->pay(['quantity' => 5])
+            ->assertRedirect('/s/alpha/payment')
+            ->assertSessionHasErrors('quantity');
 
-        $this->assertEquals(51250.00, (float) Transaction::firstOrFail()->amount);
+        $this->assertDatabaseCount('transactions', 0);
+        Http::assertNothingSent();
     }
 
     public function test_a_general_fee_is_payable_in_any_term(): void

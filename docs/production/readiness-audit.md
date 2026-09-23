@@ -23,13 +23,13 @@ Every commit referenced is on `feature/website-redesign`, branched from
 
 ## Status at a glance
 
-| Severity | Closed | Deferred | Total |
-|---|---|---|---|
-| Blocker | B1, B2 | — | 2 |
-| High | H1, H3, H4, H5, H6 | H2 | 6 |
-| Medium | M1–M7 | — | 7 |
-| Low | L2, L3, L4, L5, L6, L9, L10, L11 | L1, L7, L8 | 11 |
-| **Total** | **22** | **4** | **26** |
+| Severity | Closed | In progress | Deferred | Total |
+|---|---|---|---|---|
+| Blocker | B1, B2 | — | — | 2 |
+| High | H1, H3, H4, H5, H6 | — | H2 | 6 |
+| Medium | M1–M7 | — | — | 7 |
+| Low | L2, L3, L4, L5, L6, L9, L10, L11 | L1 | L7, L8 | 11 |
+| **Total** | **22** | **1** | **3** | **26** |
 
 Plus one new finding (empty slug), outside the original 26 — see the last
 section.
@@ -350,19 +350,44 @@ Multiple admin identities remain an open product decision.
 
 ### L1 — Quantity forced to 1 only when the category name contains "school fee"
 
-**Severity:** Low · **Status:** **DEFERRED**
+**Severity:** Low · **Status:** **IN PROGRESS** — implemented and tested, not yet committed
 
 `PaymentCheckoutService` forces `quantity = 1` by matching the string
 `"school fee"` against the category's **name**, which an admin can edit freely. A
 category called "Tuition" or "Fees" therefore accepts a quantity up to 100.
 
-**Why deferred.** The rule is a magic-string match on user-editable data, but
-changing it changes *what parents are allowed to pay*. A proper fix means an
-explicit per-fee or per-category flag — a data-model change with a migration and
-a product decision about which fees are quantifiable. That is not a defect fix.
+**Decision.** Quantity is an explicit per-fee setting,
+`subcategories.allows_quantity` (boolean, NOT NULL, default `false`), set by the
+school on the fee form ("Allow multiple units") and recorded in the audit trail
+with the fee's other fields.
 
-**Still required:** a product and data-model decision, then a scoped change. Do
-not adjust the current behaviour piecemeal.
+**Change.**
+
+- *Migration and backfill.* Existing **general** fees (`academic_term_id IS
+  NULL`) whose category name does not contain "school fee" are set to `true`,
+  which keeps today's behaviour for uniforms and books. Term fees stay `false`
+  whatever their category is called, because a term fee is charged once per
+  student per term and a payment is recorded against exactly one student. The
+  migration is the only remaining use of the name rule. Transactions, prices and
+  the markup are untouched, and it names no production fee ids.
+- *Checkout.* A quantity other than 1 on a fee with `allows_quantity = false` is
+  refused with a validation error on `quantity`. It is no longer silently
+  rewritten to 1. The 1–100 range is unchanged.
+- *Payment page.* Each fee carries `allows_quantity`; the page shows the quantity
+  input (`min=1`, `max=100`) only for fees that allow it. The category-name check
+  is gone from the JavaScript.
+
+**Known behaviour changes.** A term fee in a category not named "school fee" (for
+example "Tuition") no longer accepts a quantity above 1. A school that wants
+multiple units on such a fee must tick the setting. Renaming a category no longer
+changes what parents can pay.
+
+**Not done.** Production data was not inspected, so which existing fees change
+behaviour is unknown. The read-only queries prepared during the investigation
+(Q0–Q7, kept outside the repository) answer that and should be run before
+deployment if possible.
+
+**Still required:** review, commit and push; then deployment with the migration.
 
 ---
 
@@ -626,10 +651,14 @@ are **not** code changes:
 **22 of the 26 original findings are closed.** All blockers, five of six high,
 all seven medium, and eight of eleven low.
 
-**Four are deferred, each by decision rather than omission:**
+**One is in progress:**
+
+- **L1** — the quantity rule. Now a per-fee `allows_quantity` setting;
+  implemented and tested, awaiting review and commit.
+
+**Three are deferred, each by decision rather than omission:**
 
 - **H2** — fee economics. The 2.5% configuration stays as it is.
-- **L1** — the quantity rule, pending a product and data-model decision.
 - **L7** — per-IP throttles, pending traffic data and a security/product call.
 - **L8** — public student-search disclosure, pending a privacy/product decision.
 

@@ -67,13 +67,20 @@ class PaymentCheckoutService
             ]);
         }
 
-        $student = $this->resolveStudent($school, $input);
-
-        // Enforce quantity for school fees
+        // L1: whether a fee may be bought in multiples is the fee's own setting,
+        // not something inferred from its category's name. A single-charge fee
+        // refuses any other quantity outright; the page never offers one, so this
+        // is tampering or a page loaded before the school changed the setting, and
+        // either way the payer must see the amount they are charged. The 1–100
+        // range itself is checked by the controller.
         $quantity = (int) $input['quantity'];
-        if (str_contains(strtolower($category->name), 'school fee')) {
-            $quantity = 1;
+        if ($quantity !== 1 && ! $subcategory->allows_quantity) {
+            throw ValidationException::withMessages([
+                'quantity' => 'This fee is a single charge, so the quantity must be 1.',
+            ]);
         }
+
+        $student = $this->resolveStudent($school, $input);
 
         $baseAmount = round((float) $subcategory->price * $quantity, 2);
         $markupPercent = (float) config('fees.markup_percent', 2.5);

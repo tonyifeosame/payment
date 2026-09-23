@@ -55,6 +55,7 @@ class SubcategoryController extends Controller
             'name' => 'required|string|max:255',
             'price' => 'nullable|numeric|min:0',
             'academic_term_id' => 'nullable|integer',
+            'allows_quantity' => 'nullable|boolean',
         ]);
     }
 
@@ -110,11 +111,13 @@ class SubcategoryController extends Controller
                 'price' => $data['price'] ?? null,
                 'school_id' => $school->id,
                 'academic_term_id' => $term?->id,
+                'allows_quantity' => (bool) ($data['allows_quantity'] ?? false),
             ]);
 
             $audit->record($school, SchoolAuditEvent::ACTION_FEE_CREATED, 'subcategory', $fee->id, [
                 'name' => ['from' => null, 'to' => $fee->name],
                 'price' => ['from' => null, 'to' => $fee->price],
+                'allows_quantity' => ['from' => null, 'to' => $fee->allows_quantity],
             ], request: $request);
         });
 
@@ -146,6 +149,7 @@ class SubcategoryController extends Controller
             'price' => $subcategory->price,
             'category_id' => $subcategory->category_id,
             'academic_term_id' => $subcategory->academic_term_id,
+            'allows_quantity' => $subcategory->allows_quantity,
         ];
 
         DB::transaction(function () use ($subcategory, $school, $category, $term, $data, $before, $audit, $request) {
@@ -154,6 +158,7 @@ class SubcategoryController extends Controller
                 'name' => $data['name'],
                 'price' => $data['price'] ?? null,
                 'academic_term_id' => $term?->id,
+                'allows_quantity' => (bool) ($data['allows_quantity'] ?? false),
             ]);
 
             // Only the fields that actually moved (M7) — an unchanged price is not
@@ -163,7 +168,8 @@ class SubcategoryController extends Controller
                 'price' => $subcategory->price,
                 'category_id' => $subcategory->category_id,
                 'academic_term_id' => $subcategory->academic_term_id,
-            ], ['name', 'price', 'category_id', 'academic_term_id']);
+                'allows_quantity' => $subcategory->allows_quantity,
+            ], ['name', 'price', 'category_id', 'academic_term_id', 'allows_quantity']);
 
             if ($changes !== []) {
                 $audit->record($school, SchoolAuditEvent::ACTION_FEE_UPDATED, 'subcategory', $subcategory->id, $changes, request: $request);
@@ -184,6 +190,7 @@ class SubcategoryController extends Controller
             $deleted = [
                 'name' => ['from' => $subcategory->name, 'to' => null],
                 'price' => ['from' => $subcategory->price, 'to' => null],
+                'allows_quantity' => ['from' => $subcategory->allows_quantity, 'to' => null],
             ];
 
             $subcategory->delete();

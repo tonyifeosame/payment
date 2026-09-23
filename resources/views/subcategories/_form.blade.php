@@ -4,6 +4,9 @@
 @php
     $termsBySession = $terms->groupBy(fn ($term) => $term->session->name);
     $selectedTerm = (string) old('academic_term_id', $subcategory?->academic_term_id);
+    // An unticked checkbox is absent from old input, so after a failed submit its
+    // absence means "unticked", not "fall back to the saved value".
+    $allowsQuantity = session()->hasOldInput() ? (bool) old('allows_quantity') : (bool) ($subcategory?->allows_quantity ?? false);
 @endphp
 <div class="space-y-5">
     <div>
@@ -39,6 +42,15 @@
         </div>
         <p id="price-help" class="field-help">In naira. This is the fee amount due to your school for one unit.</p>
         @error('price')<p id="price-error" class="field-error">{{ $message }}</p>@enderror
+    </div>
+
+    <div>
+        <label class="flex min-h-[48px] cursor-pointer items-center gap-3 text-sm">
+            <input type="checkbox" name="allows_quantity" id="allows_quantity" value="1" class="h-5 w-5 rounded border-brand-ash text-brand-violet focus:ring-4 focus:ring-brand-violet/30" aria-describedby="allows_quantity-help{{ $errors->has('allows_quantity') ? ' allows_quantity-error' : '' }}" @checked($allowsQuantity)>
+            <span class="font-semibold">Allow multiple units</span>
+        </label>
+        <p id="allows_quantity-help" class="field-help">Tick this for items a parent may buy more than one of, such as uniforms or books — they choose a quantity and pay the amount above for each. Leave it unticked for fees charged once, such as tuition.</p>
+        @error('allows_quantity')<p id="allows_quantity-error" class="field-error">{{ $message }}</p>@enderror
     </div>
 
     <div>

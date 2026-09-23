@@ -6,7 +6,12 @@ use Illuminate\Database\Eloquent\Model;
 
 class Subcategory extends Model
 {
-    protected $fillable = ['category_id', 'name', 'price', 'school_id', 'academic_term_id'];
+    protected $fillable = ['category_id', 'name', 'price', 'school_id', 'academic_term_id', 'allows_quantity'];
+
+    /** A new fee is a single charge until the school allows multiple units (L1). */
+    protected $attributes = ['allows_quantity' => false];
+
+    protected $casts = ['allows_quantity' => 'boolean'];
 
     /**
      * The term this fee is charged for, or null for a general fee (uniform, books)

@@ -43,6 +43,9 @@
                     @else
                         <span class="whitespace-nowrap font-display text-base font-bold tabular-nums">{{ $money($sub->price) }}</span>
                     @endif
+                    @if($sub->allows_quantity)
+                        <span class="block text-xs text-brand-slate">Per unit · multiple allowed</span>
+                    @endif
                 </div>
             </td>
             <td class="td" data-label="Session">

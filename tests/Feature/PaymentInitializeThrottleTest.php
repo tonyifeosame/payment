@@ -45,7 +45,9 @@ class PaymentInitializeThrottleTest extends TestCase
         config(['services.paystack.secret_key' => 'sk_test_secret']);
 
         $this->alpha = $this->makeSchool('Alpha School', 'alpha');
-        $this->fee = $this->makeFee($this->alpha, 'School Fees', 'Tuition', 50000);
+        // Allows multiple units so the submitted quantity (2) is a real, non-default
+        // value the throttled response must carry back as old input.
+        $this->fee = $this->makeFee($this->alpha, 'School Fees', 'Tuition', 50000, allowsQuantity: true);
 
         Http::fake(['*/transaction/initialize' => Http::response([
             'status' => true, 'data' => ['authorization_url' => self::CHECKOUT_URL],

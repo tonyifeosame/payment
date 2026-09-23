@@ -46,6 +46,7 @@
     const sStudent = document.getElementById('summaryStudent');
     const studentSearchUrl = {!! json_encode(route(request()->routeIs('public.payment') ? 'public.payment.student-search' : 'school.payment.student-search', ['school' => $school->slug])) !!};
     const studentSearchLimit = {{ \App\Http\Controllers\PaymentController::STUDENT_SEARCH_LIMIT }};
+    const maxQuantity = {{ \App\Http\Controllers\PaymentController::MAX_QUANTITY }};
 
     function selectedTermId() { return termSelect && termSelect.value ? Number(termSelect.value) : null; }
 
@@ -281,10 +282,8 @@
         const selectedOption = subSelect.options[subSelect.selectedIndex];
         const price = Number(selectedOption?.getAttribute('data-price')) || 0;
 
-        // Enforce single quantity for School Fees
-        const catNameText = (selectedCatOption ? selectedCatOption.textContent : '').toLowerCase();
-        const isSchoolFees = catNameText.includes('school fee');
-        if (isSchoolFees) { qtyInput.value = 1; }
+        // A single-charge fee is always 1 unit; the fee itself says which it is (L1).
+        if (!selectedAllowsQuantity()) { qtyInput.value = 1; }
         const qty = Math.max(1, Number(qtyInput.value) || 1);
         const base = price * qty;
         const markupPercent = Number({{ isset($markupPercent) ? $markupPercent : 0 }});
@@ -313,7 +312,9 @@
         // Basic inline validation
         catError.textContent = !catSelect.value ? 'Please select a category' : '';
         subError.textContent = !subSelect.value ? 'Please select a fee type' : '';
-        qtyError.textContent = (Number(qtyInput.value) || 0) < 1 ? 'Quantity must be at least 1' : '';
+        const typedQty = Number(qtyInput.value) || 0;
+        qtyError.textContent = typedQty < 1 ? 'Quantity must be at least 1'
+            : (typedQty > maxQuantity ? 'Quantity cannot be more than ' + maxQuantity : '');
         toggleQuantityVisibility();
     }
 
@@ -343,6 +344,7 @@
             opt.textContent = `${sub.name} (₦${Number(sub.price || 0).toLocaleString()})`;
             opt.setAttribute('data-price', Number(sub.price || 0));
             opt.setAttribute('data-subname', sub.name);
+            opt.setAttribute('data-allows-quantity', sub.allows_quantity ? '1' : '0');
             subSelect.appendChild(opt);
         });
         subSelect.disabled = false;
@@ -356,13 +358,18 @@
         updateTotal();
     }
 
+    /** Whether the selected fee may be bought in multiples. No fee selected counts as no. */
+    function selectedAllowsQuantity() {
+        const selectedOption = subSelect.options[subSelect.selectedIndex];
+        return !!selectedOption && selectedOption.getAttribute('data-allows-quantity') === '1';
+    }
+
     function toggleQuantityVisibility() {
-        const selectedCatOption = catSelect.options[catSelect.selectedIndex];
-        const catNameText = (selectedCatOption ? selectedCatOption.textContent : '').toLowerCase();
-        const isSchoolFees = catNameText.includes('school fee');
+        const single = !selectedAllowsQuantity();
         // readOnly, not disabled: a disabled input is dropped from the POST and the
-        // server (rightly) requires quantity. It forces 1 for school fees anyway.
-        if (isSchoolFees) {
+        // server (rightly) requires quantity. It refuses anything but 1 for a
+        // single-charge fee anyway.
+        if (single) {
             qtyInput.value = 1;
             qtyInput.readOnly = true;
             qtyContainer.classList.add('hidden');
@@ -370,7 +377,7 @@
             qtyInput.readOnly = false;
             qtyContainer.classList.remove('hidden');
         }
-        if (sQtyRow) sQtyRow.classList.toggle('hidden', isSchoolFees);
+        if (sQtyRow) sQtyRow.classList.toggle('hidden', single);
     }
 
     // Initialize on load

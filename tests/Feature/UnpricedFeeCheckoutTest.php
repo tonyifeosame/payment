@@ -55,7 +55,7 @@ class UnpricedFeeCheckoutTest extends TestCase
         $this->school = $this->makeSchool('Alpha School', 'alpha');
 
         // One category holding a real fee alongside two drafts.
-        $this->priced = $this->makeFee($this->school, 'Uniform', 'Shirt', 3000);
+        $this->priced = $this->makeFee($this->school, 'Uniform', 'Shirt', 3000, allowsQuantity: true);
         $category = $this->priced->category;
         $this->unpriced = Subcategory::create([
             'school_id' => $this->school->id, 'category_id' => $category->id,

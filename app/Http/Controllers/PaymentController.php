@@ -22,6 +22,9 @@ class PaymentController extends Controller
     /** Suggestions per search: enough to disambiguate, not enough to list a roster. */
     public const STUDENT_SEARCH_LIMIT = 10;
 
+    /** Most units of one fee a single payment may buy, when the fee allows multiple units. */
+    public const MAX_QUANTITY = 100;
+
     /**
      * Admin entry point for the payment page.
      *
@@ -57,9 +60,10 @@ class PaymentController extends Controller
             ->where('school_id', $school->id)
             ->get();
 
-        // Only ids, names, prices and the fee's term reach the browser. The term id
-        // lets the page hide fees that are not payable in the chosen term; the
-        // server re-checks the same rule on submit.
+        // Only ids, names, prices, the fee's term and whether it allows multiple
+        // units reach the browser. The term id lets the page hide fees that are not
+        // payable in the chosen term, and allows_quantity whether to offer a
+        // quantity; the server re-checks both rules on submit.
         //
         // Fees with no amount set are left out entirely. They are valid drafts on
         // the admin side (the fee list shows them as "Not set"), but a parent must
@@ -78,6 +82,7 @@ class PaymentController extends Controller
                             'name' => $s->name,
                             'price' => (float) $s->price,
                             'term_id' => $s->academic_term_id,
+                            'allows_quantity' => (bool) $s->allows_quantity,
                         ];
                     })->values(),
             ];
@@ -160,7 +165,7 @@ class PaymentController extends Controller
             'name' => 'nullable|string|max:255',
             'subcategory_id' => 'required|integer',
             'category_id' => 'required|integer',
-            'quantity' => 'required|integer|min:1|max:100',
+            'quantity' => 'required|integer|min:1|max:'.self::MAX_QUANTITY,
             'student_id' => 'nullable|integer',
             'academic_session_id' => 'nullable|integer',
             'academic_term_id' => 'nullable|integer',

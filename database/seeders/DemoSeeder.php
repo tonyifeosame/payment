@@ -84,15 +84,16 @@ class DemoSeeder extends Seeder
             $school->forceFill(['current_academic_term_id' => $firstTerm->id])->save();
         }
 
-        // Term fees are tied to First Term; uniform is general (any term).
+        // Term fees are tied to First Term and charged once; uniform is general
+        // (any term) and may be bought in multiples (L1: allows_quantity).
         $fees = [
             'School Fees' => [
-                ['name' => 'Primary - First Term', 'price' => 50000, 'term' => $firstTerm->id],
-                ['name' => 'Secondary - First Term', 'price' => 80000, 'term' => $firstTerm->id],
+                ['name' => 'Primary - First Term', 'price' => 50000, 'term' => $firstTerm->id, 'units' => false],
+                ['name' => 'Secondary - First Term', 'price' => 80000, 'term' => $firstTerm->id, 'units' => false],
             ],
             'Uniform' => [
-                ['name' => 'Shirt', 'price' => 3000, 'term' => null],
-                ['name' => 'Trousers', 'price' => 4000, 'term' => null],
+                ['name' => 'Shirt', 'price' => 3000, 'term' => null, 'units' => true],
+                ['name' => 'Trousers', 'price' => 4000, 'term' => null, 'units' => true],
             ],
         ];
 
@@ -109,7 +110,7 @@ class DemoSeeder extends Seeder
                         'category_id' => $category->id,
                         'name' => $sub['name'],
                     ],
-                    ['price' => $sub['price'], 'academic_term_id' => $sub['term']]
+                    ['price' => $sub['price'], 'academic_term_id' => $sub['term'], 'allows_quantity' => $sub['units']]
                 );
             }
 

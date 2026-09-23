@@ -252,7 +252,7 @@
 
                         <div id="quantityContainer">
                             <label for="quantity" class="field-label">Quantity</label>
-                            <input type="number" name="quantity" id="quantity" value="{{ old('quantity', 1) }}" min="1" inputmode="numeric"
+                            <input type="number" name="quantity" id="quantity" value="{{ old('quantity', 1) }}" min="1" max="{{ \App\Http\Controllers\PaymentController::MAX_QUANTITY }}" inputmode="numeric"
                                    class="{{ $inputClass('quantity') }}" required
                                    @error('quantity') aria-invalid="true" @enderror
                                    @if($d = $describedBy('quantity')) aria-describedby="{{ $d }}" @endif>
