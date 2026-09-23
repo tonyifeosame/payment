@@ -23,16 +23,16 @@ Every commit referenced is on `feature/website-redesign`, branched from
 
 ## Status at a glance
 
-| Severity | Closed | In progress | Deferred | Total |
-|---|---|---|---|---|
-| Blocker | B1, B2 | — | — | 2 |
-| High | H1, H3, H4, H5, H6 | — | H2 | 6 |
-| Medium | M1–M7 | — | — | 7 |
-| Low | L2, L3, L4, L5, L6, L9, L10, L11 | L1 | L7, L8 | 11 |
-| **Total** | **22** | **1** | **3** | **26** |
+| Severity | Closed | Deferred | Total |
+|---|---|---|---|
+| Blocker | B1, B2 | — | 2 |
+| High | H1, H3, H4, H5, H6 | H2 | 6 |
+| Medium | M1–M7 | — | 7 |
+| Low | L1, L2, L3, L4, L5, L6, L8, L9, L10, L11 | L7 | 11 |
+| **Total** | **24** | **2** | **26** |
 
-Plus one new finding (empty slug), outside the original 26 — see the last
-section.
+Plus one new finding (N1, empty slug; closed), outside the original 26 — see
+the last section.
 
 ---
 
@@ -350,7 +350,7 @@ Multiple admin identities remain an open product decision.
 
 ### L1 — Quantity forced to 1 only when the category name contains "school fee"
 
-**Severity:** Low · **Status:** **IN PROGRESS** — implemented and tested, not yet committed
+**Severity:** Low · **Status:** **CLOSED** · **Commit:** `9595645`
 
 `PaymentCheckoutService` forces `quantity = 1` by matching the string
 `"school fee"` against the category's **name**, which an admin can edit freely. A
@@ -384,10 +384,11 @@ changes what parents can pay.
 
 **Not done.** Production data was not inspected, so which existing fees change
 behaviour is unknown. The read-only queries prepared during the investigation
-(Q0–Q7, kept outside the repository) answer that and should be run before
-deployment if possible.
+(Q0–Q7, kept outside the repository) answer that.
 
-**Still required:** review, commit and push; then deployment with the migration.
+**Still required:** deployment with migration
+`2026_09_26_000000_add_allows_quantity_to_subcategories_table`; optionally run
+the Q0–Q7 queries first to see which term fees stop accepting a quantity.
 
 ---
 
@@ -498,22 +499,49 @@ current throttles as part of unrelated work.
 ### L8 — Public student search discloses names, class and masked admission number
 
 **Severity:** Low as filed — **recommended reclassification: Medium (privacy)** ·
-**Status:** **DEFERRED**
+**Status:** **CLOSED** · **Commit:** `6fcc9b6`
 
 A two-character query returns up to ten students' full names, class and masked
 admission number — unauthenticated, per school, at 60/minute. The original audit
 called it "inherent to the design, but worth a privacy statement or tighter
 thresholds".
 
-**Why deferred.** This is children's personal data exposed without
-authentication and enumerable, which reads as a privacy matter rather than
-polish. But tightening the thresholds breaks the parent journey the entire
-payment page depends on — a parent needs to find their child quickly from a
-phone. **This is a privacy and product decision about disclosure**, possibly
-alongside a published privacy statement, not a code tweak.
+**Actual exposure (reproduced).** Wider than filed: an unescaped LIKE wildcard
+(`__`, `%%`) listed students without knowing any name; a sweep of two-letter
+queries enumerated a school's entire active roster; admission numbers matched on
+any fragment, so a masked number could be rebuilt one character at a time; and a
+failed payment submit echoed back the name, class and masked number of whatever
+`student_id` was posted, so the roster could be walked by id without searching.
 
-**Still required:** a product and privacy decision. Do not change the search
-thresholds or the returned fields as part of unrelated work.
+**Decision.** The parent must already know the student: the lookup requires the
+student's **full name and complete admission number**, and reveals nothing
+before both match.
+
+**What was done.**
+
+- The lookup returns a student only when the complete admission number (existing
+  normalisation) and the full name (ignoring case and runs of whitespace) belong
+  to the same **active** student of that school. No fuzzy or partial matching —
+  not a surname, not a fragment, not a wildcard.
+- Every failure — name only, partial number, wildcard, mismatch, inactive or
+  other-school student, malformed input — returns the identical
+  `{"student": null}`; the page shows one generic "not found" message.
+- On success the page shows name, class and masked admission number, as before.
+- The lookup is POST (same paths, route names and 60/minute throttle), so names
+  and admission numbers stay out of URLs and access logs.
+- After a failed submit, a student is re-selected only when the submitted name
+  and number re-verify to that same id; a bare `student_id` is never echoed back.
+
+Tenant isolation, the active-student check and checkout validation are
+unchanged.
+
+**Known behaviour change.** Parents can no longer browse by partial name; they
+need the admission number (which the share page already tells them) and the
+name exactly as the school recorded it, in the same word order. Accents are not
+folded.
+
+**Still required:** nothing in code. A published privacy statement, which the
+original audit suggested, remains a separate content decision.
 
 ---
 
@@ -603,7 +631,7 @@ Paystack. Harmless — recipients are destinations, not money.
 
 ### N1 — Symbol-only school names slugify to an empty string
 
-**Severity:** Medium · **Status:** **IN PROGRESS** — implemented and tested, not yet committed
+**Severity:** Medium · **Status:** **CLOSED** · **Commit:** `626a5ee`
 
 A school name with no sluggable characters — symbols such as `###`, emoji, or
 CJK such as `学校` — passes validation (`required|string|max:255` plus the
@@ -643,7 +671,13 @@ fallback slug instead.
 **Not done.** Production data was not inspected, so whether any school has an
 empty slug is unknown; the migration handles either case.
 
-**Still required:** review, commit and push; then deployment with the migration.
+**Still required:** deployment with migration
+`2026_09_27_000000_repair_empty_school_slugs`. To see beforehand whether it will
+change anything:
+
+```sql
+SELECT id, name, slug, created_at FROM schools WHERE slug = '';
+```
 
 ---
 
@@ -672,23 +706,16 @@ are **not** code changes:
 
 ## Summary
 
-**22 of the 26 original findings are closed.** All blockers, five of six high,
-all seven medium, and eight of eleven low.
+**24 of the 26 original findings are closed.** All blockers, five of six high,
+all seven medium, and ten of eleven low.
 
-**One is in progress:**
-
-- **L1** — the quantity rule. Now a per-fee `allows_quantity` setting;
-  implemented and tested, awaiting review and commit.
-
-**Three are deferred, each by decision rather than omission:**
+**Two are deferred, each by decision rather than omission:**
 
 - **H2** — fee economics. The 2.5% configuration stays as it is.
 - **L7** — per-IP throttles, pending traffic data and a security/product call.
-- **L8** — public student-search disclosure, pending a privacy/product decision.
 
 **One new finding (N1, empty slug) is tracked separately** and is not counted in
-the 26. It is in progress: implemented and tested with a fallback slug and a
-repair migration, awaiting review and commit.
+the 26. It is closed.
 
 **This does not make the product production-ready.** Closing an audit finding
 means the engineering work is done, reviewed, tested and pushed — nothing more.
@@ -696,6 +723,7 @@ Deployment still depends on the operational prerequisites above, on the H2
 pricing decision, and on the judgement that the deferred items are acceptable
 risks for launch. Several closed findings also left explicit follow-ups: M2's
 global resolve ceiling and bank-list caching, M4's provider-minimum decision,
-M5's Render alerting configuration, M7's retention and identity questions, and
-L9's pre-deployment query. Those are recorded per finding above and should be
+M5's Render alerting configuration, M7's retention and identity questions,
+L9's pre-deployment query, and the L1 and N1 migrations (with their optional
+pre-deployment queries). Those are recorded per finding above and should be
 read as part of the launch decision, not treated as already handled.
