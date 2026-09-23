@@ -603,23 +603,47 @@ Paystack. Harmless — recipients are destinations, not money.
 
 ### N1 — Symbol-only school names slugify to an empty string
 
-**Severity:** not yet assessed · **Status:** **NEW / NOT YET ASSESSED**
+**Severity:** Medium · **Status:** **IN PROGRESS** — implemented and tested, not yet committed
 
-A school name consisting only of symbols — for example `###` — passes validation
-(`required|string|max:255` plus the uniqueness rules) but `Str::slug()` reduces
-it to an empty string. The school is then created with an empty slug, producing
-malformed URLs such as `/admin//dashboard`.
+A school name with no sluggable characters — symbols such as `###`, emoji, or
+CJK such as `学校` — passes validation (`required|string|max:255` plus the
+uniqueness rules) but `Str::slug()` reduces it to an empty string, and
+`School::availableSlugFor()` returned that empty string as the slug.
+
+**Actual impact (reproduced).** Worse than malformed URLs: Laravel refuses to
+generate a route with an empty parameter, so no `/admin//dashboard` URL is ever
+produced. Registration saved the school and signed the admin in, then threw
+`UrlGenerationException` building the dashboard link — a 500, and no welcome
+email. From then on every login and the `/admin` entry point returned 500, no
+admin or public payment URL for the school could be generated or matched, and
+the name could not be registered again because the half-created row held it. A
+second such school received the slug `-1`, which works.
 
 **Discovered during** the L10 investigation, while centralising slug generation.
 It is **not** one of the original 26 findings and must not be counted as one.
 
-**Deliberately not fixed.** It was outside L10's scope, and slug generation and
-registration behaviour were left unchanged. Assessing it properly means deciding
-what a school with an unslugifiable name should get — a fallback slug, a
-validation rule rejecting such names, or something else — which is a product
-decision, not an obvious default.
+**Decision.** Such names stay valid (no name validation added); they get a
+fallback slug instead.
 
-**Still required:** assessment, then a scoped fix if warranted.
+**Change.**
+
+- `School::availableSlugFor()` uses `school` (`School::FALLBACK_SLUG`) as the
+  base when `Str::slug()` returns an empty string, then the existing `-1`, `-2`
+  loop: `###` becomes `school`, the next such school `school-1`. Every name that
+  already produced a slug gets the same slug as before; reserved-slug handling
+  is unchanged.
+- `School::slugIsUnavailable('')` is `true`, so an empty slug can never be
+  minted even by a future caller that bypasses the fallback.
+- Data migration `2026_09_27_000000_repair_empty_school_slugs` gives any school
+  stored with `slug = ''` the slug the same rules now produce. It touches only
+  empty slugs — never an existing non-empty slug, including `-1` / `-2` — and no
+  other column. Such a school had no URL that could ever have been generated or
+  shared, so re-slugging it breaks nothing. Irreversible by design.
+
+**Not done.** Production data was not inspected, so whether any school has an
+empty slug is unknown; the migration handles either case.
+
+**Still required:** review, commit and push; then deployment with the migration.
 
 ---
 
@@ -663,7 +687,8 @@ all seven medium, and eight of eleven low.
 - **L8** — public student-search disclosure, pending a privacy/product decision.
 
 **One new finding (N1, empty slug) is tracked separately** and is not counted in
-the 26.
+the 26. It is in progress: implemented and tested with a fallback slug and a
+repair migration, awaiting review and commit.
 
 **This does not make the product production-ready.** Closing an audit finding
 means the engineering work is done, reviewed, tested and pushed — nothing more.

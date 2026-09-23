@@ -75,15 +75,28 @@ class School extends Model implements CanResetPassword
     ];
 
     /**
+     * Base slug for a name that slugifies to nothing (N1): symbol-only ("###"),
+     * emoji or CJK names are valid school names, but Str::slug() reduces them to
+     * an empty string, and an empty route key makes every URL for the school
+     * impossible to generate.
+     */
+    public const FALLBACK_SLUG = 'school';
+
+    /**
      * The slug a school registering under this name should get.
      *
      * The one place a slug is minted. Keeps the long-standing behaviour — append
      * -1, -2, … until the slug is free — and treats a reserved segment as though
-     * it were already taken, so "Reset Password" becomes `reset-password-1`.
+     * it were already taken, so "Reset Password" becomes `reset-password-1`. A
+     * name with no sluggable characters starts from FALLBACK_SLUG instead, so
+     * "###" becomes `school`, then `school-1`, `school-2`.
      */
     public static function availableSlugFor(string $name): string
     {
         $base = Str::slug($name);
+        if ($base === '') {
+            $base = self::FALLBACK_SLUG;
+        }
         $slug = $base;
         $i = 1;
 
@@ -94,10 +107,11 @@ class School extends Model implements CanResetPassword
         return $slug;
     }
 
-    /** Taken by another school, or owned by the router. */
+    /** Taken by another school, owned by the router, or empty (never a usable route key). */
     public static function slugIsUnavailable(string $slug): bool
     {
-        return in_array($slug, self::RESERVED_SLUGS, true)
+        return $slug === ''
+            || in_array($slug, self::RESERVED_SLUGS, true)
             || self::where('slug', $slug)->exists();
     }
 
