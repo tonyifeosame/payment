@@ -28,8 +28,8 @@ Every commit referenced is on `feature/website-redesign`, branched from
 | Blocker | B1, B2 | — | 2 |
 | High | H1, H3, H4, H5, H6 | H2 | 6 |
 | Medium | M1–M7 | — | 7 |
-| Low | L1, L2, L3, L4, L5, L6, L8, L9, L10, L11 | L7 | 11 |
-| **Total** | **24** | **2** | **26** |
+| Low | L1–L11 | — | 11 |
+| **Total** | **25** | **1** | **26** |
 
 Plus one new finding (N1, empty slug; closed), outside the original 26 — see
 the last section.
@@ -478,21 +478,48 @@ its public link rather than a broken form.
 
 ### L7 — Per-IP throttles can lock out a shared connection
 
-**Severity:** Low · **Status:** **DEFERRED**
+**Severity:** Low · **Status:** **CLOSED** · **Commit:** `1c8cdde`
 
 Login, contact, bank change, password change and password-reset request are all
 `5/hour` per IP. A school office behind one NAT — or any user on Nigerian mobile
 CGNAT — shares that bucket with unrelated people. It bites hardest on
 `admin-login` and `password-reset-request`, which are the *recovery* paths.
 
-**Why deferred.** Raising the limits trades brute-force protection for
-convenience on exactly the endpoints that protect credentials. Choosing the
-number needs real traffic data on IP concentration, which is not available from
-the codebase. **This is a traffic, security and product decision together**, and
-should not be tuned by guesswork.
+**Actual defects (reproduced).** Beyond the shared bucket itself: the route
+throttles counted **every** request, so successful logins used up the budget;
+they keyed on IP alone, so one school's failures locked out another school on
+the same connection; and because a route throttle runs before
+`EnsureSchoolAdmin`, anonymous requests counted against a signed-in admin's bank
+and password forms.
 
-**Still required:** a decision informed by production traffic. Do not change the
-current throttles as part of unrelated work.
+**Decision.** Fix what is counted and what it is keyed on, keeping the existing
+numbers — which is what did not need traffic data. No limit was raised.
+
+**What was done.** The four route throttles were replaced by controller-level
+`RateLimiter` counters (`App\Support\CredentialThrottle`), all 5 per 60 minutes:
+
+- *Admin login* — failed logins only, keyed on the normalised school name +
+  client IP; a successful login clears the counter; unknown names are counted
+  like real ones. A locked attempt returns to the login form with a wait message
+  and the school name kept.
+- *Bank and password settings* — a wrong `current_password` only, keyed on the
+  signed-in school's id (separate counters); validation errors and Paystack
+  lookup failures do not count; success clears the counter.
+- *Forgot password* — every request, keyed on the normalised, hashed email,
+  whether or not it exists; neutral replies unchanged; still a 429 when refused.
+
+Names and emails are hashed in cache keys. Contact, registration, reset
+submission, bank lookup, payment initialisation and student lookup keep their
+existing throttles, and `trustProxies` is unchanged.
+
+**Not done.** No name-only or IP-only login cap was added. The production proxy
+layout could not be confirmed (the live Render service does not run this code),
+so whether `$request->ip()` is the real client there is unverified. Only the
+login counter uses the IP; if it resolves to a proxy address, that counter
+becomes per school name — never global.
+
+**Still required:** confirm how `X-Forwarded-For` reaches the container once a
+build is running on Render, before relying on the IP part of the login key.
 
 ---
 
@@ -706,13 +733,12 @@ are **not** code changes:
 
 ## Summary
 
-**24 of the 26 original findings are closed.** All blockers, five of six high,
-all seven medium, and ten of eleven low.
+**25 of the 26 original findings are closed.** All blockers, five of six high,
+all seven medium, and all eleven low.
 
-**Two are deferred, each by decision rather than omission:**
+**One is deferred, by decision rather than omission:**
 
 - **H2** — fee economics. The 2.5% configuration stays as it is.
-- **L7** — per-IP throttles, pending traffic data and a security/product call.
 
 **One new finding (N1, empty slug) is tracked separately** and is not counted in
 the 26. It is closed.
@@ -724,6 +750,6 @@ pricing decision, and on the judgement that the deferred items are acceptable
 risks for launch. Several closed findings also left explicit follow-ups: M2's
 global resolve ceiling and bank-list caching, M4's provider-minimum decision,
 M5's Render alerting configuration, M7's retention and identity questions,
-L9's pre-deployment query, and the L1 and N1 migrations (with their optional
-pre-deployment queries). Those are recorded per finding above and should be
+L9's pre-deployment query, the L1 and N1 migrations (with their optional
+pre-deployment queries), and L7's proxy-layout confirmation. Those are recorded per finding above and should be
 read as part of the launch decision, not treated as already handled.
