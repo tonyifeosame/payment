@@ -110,10 +110,10 @@ Route::post('/contact', function (\Illuminate\Http\Request $request) {
 
 // Admin auth routes (school-level)
 Route::get('/admin/login', [SchoolAuthController::class, 'showLogin'])->name('admin.login');
-// Throttled per IP like the other password-accepting endpoints: five attempts per hour
-// (throttle:attempts,decayMinutes). Only the POST is limited; the form itself is not.
+// L7: no route throttle. SchoolAuthController::login counts FAILED logins per
+// school name + IP (CredentialThrottle), so a successful login never uses up the
+// budget and schools sharing one connection do not lock each other out.
 Route::post('/admin/login', [SchoolAuthController::class, 'login'])
-    ->middleware('throttle:5,60,admin-login')
     ->name('admin.login.post');
 Route::post('/admin/logout', [SchoolAuthController::class, 'logout'])->name('admin.logout');
 
@@ -129,13 +129,13 @@ Route::get('/admin', [SchoolAuthController::class, 'app'])->name('admin.home');
 // the current manifest. Same action as /admin.
 Route::get('/s/_app', [SchoolAuthController::class, 'app'])->name('admin.app');
 // Password reset. Both POSTs are unauthenticated: the request side sends mail to
-// an address the caller names, and the reset side accepts a token. Throttled per
-// IP like every other credential-accepting or mail-sending endpoint here, each in
-// its own named bucket. Only the POSTs are limited; the forms themselves are not,
+// an address the caller names, and the reset side accepts a token. The request is
+// limited per email address in the controller (L7); the reset submission keeps its
+// per-IP route throttle. Only the POSTs are limited; the forms themselves are not,
 // so a locked-out admin still sees the page and its message.
 Route::get('admin/forgot-password', [SchoolAuthController::class, 'showLinkRequestForm'])->name('admin.password.request');
 Route::post('admin/forgot-password', [SchoolAuthController::class, 'sendResetLinkEmail'])
-    ->middleware('throttle:5,60,password-reset-request') // mail flooding + token rotation against a known school
+    // L7: limited per email address in the controller (CredentialThrottle), not per IP.
     ->name('admin.password.email');
 Route::get('admin/reset-password/{token}', [SchoolAuthController::class, 'showResetForm'])->name('admin.password.reset');
 Route::post('admin/reset-password', [SchoolAuthController::class, 'reset'])
@@ -192,11 +192,12 @@ $schoolAdminRoutes = function () {
     // Profile, branding and payout account.
     Route::get('/settings', [SchoolSettingsController::class, 'edit'])->name('school.settings.edit');
     Route::put('/settings', [SchoolSettingsController::class, 'update'])->name('school.settings.update');
+    // L7: password guesses on these two forms are limited per signed-in school in
+    // the controller (CredentialThrottle), not per IP by a route throttle — which
+    // ran before EnsureSchoolAdmin, so anonymous requests used to count.
     Route::put('/settings/bank', [SchoolSettingsController::class, 'updateBank'])
-        ->middleware('throttle:5,60,bank-change') // password guesses against the bank form
         ->name('school.settings.bank');
     Route::put('/settings/password', [SchoolSettingsController::class, 'updatePassword'])
-        ->middleware('throttle:5,60,password-change') // password guesses against the change form
         ->name('school.settings.password');
 
     // Sharing the public payment page.

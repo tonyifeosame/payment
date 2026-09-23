@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Mail\SchoolPasswordResetMail;
 use App\Models\School;
+use App\Support\CredentialThrottle;
 use App\Support\SchoolSession;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -24,12 +25,28 @@ class SchoolAuthController extends Controller
             'password' => 'required|string',
         ]);
 
+        // L7: failed logins only, per typed school name + client IP (5 per 60
+        // minutes). A successful login never counts and clears the counter, and
+        // other schools on the same connection have their own. Checked before the
+        // password, so a locked-out attempt is refused whether it is right or wrong.
+        $throttleKey = CredentialThrottle::loginKey($credentials['name'], $request->ip());
+        if (CredentialThrottle::tooManyAttempts($throttleKey)) {
+            return redirect()->route('admin.login')
+                ->withInput($request->only('name'))
+                ->with('error', 'Too many failed sign-in attempts. Please wait '
+                    .CredentialThrottle::humanWait(CredentialThrottle::availableIn($throttleKey)).' and try again.');
+        }
+
         // The one school with this name, case-insensitively. Two matches (legacy
         // duplicates) is treated as no match: never sign in to "the first one".
         $school = School::findUniqueByName($credentials['name']);
         if (! $school || ! $school->admin_password || ! Hash::check($credentials['password'], $school->admin_password)) {
+            CredentialThrottle::hit($throttleKey);
+
             return back()->withInput()->with('error', 'Invalid school name or password.');
         }
+
+        CredentialThrottle::clear($throttleKey);
 
         // Fresh session id (fixation protection), then the school context.
         SchoolSession::login($request, $school);
@@ -101,6 +118,18 @@ class SchoolAuthController extends Controller
     public function sendResetLinkEmail(Request $request)
     {
         $request->validate(['email' => 'required|email']);
+
+        // L7: 5 requests per 60 minutes per email address (normalised, hashed),
+        // whether or not a school has it, and from any IP — so at most five
+        // emails an hour reach any inbox, without depending on the client IP.
+        // Every request counts: the reply is neutral, so there is no failure to
+        // tell apart. A refused request is a 429, as before; it reveals nothing
+        // because the counter exists for every address.
+        $throttleKey = CredentialThrottle::resetRequestKey($request->email);
+        if (CredentialThrottle::tooManyAttempts($throttleKey)) {
+            throw CredentialThrottle::exception($throttleKey);
+        }
+        CredentialThrottle::hit($throttleKey);
 
         // Exactly one school with this email (case-insensitive); an ambiguous email
         // gets the same neutral message and no link.

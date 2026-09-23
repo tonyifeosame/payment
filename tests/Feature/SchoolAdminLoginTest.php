@@ -67,7 +67,7 @@ class SchoolAdminLoginTest extends TestCase
         $this->assertNull(session('school_admin_id'));
     }
 
-    public function test_login_attempts_are_throttled_per_ip(): void
+    public function test_failed_login_attempts_are_throttled_per_school_name_and_ip(): void
     {
         $this->makeSchool('Alpha School', 'alpha');
 
@@ -78,9 +78,12 @@ class SchoolAdminLoginTest extends TestCase
                 ->assertSessionHas('error', 'Invalid school name or password.');
         }
 
-        // ...the sixth is refused before the password is even checked, right or wrong.
+        // ...the sixth is refused before the password is even checked, right or
+        // wrong (L7: back on the login form with a clear message).
         $this->post('/admin/login', ['name' => 'Alpha School', 'password' => 'password123'])
-            ->assertStatus(429);
+            ->assertRedirect('/admin/login')
+            ->assertSessionHas('error');
+        $this->assertStringStartsWith('Too many failed sign-in attempts.', session('error'));
         $this->assertNull(session('school_admin_id'));
 
         // The GET form is not throttled.

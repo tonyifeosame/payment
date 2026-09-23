@@ -245,30 +245,27 @@ class PasswordResetThrottleTest extends TestCase
 
     // --------------------------------------------------------- key separation
 
-    public function test_different_client_ips_have_independent_buckets(): void
+    public function test_the_request_limit_follows_the_email_not_the_client_ip(): void
     {
-        for ($i = 1; $i <= self::REQUEST_PER_HOUR; $i++) {
-            $this->askForLink('alpha@example.test', self::viaProxy('203.0.113.9'))->assertRedirect();
+        // L7: five requests an hour per email address, from any number of IPs...
+        foreach (['203.0.113.9', '198.51.100.7', '192.0.2.1', '203.0.113.10', '198.51.100.8'] as $ip) {
+            $this->askForLink('alpha@example.test', self::viaProxy($ip))->assertRedirect();
         }
-        $this->askForLink('alpha@example.test', self::viaProxy('203.0.113.9'))->assertStatus(429);
+        $this->askForLink('alpha@example.test', self::viaProxy('192.0.2.99'))->assertStatus(429);
 
-        $this->askForLink('alpha@example.test', self::viaProxy('198.51.100.7'))->assertRedirect();
+        // ...while another address on the same connection is unaffected.
+        $this->askForLink('beta@example.test', self::viaProxy('203.0.113.9'))->assertRedirect()->assertSessionHas('status');
     }
 
-    public function test_the_forwarded_client_ip_is_the_key_behind_the_proxy(): void
+    public function test_the_request_limit_does_not_depend_on_how_the_proxy_reports_the_ip(): void
     {
-        // Every request arrives from Render's edge with the same REMOTE_ADDR;
-        // only X-Forwarded-For tells the callers apart.
+        // Whatever address the proxy hands us — the real client or the proxy's own —
+        // the counter is the email's, so it neither splits nor merges by IP.
         for ($i = 1; $i <= self::REQUEST_PER_HOUR; $i++) {
-            $this->askForLink('alpha@example.test', self::viaProxy('203.0.113.9'))->assertRedirect();
+            $this->askForLink('alpha@example.test', ['REMOTE_ADDR' => '10.0.0.1'])->assertRedirect();
         }
         $this->askForLink('alpha@example.test', self::viaProxy('203.0.113.9'))->assertStatus(429);
-
-        // Someone else behind the same edge is not locked out with them...
-        $this->askForLink('alpha@example.test', self::viaProxy('198.51.100.7'))->assertRedirect();
-
-        // ...and the proxy's own address was never the key.
-        $this->askForLink('alpha@example.test', ['REMOTE_ADDR' => '10.0.0.1'])->assertRedirect();
+        $this->askForLink('beta@example.test', ['REMOTE_ADDR' => '10.0.0.1'])->assertRedirect();
     }
 
     public function test_the_request_and_reset_buckets_are_independent_of_each_other(): void
@@ -312,9 +309,14 @@ class PasswordResetThrottleTest extends TestCase
         $this->get('/admin/reset-password/some-token?email=alpha@example.test')->assertOk();
     }
 
-    public function test_both_reset_routes_carry_their_named_throttle(): void
+    public function test_the_reset_routes_carry_the_expected_throttles(): void
     {
-        $this->assertContains('throttle:5,60,password-reset-request', Route::getRoutes()->getByName('admin.password.email')->gatherMiddleware());
+        // L7: the link request is limited per email in the controller, not by a route
+        // throttle; the reset submission keeps its per-IP route throttle unchanged.
+        $this->assertSame([], array_values(array_filter(
+            Route::getRoutes()->getByName('admin.password.email')->gatherMiddleware(),
+            fn ($m) => is_string($m) && str_starts_with($m, 'throttle'),
+        )));
         $this->assertContains('throttle:10,60,password-reset', Route::getRoutes()->getByName('admin.password.update')->gatherMiddleware());
 
         // The forms themselves stay open.

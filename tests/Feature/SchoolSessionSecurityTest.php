@@ -8,7 +8,6 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Password;
-use Illuminate\Support\Facades\RateLimiter;
 use Tests\Concerns\InteractsWithSchools;
 use Tests\TestCase;
 
@@ -31,7 +30,6 @@ class SchoolSessionSecurityTest extends TestCase
         parent::setUp();
 
         Mail::fake();
-        RateLimiter::clear('admin-login');
         $this->alpha = $this->makeSchool('Alpha School', 'alpha', ['email' => 'alpha@example.test']);
         $this->beta = $this->makeSchool('Beta School', 'beta', ['email' => 'beta@example.test']);
     }
@@ -318,12 +316,16 @@ class SchoolSessionSecurityTest extends TestCase
     // 20. login throttle
     // =====================================================================
 
-    public function test_login_throttle_is_unchanged(): void
+    public function test_login_throttle_still_refuses_after_five_failures(): void
     {
         for ($i = 0; $i < 5; $i++) {
             $this->login('Alpha School', 'wrong')->assertRedirect();
         }
-        $this->login('Alpha School', 'password123')->assertStatus(429);
+        // L7: refused with a message on the login form, right password or not.
+        $this->login('Alpha School', 'password123')
+            ->assertRedirect('/admin/login')
+            ->assertSessionHas('error');
+        $this->assertStringStartsWith('Too many failed sign-in attempts.', session('error'));
         $this->assertNull(session(SchoolSession::ID));
     }
 }

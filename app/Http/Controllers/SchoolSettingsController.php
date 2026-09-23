@@ -6,12 +6,14 @@ use App\Models\School;
 use App\Models\SchoolAuditEvent;
 use App\Models\SchoolLogo;
 use App\Services\SchoolBankDetailsService;
+use App\Support\CredentialThrottle;
 use App\Support\RecordsSchoolAudit;
 use App\Support\SchoolSession;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
 
 /**
  * School profile, branding and payout account. Always the bound (and therefore
@@ -109,6 +111,15 @@ class SchoolSettingsController extends Controller
 
     public function updateBank(Request $request, School $school, SchoolBankDetailsService $bankDetails)
     {
+        // L7: wrong current passwords only, per signed-in school (5 per 60
+        // minutes). Validation errors and a failed Paystack account lookup do not
+        // count; anonymous requests never get here (EnsureSchoolAdmin), and other
+        // schools on the same connection have their own counter.
+        $throttleKey = CredentialThrottle::bankChangeKey($school);
+        if (CredentialThrottle::tooManyAttempts($throttleKey)) {
+            throw CredentialThrottle::exception($throttleKey);
+        }
+
         $data = $request->validate([
             'bank' => ['required', 'string', 'max:100'],
             'bank_code' => ['required', 'string', 'max:20'],
@@ -118,7 +129,17 @@ class SchoolSettingsController extends Controller
             'account_number.regex' => 'Enter the 10-digit NUBAN account number.',
         ]);
 
-        $bankDetails->change($school, $data);
+        try {
+            $bankDetails->change($school, $data);
+        } catch (ValidationException $e) {
+            if (array_key_exists('current_password', $e->errors())) {
+                CredentialThrottle::hit($throttleKey);
+            }
+
+            throw $e;
+        }
+
+        CredentialThrottle::clear($throttleKey);
 
         return redirect()->route('school.settings.edit', ['school' => $school->slug])
             ->with('success', 'Payout account updated to '.$school->account_name.'. A confirmation has been emailed to '.$school->email.'.');
@@ -135,6 +156,13 @@ class SchoolSettingsController extends Controller
      */
     public function updatePassword(Request $request, School $school, RecordsSchoolAudit $audit)
     {
+        // L7: same rule as the bank form, its own counter — wrong current
+        // passwords only, per signed-in school, cleared on success.
+        $throttleKey = CredentialThrottle::passwordChangeKey($school);
+        if (CredentialThrottle::tooManyAttempts($throttleKey)) {
+            throw CredentialThrottle::exception($throttleKey);
+        }
+
         $validator = Validator::make($request->only(['current_password', 'password', 'password_confirmation']), [
             'current_password' => [
                 'required', 'string',
@@ -150,6 +178,10 @@ class SchoolSettingsController extends Controller
         ]);
 
         if ($validator->fails()) {
+            if ($validator->errors()->has('current_password')) {
+                CredentialThrottle::hit($throttleKey);
+            }
+
             return redirect()->route('school.settings.edit', ['school' => $school->slug])
                 ->withErrors($validator, 'password')
                 ->withFragment('security');
@@ -168,6 +200,7 @@ class SchoolSettingsController extends Controller
         // fingerprint); every other session for this school is revoked on its next
         // request by the fingerprint check in EnsureSchoolAdmin (H6).
         SchoolSession::refresh($request, $school);
+        CredentialThrottle::clear($throttleKey);
 
         return redirect()->route('school.settings.edit', ['school' => $school->slug])
             ->with('success', 'Your password has been changed.')
