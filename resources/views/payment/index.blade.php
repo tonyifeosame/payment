@@ -162,25 +162,35 @@
 
                     @if($requiresStudent)
                     <div class="mt-4 space-y-3" id="studentPicker" data-old-student='@json($oldStudent)'>
-                        {{-- Only student_id is submitted. The server re-resolves it within this school;
-                             the name/class/masked admission number shown here are for the parent, never for the server. --}}
+                        {{-- L8: the parent enters the student's full name AND admission number; the server
+                             reveals the student only when both match the same active student of this school.
+                             Only student_id is used for payment and it is re-resolved within this school on submit.
+                             The typed name and number are posted too, solely so a failed submit can re-verify the
+                             selection — a bare student_id is never echoed back. --}}
                         <input type="hidden" id="student_id" name="student_id" value="{{ $oldStudent['id'] ?? '' }}">
 
-                        <div class="relative" id="studentSearchWrap">
-                            <label for="student_query" class="field-label">Student name</label>
-                            <div class="relative">
-                                <svg class="pointer-events-none absolute left-4 top-1/2 mt-1 h-5 w-5 -translate-y-1/2 text-brand-slate" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg>
-                                <input type="text" id="student_query" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="search"
-                                       role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="studentSuggestions" aria-haspopup="listbox"
-                                       class="{{ $inputClass('student_id') }} pl-12"
+                        <div class="space-y-3" id="studentSearchWrap">
+                            <div>
+                                <label for="student_name" class="field-label">Student's full name</label>
+                                <input type="text" id="student_name" name="student_name" value="{{ old('student_name') }}" maxlength="255"
+                                       autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="next"
+                                       class="{{ $inputClass('student_id') }}"
                                        @error('student_id') aria-invalid="true" @enderror
                                        aria-describedby="{{ $describedBy('student_id', true) }}"
-                                       placeholder="Start typing the student's name">
+                                       placeholder="As registered with the school">
                             </div>
-                            <p id="student_id-help" class="field-help">Type at least 2 letters of the name, or the admission number.</p>
-                            <ul id="studentSuggestions" role="listbox" aria-label="Matching students" hidden
-                                class="absolute left-0 right-0 z-30 mt-1 max-h-72 divide-y divide-brand-fog overflow-y-auto rounded-2xl border border-brand-ash bg-white shadow-[0_20px_50px_-20px_rgba(18,18,23,0.35)]"></ul>
-                            <p id="studentSearchStatus" class="mt-1.5 text-sm text-brand-slate" aria-live="polite"></p>
+                            <div>
+                                <label for="student_admission_number" class="field-label">Admission number</label>
+                                <input type="text" id="student_admission_number" name="student_admission_number" value="{{ old('student_admission_number') }}" maxlength="50"
+                                       autocomplete="off" autocapitalize="characters" spellcheck="false" enterkeyhint="search"
+                                       class="{{ $inputClass('student_id') }} font-mono"
+                                       @error('student_id') aria-invalid="true" @enderror
+                                       aria-describedby="{{ $describedBy('student_id', true) }}"
+                                       placeholder="e.g. ABC/2026/001">
+                            </div>
+                            <p id="student_id-help" class="field-help">Enter the student's full name and complete admission number exactly as the school has them. The student is shown once both match.</p>
+                            <button type="button" id="studentFind" class="btn-outline btn-sm !min-h-[48px] w-full sm:w-auto">Find student</button>
+                            <p id="studentSearchStatus" class="text-sm text-brand-slate" aria-live="polite"></p>
                             @include('marketing.partials.field-error', ['field' => 'student_id'])
                         </div>
 

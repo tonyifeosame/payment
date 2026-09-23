@@ -214,17 +214,18 @@ class PaymentInitializeThrottleTest extends TestCase
         // Exhausting checkout leaves the autocomplete untouched...
         $this->exhaustMinute();
         $this->submit()->assertStatus(429);
-        $this->getJson('/pay/alpha/student-search?q=ada')->assertOk();
+        $lookup = ['name' => 'Ada', 'admission_number' => 'A/1'];
+        $this->postJson('/pay/alpha/student-search', $lookup)->assertOk();
 
-        // ...and exhausting the autocomplete (60/min) leaves checkout untouched.
+        // ...and exhausting the student lookup (60/min) leaves checkout untouched.
         for ($i = 1; $i < 60; $i++) {
-            $this->getJson('/s/alpha/payment/student-search?q=zz'.$i)->assertOk();
+            $this->postJson('/s/alpha/payment/student-search', ['name' => 'zz'.$i, 'admission_number' => 'zz'.$i])->assertOk();
         }
-        $this->getJson('/s/alpha/payment/student-search?q=ada')->assertStatus(429);
+        $this->postJson('/s/alpha/payment/student-search', $lookup)->assertStatus(429);
 
         $this->travel(61)->seconds();
         $this->submit()->assertRedirect(self::CHECKOUT_URL);
-        $this->getJson('/s/alpha/payment/student-search?q=ada')->assertOk();
+        $this->postJson('/s/alpha/payment/student-search', $lookup)->assertOk();
     }
 
     public function test_the_forwarded_client_ip_is_the_key_behind_the_proxy(): void

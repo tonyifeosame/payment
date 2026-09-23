@@ -246,7 +246,8 @@ Route::prefix('pay/{school:slug}')->group(function () {
     Route::post('/initialize', [PaymentController::class, 'initializeSchool'])
         ->middleware('throttle:payment-initialize')
         ->name('public.payment.initialize');
-    Route::get('/student-search', [PaymentController::class, 'studentSearch'])
+    // Verified student lookup (L8): name + admission number, POST so neither is in a URL.
+    Route::post('/student-search', [PaymentController::class, 'studentSearch'])
         ->middleware('throttle:60,1,student-search')
         ->name('public.payment.student-search');
 });
@@ -257,10 +258,10 @@ Route::prefix('s/{school:slug}')->group(function () use ($schoolAdminRoutes) {
     Route::post('/payment/initialize', [PaymentController::class, 'initializeSchool'])
         ->middleware('throttle:payment-initialize') // same bucket as /pay/{school}/initialize
         ->name('school.payment.initialize');
-    // Public student autocomplete for the payment form. Throttled per IP because it
-    // is unauthenticated and lists (a capped number of) this school's students by
-    // name. The browser debounces, so a parent typing a name costs a handful of hits.
-    Route::get('/payment/student-search', [PaymentController::class, 'studentSearch'])
+    // Public student lookup for the payment form (L8): returns one student only when
+    // the typed full name and complete admission number both match. Throttled per
+    // IP because it is unauthenticated; one lookup per "Find student" press.
+    Route::post('/payment/student-search', [PaymentController::class, 'studentSearch'])
         ->middleware('throttle:60,1,student-search')
         ->name('school.payment.student-search');
     // The school's logo: public, because it appears on the parent-facing page.

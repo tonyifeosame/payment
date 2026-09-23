@@ -158,26 +158,39 @@ class Student extends Model
     }
 
     /**
-     * Public payment-page search: name first, admission number second. Deliberately
-     * narrower than scopeSearch() — matching on class would let anyone list a
-     * whole class by typing "JSS", and guardian details are never searchable.
-     * Case-insensitive on every driver (Postgres LIKE is case-sensitive).
-     * Callers MUST already have scoped the query to one school.
+     * The public payment page's student lookup (L8): the ACTIVE student of this
+     * school whose complete admission number AND full name both match what the
+     * parent typed, or null.
+     *
+     * Nothing is searched. The admission number is compared whole after the usual
+     * normalisation (trimmed, upper-cased), so a fragment, a LIKE wildcard or a
+     * name alone finds nothing; the name is then compared in full, ignoring case
+     * and runs of whitespace. A parent who knows both learns who they are paying
+     * for; anyone else learns nothing — every failure is the same null, whether
+     * the number, the name or the school was wrong, or the input was malformed.
      */
-    public function scopePublicSearch(Builder $query, string $term): Builder
+    public static function findForPublicPayment(School $school, mixed $fullName, mixed $admissionNumber): ?self
     {
-        $term = trim($term);
-        $lower = mb_strtolower($term);
+        if (! is_string($fullName) || ! is_string($admissionNumber)
+            || mb_strlen($fullName) > 255 || mb_strlen($admissionNumber) > 50) {
+            return null;
+        }
 
-        return $query
-            ->where(function (Builder $q) use ($lower, $term) {
-                $q->whereRaw('LOWER(full_name) LIKE ?', ['%'.$lower.'%'])
-                    ->orWhere('admission_number', 'like', '%'.self::normalizeAdmissionNumber($term).'%');
-            })
-            // Names that START with what was typed come first, then alphabetical.
-            ->orderByRaw('CASE WHEN LOWER(full_name) LIKE ? THEN 0 ELSE 1 END', [$lower.'%'])
-            ->orderBy('full_name')
-            ->orderBy('class_name');
+        $number = self::normalizeAdmissionNumber($admissionNumber);
+        $name = self::normalizeNameForLookup($fullName);
+        if ($number === '' || $name === '') {
+            return null;
+        }
+
+        $student = self::forSchool($school)->payable()->where('admission_number', $number)->first();
+
+        return $student && self::normalizeNameForLookup($student->full_name) === $name ? $student : null;
+    }
+
+    /** A full name as compared by the public lookup: trimmed, single-spaced, lower-cased. */
+    public static function normalizeNameForLookup(?string $name): string
+    {
+        return mb_strtolower(trim((string) preg_replace('/\s+/u', ' ', (string) $name)));
     }
 
     /** Search by name, admission number or class, always within the given query's school. */

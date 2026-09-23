@@ -166,8 +166,8 @@ class AdminNamespaceTest extends TestCase
         }
         $this->get('/admin/alpha/payment')->assertNotFound();
         $this->get('/admin/alpha')->assertNotFound();
-        $this->getJson('/s/alpha/payment/student-search?q=ab')->assertOk();
-        $this->getJson('/pay/alpha/student-search?q=ab')->assertOk();
+        $this->postJson('/s/alpha/payment/student-search', ['name' => 'ab', 'admission_number' => 'ab'])->assertOk();
+        $this->postJson('/pay/alpha/student-search', ['name' => 'ab', 'admission_number' => 'ab'])->assertOk();
         // The legacy admin redirect never touches public legacy routes.
         $this->get('/s/alpha/payment')->assertOk();
         $this->get('/s/alpha/logo')->assertNotFound(); // no logo uploaded: the route's own 404, not a redirect

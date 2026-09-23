@@ -72,7 +72,7 @@ class CanonicalPaymentRoutesTest extends TestCase
         foreach ([
             ['public.payment', 'school.payment.index', 'GET', 'pay/{school}'],
             ['public.payment.initialize', 'school.payment.initialize', 'POST', 'pay/{school}/initialize'],
-            ['public.payment.student-search', 'school.payment.student-search', 'GET', 'pay/{school}/student-search'],
+            ['public.payment.student-search', 'school.payment.student-search', 'POST', 'pay/{school}/student-search'],
         ] as [$new, $legacy, $method, $uri]) {
             $n = $routes->getByName($new);
             $l = $routes->getByName($legacy);
@@ -113,26 +113,26 @@ class CanonicalPaymentRoutesTest extends TestCase
         $this->get('/pay/alpha/')->assertOk(); // trailing slash tolerated like any Laravel route
     }
 
-    public function test_canonical_student_search_preserves_scoping_eligibility_masking_and_shape(): void
+    public function test_canonical_student_lookup_preserves_scoping_eligibility_masking_and_shape(): void
     {
-        $new = $this->getJson('/pay/alpha/student-search?q=okonkwo')->assertOk();
-        $legacy = $this->getJson('/s/alpha/payment/student-search?q=okonkwo')->assertOk();
+        $pair = ['name' => 'Ada Okonkwo', 'admission_number' => 'A/001'];
+        $new = $this->postJson('/pay/alpha/student-search', $pair)->assertOk();
+        $legacy = $this->postJson('/s/alpha/payment/student-search', $pair)->assertOk();
         $this->assertSame($legacy->json(), $new->json());
 
-        // Only the active student, name-first, masked admission number, only these keys.
-        $new->assertJsonCount(1, 'students')->assertJsonPath('students.0.full_name', 'Ada Okonkwo');
-        $this->assertSame(['id', 'full_name', 'class_name', 'admission_number_masked'], array_keys($new->json('students.0')));
+        // The verified active student, masked admission number, only these keys.
+        $new->assertJsonPath('student.full_name', 'Ada Okonkwo');
+        $this->assertSame(['id', 'full_name', 'class_name', 'admission_number_masked'], array_keys($new->json('student')));
         $this->assertStringNotContainsString('A/001', $new->getContent());
-        $this->assertSame($this->active->maskedAdmissionNumber(), $new->json('students.0.admission_number_masked'));
-        $this->assertNotSame('A/001', $new->json('students.0.admission_number_masked'));
+        $this->assertSame($this->active->maskedAdmissionNumber(), $new->json('student.admission_number_masked'));
+        $this->assertNotSame('A/001', $new->json('student.admission_number_masked'));
 
-        // Admission-number search, other-school isolation, validation.
-        $this->getJson('/pay/alpha/student-search?q=A/001')->assertOk()->assertJsonCount(1, 'students');
-        $this->getJson('/pay/alpha/student-search?q=beta')->assertOk()->assertExactJson(['students' => []]);
-        $this->getJson('/pay/alpha/student-search?q=B/001')->assertOk()->assertExactJson(['students' => []]);
-        $this->getJson('/pay/beta/student-search?q=okonkwo')->assertOk()->assertJsonCount(1, 'students')->assertJsonPath('students.0.full_name', 'Beta Okonkwo');
-        $this->getJson('/pay/alpha/student-search?q=a')->assertStatus(422);
-        $this->getJson('/pay/nope/student-search?q=okonkwo')->assertNotFound();
+        // Inactive students, other-school isolation, a name alone, unknown school.
+        $this->postJson('/pay/alpha/student-search', ['name' => 'Grace Okonkwo', 'admission_number' => 'A/002'])->assertOk()->assertExactJson(['student' => null]);
+        $this->postJson('/pay/alpha/student-search', ['name' => 'Beta Okonkwo', 'admission_number' => 'B/001'])->assertOk()->assertExactJson(['student' => null]);
+        $this->postJson('/pay/beta/student-search', ['name' => 'Beta Okonkwo', 'admission_number' => 'B/001'])->assertOk()->assertJsonPath('student.full_name', 'Beta Okonkwo');
+        $this->postJson('/pay/alpha/student-search', ['name' => 'Ada Okonkwo'])->assertOk()->assertExactJson(['student' => null]);
+        $this->postJson('/pay/nope/student-search', $pair)->assertNotFound();
     }
 
     public function test_canonical_initialize_reaches_the_same_checkout_and_enforces_the_same_rules(): void
@@ -172,7 +172,8 @@ class CanonicalPaymentRoutesTest extends TestCase
 
         // An admin session for alpha changes nothing about beta's public page.
         $this->actingAsSchoolAdmin($this->alpha)->get('/pay/beta')->assertOk()->assertDontSee('Ada Okonkwo');
-        $this->actingAsSchoolAdmin($this->alpha)->getJson('/pay/beta/student-search?q=okonkwo')->assertOk()->assertJsonPath('students.0.full_name', 'Beta Okonkwo')->assertJsonCount(1, 'students');
+        $this->actingAsSchoolAdmin($this->alpha)->postJson('/pay/beta/student-search', ['name' => 'Beta Okonkwo', 'admission_number' => 'B/001'])->assertOk()->assertJsonPath('student.full_name', 'Beta Okonkwo');
+        $this->actingAsSchoolAdmin($this->alpha)->postJson('/pay/beta/student-search', ['name' => 'Ada Okonkwo', 'admission_number' => 'A/001'])->assertOk()->assertExactJson(['student' => null]);
     }
 
     public function test_new_public_links_use_the_canonical_url_and_legacy_links_are_kept(): void

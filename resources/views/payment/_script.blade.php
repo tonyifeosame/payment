@@ -1,6 +1,6 @@
 {{-- Behaviour for payment/index. The logic here is the audited Phase 1 behaviour: term/fee
-     filtering, the student combobox (name first, admission number second, only student_id
-     submitted, foreign ids fail closed server-side), client-side totals for display only,
+     filtering, the student lookup (full name + complete admission number verified server-side,
+     only student_id submitted, foreign ids fail closed server-side), client-side totals for display only,
      and the submit loading state. Only presentation classes and three display hooks
      (initials, live total on the pay button, quantity row visibility) were added. --}}
 <script>
@@ -45,7 +45,6 @@
     const sTerm = document.getElementById('summaryTerm');
     const sStudent = document.getElementById('summaryStudent');
     const studentSearchUrl = {!! json_encode(route(request()->routeIs('public.payment') ? 'public.payment.student-search' : 'school.payment.student-search', ['school' => $school->slug])) !!};
-    const studentSearchLimit = {{ \App\Http\Controllers\PaymentController::STUDENT_SEARCH_LIMIT }};
     const maxQuantity = {{ \App\Http\Controllers\PaymentController::MAX_QUANTITY }};
 
     function selectedTermId() { return termSelect && termSelect.value ? Number(termSelect.value) : null; }
@@ -86,17 +85,20 @@
         populateSubcategories();
     });
 
-    // Student picker. The parent searches by name (or admission number); the
-    // server answers with THIS school's matches only, and the form submits just
-    // the chosen id. The server re-resolves that id within the school on submit,
-    // so the admission number and class shown here are display-only.
+    // Student lookup (L8). The parent types the student's full name AND complete
+    // admission number and presses "Find student"; the server answers with the
+    // student only when both match the same active student of THIS school, and
+    // with an identical "not found" otherwise. The form submits the verified id;
+    // the server re-resolves it within the school on submit, so the admission
+    // number and class shown here are display-only.
     (function () {
         const picker = document.getElementById('studentPicker');
         if (!picker) return;
 
         const idInput = document.getElementById('student_id');
-        const queryInput = document.getElementById('student_query');
-        const list = document.getElementById('studentSuggestions');
+        const nameInput = document.getElementById('student_name');
+        const admissionInput = document.getElementById('student_admission_number');
+        const findBtn = document.getElementById('studentFind');
         const status = document.getElementById('studentSearchStatus');
         const selectedBox = document.getElementById('studentSelected');
         const selectedName = document.getElementById('selectedStudentName');
@@ -106,19 +108,14 @@
         const changeBtn = document.getElementById('studentChange');
         const searchWrap = document.getElementById('studentSearchWrap');
         const form = document.getElementById('paymentForm');
+        const csrfInput = form ? form.querySelector('input[name="_token"]') : null;
 
-        const MIN_CHARS = 2, DEBOUNCE_MS = 300;
-        let timer = null, controller = null, results = [], activeIndex = -1, lastQuery = '';
+        const NOT_FOUND = 'We could not find a student with that name and admission number at this school. Check that both match the school’s records exactly.';
+        let controller = null;
 
         function setStatus(text, tone) {
             status.textContent = text || '';
-            status.className = 'mt-1.5 text-sm ' + (tone === 'error' ? 'font-medium text-red-600' : 'text-brand-slate');
-        }
-
-        function closeList() {
-            list.hidden = true; list.innerHTML = ''; activeIndex = -1;
-            queryInput.setAttribute('aria-expanded', 'false');
-            queryInput.removeAttribute('aria-activedescendant');
+            status.className = 'text-sm ' + (tone === 'error' ? 'font-medium text-red-600' : 'text-brand-slate');
         }
 
         function updateSubmitState() {
@@ -127,16 +124,16 @@
                 submitBtn.disabled = !ok;
                 submitBtn.classList.toggle('opacity-60', !ok);
                 submitBtn.classList.toggle('cursor-not-allowed', !ok);
-                submitBtn.title = ok ? '' : 'Select the student first';
+                submitBtn.title = ok ? '' : 'Find the student first';
             }
         }
 
-        function clearSelection(keepQuery) {
+        function clearSelection(keepInputs) {
             idInput.value = '';
             selectedBox.hidden = true;
             searchWrap.hidden = false;
             admissionDisplay.value = ''; classDisplay.value = '';
-            if (!keepQuery) queryInput.value = '';
+            if (!keepInputs) { nameInput.value = ''; admissionInput.value = ''; }
             if (sStudent) sStudent.textContent = '—';
             updateSubmitState();
         }
@@ -153,97 +150,62 @@
             classDisplay.value = student.class_name || '';
             selectedBox.hidden = false;
             searchWrap.hidden = true;           // one clear "this is who you are paying for"
-            queryInput.value = student.full_name;
-            lastQuery = student.full_name;
             if (sStudent) sStudent.textContent = student.full_name + (student.class_name ? ' (' + student.class_name + ')' : '');
-            closeList(); setStatus('');
+            setStatus('');
             updateSubmitState();
         }
 
-        function render() {
-            list.innerHTML = '';
-            if (results.length === 0) { closeList(); return; }
-            results.forEach((st, i) => {
-                const li = document.createElement('li');
-                li.id = 'studentOption' + i; li.setAttribute('role', 'option'); li.dataset.index = String(i);
-                li.className = 'min-h-[48px] cursor-pointer select-none px-4 py-3 hover:bg-brand-violet/[0.06]';
-                const name = document.createElement('div'); name.className = 'font-semibold text-brand-obsidian'; name.textContent = st.full_name;
-                const meta = document.createElement('div'); meta.className = 'text-sm text-brand-slate';
-                meta.textContent = (st.class_name || '') + (st.admission_number_masked ? ' · ' + st.admission_number_masked : '');
-                li.appendChild(name); li.appendChild(meta);
-                // mousedown/touch so the choice lands before the input blurs and the list closes
-                li.addEventListener('mousedown', function (e) { e.preventDefault(); select(st); });
-                li.addEventListener('touchend', function (e) { e.preventDefault(); select(st); });
-                list.appendChild(li);
-            });
-            list.hidden = false;
-            queryInput.setAttribute('aria-expanded', 'true');
-            setActive(-1);
-        }
-
-        function setActive(i) {
-            const items = list.querySelectorAll('[role="option"]');
-            items.forEach(el => { el.classList.remove('bg-brand-violet/10'); el.removeAttribute('aria-selected'); });
-            activeIndex = i;
-            if (i >= 0 && items[i]) {
-                items[i].classList.add('bg-brand-violet/10'); items[i].setAttribute('aria-selected', 'true');
-                queryInput.setAttribute('aria-activedescendant', items[i].id);
-                items[i].scrollIntoView({ block: 'nearest' });
-            } else {
-                queryInput.removeAttribute('aria-activedescendant');
+        async function find() {
+            const name = nameInput.value.trim();
+            const admission = admissionInput.value.trim();
+            if (!name || !admission) {
+                setStatus('Enter both the student’s full name and admission number.', 'error');
+                (name ? admissionInput : nameInput).focus();
+                return;
             }
-        }
-
-        async function search(q) {
             if (controller) controller.abort();
             controller = new AbortController();
-            setStatus('Searching…');
+            setStatus('Checking…');
+            findBtn.disabled = true;
             try {
-                const r = await fetch(studentSearchUrl + '?q=' + encodeURIComponent(q), { signal: controller.signal, headers: { 'Accept': 'application/json' } });
+                const r = await fetch(studentSearchUrl, {
+                    method: 'POST',
+                    signal: controller.signal,
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': csrfInput ? csrfInput.value : '',
+                    },
+                    body: JSON.stringify({ name: name, admission_number: admission }),
+                });
                 const d = await r.json().catch(() => ({}));
-                if (q !== queryInput.value.trim()) return; // a newer keystroke owns the UI now
-                if (r.status === 429) { results = []; render(); setStatus('Too many searches. Please wait a moment and try again.', 'error'); return; }
-                if (!r.ok) { results = []; render(); setStatus('Could not search right now. Please try again.', 'error'); return; }
-                results = Array.isArray(d.students) ? d.students : [];
-                render();
-                if (results.length === 0) {
-                    setStatus('No student matching “' + q + '” was found at this school. Check the spelling, or try the admission number.', 'error');
-                } else if (results.length >= studentSearchLimit) {
-                    setStatus('Showing the first ' + studentSearchLimit + ' matches — keep typing to narrow it down.');
-                } else {
-                    setStatus(results.length + (results.length === 1 ? ' match' : ' matches') + ' — pick the right student below.');
-                }
+                if (r.status === 429) { setStatus('Too many attempts. Please wait a minute and try again.', 'error'); return; }
+                if (!r.ok) { setStatus('Could not check right now. Please try again.', 'error'); return; }
+                if (d.student && d.student.id) select(d.student); else setStatus(NOT_FOUND, 'error');
             } catch (e) {
-                if (e.name !== 'AbortError') { results = []; render(); setStatus('Could not search right now. Please try again.', 'error'); }
+                if (e.name !== 'AbortError') setStatus('Could not check right now. Please try again.', 'error');
+            } finally {
+                findBtn.disabled = false;
             }
         }
 
-        queryInput.addEventListener('input', function () {
-            const q = queryInput.value.trim();
-            // Any edit after a selection un-selects: the id must always match what is shown.
-            if (idInput.value && q !== lastQuery) clearSelection(true);
-            clearTimeout(timer);
-            if (q.length < MIN_CHARS) { if (controller) controller.abort(); results = []; render(); setStatus(q.length ? 'Keep typing…' : ''); return; }
-            timer = setTimeout(() => search(q), DEBOUNCE_MS);
+        findBtn.addEventListener('click', find);
+        [nameInput, admissionInput].forEach(function (input) {
+            // Enter looks the student up instead of submitting the payment form.
+            input.addEventListener('keydown', function (e) {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                if (input === nameInput && !admissionInput.value.trim()) admissionInput.focus(); else find();
+            });
+            // Any edit un-verifies: the id must always match what was checked.
+            input.addEventListener('input', function () { if (idInput.value) clearSelection(true); setStatus(''); });
         });
-
-        queryInput.addEventListener('keydown', function (e) {
-            if (list.hidden) { if (e.key === 'Enter') e.preventDefault(); return; }
-            if (e.key === 'ArrowDown') { e.preventDefault(); setActive(Math.min(activeIndex + 1, results.length - 1)); }
-            else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(Math.max(activeIndex - 1, -1)); }
-            else if (e.key === 'Enter') { e.preventDefault(); if (activeIndex >= 0) select(results[activeIndex]); else if (results.length === 1) select(results[0]); }
-            else if (e.key === 'Escape') { closeList(); }
-        });
-        queryInput.addEventListener('blur', function () { setTimeout(closeList, 150); });
-        queryInput.addEventListener('focus', function () { if (results.length && !idInput.value) render(); });
 
         changeBtn.addEventListener('click', function () {
-            clearTimeout(timer);
             if (controller) controller.abort();
             clearSelection(false);
-            results = []; lastQuery = '';
-            closeList(); setStatus('');
-            queryInput.focus();
+            setStatus('');
+            nameInput.focus();
         });
 
         // The server enforces this too; this just stops a pointless round trip.
@@ -251,15 +213,16 @@
             if (!idInput.value) {
                 e.preventDefault(); e.stopImmediatePropagation();
                 searchWrap.hidden = false;
-                setStatus('Please search for and select the student you are paying for.', 'error');
-                queryInput.focus();
+                setStatus('Please find the student you are paying for first.', 'error');
+                nameInput.focus();
             }
         }, true);
 
-        // Re-select after a failed submit (the server only echoes ids that belong to this school).
+        // Re-select after a failed submit. The server only provides this when the
+        // name and admission number posted with that submit still verify to the id.
         let old = null;
         try { old = JSON.parse(picker.dataset.oldStudent || 'null'); } catch (e) { old = null; }
-        if (old && old.id) select(old); else clearSelection(false);
+        if (old && old.id) select(old); else clearSelection(true);
     })();
 
     // Listeners

@@ -19,9 +19,6 @@ use Illuminate\Support\Facades\URL;
 
 class PaymentController extends Controller
 {
-    /** Suggestions per search: enough to disambiguate, not enough to list a roster. */
-    public const STUDENT_SEARCH_LIMIT = 10;
-
     /** Most units of one fee a single payment may buy, when the fee allows multiple units. */
     public const MAX_QUANTITY = 100;
 
@@ -103,13 +100,15 @@ class PaymentController extends Controller
         $requiresStudent = $school->requiresStudentOnPayment();
         $currentTerm = $school->currentTerm;
 
-        // After a failed submit, re-select the student the parent had picked — but
-        // only if that id really is one of this school's active students.
+        // After a failed submit, re-select the student the parent had verified — but
+        // only if the name and admission number they typed still verify to that
+        // same id (L8). A bare student_id in old input is never enough: echoing one
+        // back would let anyone read a student's details by posting ids in turn.
         $oldStudent = null;
         if ($requiresStudent && is_numeric(old('student_id'))) {
-            $s = Student::forSchool($school)->payable()->find((int) old('student_id'));
-            if ($s) {
-                $oldStudent = ['id' => $s->id, 'full_name' => $s->full_name, 'class_name' => $s->class_name, 'admission_number_masked' => $s->maskedAdmissionNumber()];
+            $s = Student::findForPublicPayment($school, old('student_name'), old('student_admission_number'));
+            if ($s && (int) $s->id === (int) old('student_id')) {
+                $oldStudent = $this->publicStudent($s);
             }
         }
 
@@ -120,35 +119,36 @@ class PaymentController extends Controller
     }
 
     /**
-     * Public, throttled autocomplete behind the payment page's "Student" field.
+     * Public, throttled student lookup behind the payment page (L8).
      *
-     * A convenience for the browser only: it lists ACTIVE students WITHIN the bound
-     * school (name first, admission number second) and returns just what a parent needs to
-     * pick the right child — name, class, a MASKED admission number, and the id
-     * the form will send back. The id is then re-checked against the same school
-     * on submit by PaymentCheckoutService, so nothing here is trusted later. The
-     * full admission number and guardian details never leave the server here.
+     * The parent types the student's full name AND complete admission number; the
+     * student is returned only when both belong to the same ACTIVE student of the
+     * bound school (Student::findForPublicPayment). Nothing is revealed before
+     * that: a name alone, a partial number, a wildcard, a mismatch, another
+     * school's student or malformed input all get the identical
+     * {"student": null}, so the response cannot be used to list or probe a roster.
+     *
+     * POST, so names and admission numbers stay out of URLs and access logs. The
+     * returned id is re-checked against the same school on submit by
+     * PaymentCheckoutService; the full admission number and guardian details
+     * never leave the server here.
      */
     public function studentSearch(Request $request, School $school)
     {
-        $validated = $request->validate([
-            'q' => 'required|string|min:2|max:100',
-        ]);
+        $student = Student::findForPublicPayment($school, $request->input('name'), $request->input('admission_number'));
 
-        $students = Student::forSchool($school)
-            ->payable()
-            ->publicSearch($validated['q'])
-            ->limit(self::STUDENT_SEARCH_LIMIT)
-            ->get(['id', 'full_name', 'class_name', 'admission_number']);
+        return response()->json(['student' => $student ? $this->publicStudent($student) : null]);
+    }
 
-        return response()->json([
-            'students' => $students->map(fn (Student $s) => [
-                'id' => $s->id,
-                'full_name' => $s->full_name,
-                'class_name' => $s->class_name,
-                'admission_number_masked' => $s->maskedAdmissionNumber(),
-            ])->values(),
-        ]);
+    /** The only student fields the public payment page ever receives. */
+    private function publicStudent(Student $student): array
+    {
+        return [
+            'id' => $student->id,
+            'full_name' => $student->full_name,
+            'class_name' => $student->class_name,
+            'admission_number_masked' => $student->maskedAdmissionNumber(),
+        ];
     }
 
     /**

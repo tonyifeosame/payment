@@ -63,16 +63,18 @@ class PaymentStudentEligibilityTest extends TestCase
         ]);
     }
 
-    public function test_only_the_active_student_appears_in_the_public_search(): void
+    private function lookup(string $name, string $admissionNumber, string $slug = 'alpha')
     {
-        $names = array_column($this->getJson('/s/alpha/payment/student-search?q=okonkwo')->assertOk()->json('students'), 'full_name');
-        $this->assertSame(['Ada Okonkwo'], $names);
+        return $this->postJson("/s/{$slug}/payment/student-search", ['name' => $name, 'admission_number' => $admissionNumber]);
+    }
 
-        // Searching a non-active student by name or admission number returns nothing.
-        $this->getJson('/s/alpha/payment/student-search?q=grace')->assertOk()->assertExactJson(['students' => []]);
-        $this->getJson('/s/alpha/payment/student-search?q=A/002')->assertOk()->assertExactJson(['students' => []]);
-        $this->getJson('/s/alpha/payment/student-search?q=lola')->assertOk()->assertExactJson(['students' => []]);
-        $this->getJson('/s/alpha/payment/student-search?q=A/003')->assertOk()->assertExactJson(['students' => []]);
+    public function test_only_the_active_student_is_found_by_the_public_lookup(): void
+    {
+        $this->lookup('Ada Okonkwo', 'A/001')->assertOk()->assertJsonPath('student.full_name', 'Ada Okonkwo');
+
+        // A non-active student is not found even with the correct name and number.
+        $this->lookup('Grace Okonkwo', 'A/002')->assertOk()->assertExactJson(['student' => null]);
+        $this->lookup('Lola Okonkwo', 'A/003')->assertOk()->assertExactJson(['student' => null]);
     }
 
     public function test_a_graduated_student_id_cannot_initialize_a_payment(): void
@@ -94,11 +96,12 @@ class PaymentStudentEligibilityTest extends TestCase
 
     public function test_a_previously_selected_inactive_student_is_not_reselected_after_a_failed_submit(): void
     {
-        // The id survives in old input; the page must not re-offer it once the student is no longer active.
-        $this->withSession(['_old_input' => ['student_id' => $this->graduated->id]])
-            ->get('/s/alpha/payment')->assertOk()->assertDontSee('Grace Okonkwo');
-        $this->withSession(['_old_input' => ['student_id' => $this->active->id]])
-            ->get('/s/alpha/payment')->assertOk()->assertSee('Ada Okonkwo');
+        // The id survives in old input with the name and number the parent typed; the
+        // page must not re-offer it once the student is no longer active.
+        $this->withSession(['_old_input' => ['student_id' => $this->graduated->id, 'student_name' => 'Grace Okonkwo', 'student_admission_number' => 'A/002']])
+            ->get('/s/alpha/payment')->assertOk()->assertSee("data-old-student='null'", false);
+        $this->withSession(['_old_input' => ['student_id' => $this->active->id, 'student_name' => 'Ada Okonkwo', 'student_admission_number' => 'A/001']])
+            ->get('/s/alpha/payment')->assertOk()->assertSee('"full_name":"Ada Okonkwo"', false);
     }
 
     public function test_historical_transactions_of_inactive_students_stay_visible_to_the_school_admin(): void
@@ -128,8 +131,9 @@ class PaymentStudentEligibilityTest extends TestCase
         $betaActive = $this->makeStudent($this->beta, 'B/001', 'Beta Okonkwo', 'SS 1');
 
         // Alpha's active student is invisible and unusable at beta, and vice versa.
-        $this->getJson('/s/beta/payment/student-search?q=okonkwo')->assertOk()->assertJsonCount(1, 'students')->assertJsonPath('students.0.full_name', 'Beta Okonkwo');
-        $this->getJson('/s/alpha/payment/student-search?q=beta')->assertOk()->assertExactJson(['students' => []]);
+        $this->lookup('Beta Okonkwo', 'B/001', 'beta')->assertOk()->assertJsonPath('student.full_name', 'Beta Okonkwo');
+        $this->lookup('Beta Okonkwo', 'B/001')->assertOk()->assertExactJson(['student' => null]);
+        $this->lookup('Ada Okonkwo', 'A/001', 'beta')->assertOk()->assertExactJson(['student' => null]);
         $this->pay($betaActive->id)->assertNotFound();
         $this->post('/s/beta/payment/initialize', [
             'email' => 'parent@example.test', 'category_id' => $betaFee->category_id, 'subcategory_id' => $betaFee->id, 'quantity' => 1,

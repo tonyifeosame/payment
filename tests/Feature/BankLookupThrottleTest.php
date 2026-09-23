@@ -331,7 +331,7 @@ class BankLookupThrottleTest extends TestCase
         $this->assertNotSame(429, $this->post('/pay/alpha/initialize', [])->status(), 'payment-initialize was throttled with a bank bucket');
         $this->assertNotSame(429, $this->post('/registration', [])->status(), 'registration was throttled with a bank bucket');
         $this->assertNotSame(429, $this->post('/admin/login', ['email' => $alpha->email, 'password' => 'wrong'])->status(), 'admin-login was throttled with a bank bucket');
-        $this->getJson('/pay/alpha/student-search?q=ada')->assertOk();
+        $this->postJson('/pay/alpha/student-search', ['name' => 'Ada', 'admission_number' => 'A/1'])->assertOk();
     }
 
     public function test_both_lookup_routes_carry_their_named_throttle(): void

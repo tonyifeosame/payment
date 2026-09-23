@@ -77,6 +77,10 @@ class PaymentStudentContextTest extends TestCase
             'subcategory_id' => $this->alphaTermFee->id,
             'quantity' => 1,
             'student_id' => $this->alphaStudent->id,
+            // What the page posts alongside the verified id (L8): the name and number
+            // the parent typed. Checkout ignores them; a failed submit re-verifies them.
+            'student_name' => 'Adaeze Okonkwo',
+            'student_admission_number' => 'A/2026/001',
             'academic_session_id' => $this->alphaFirstTerm->academic_session_id,
             'academic_term_id' => $this->alphaFirstTerm->id,
         ], $overrides));
@@ -89,7 +93,9 @@ class PaymentStudentContextTest extends TestCase
         $this->get('/s/alpha/payment')
             ->assertOk()
             ->assertSee('name="student_id"', false)
-            ->assertSee('student_query', false)
+            ->assertSee('name="student_name"', false)
+            ->assertSee('name="student_admission_number"', false)
+            ->assertSee('Find student')
             ->assertSee('student-search', false)
             ->assertDontSee('name="admission_number"', false)
             ->assertSee('academic_term_id', false)
@@ -100,15 +106,17 @@ class PaymentStudentContextTest extends TestCase
             ->assertSee('"name":"2026\/2027"', false)
             ->assertDontSee('Beta Tuition')
             ->assertDontSee('B/001')
-            // The roster is not embedded in the page; it is only reachable via search.
+            // The roster is not embedded in the page; a student is only reachable by
+            // a verified name + admission number lookup.
             ->assertDontSee('Adaeze Okonkwo')
             ->assertDontSee('A/2026/001');
     }
 
     public function test_payment_page_reselects_the_students_own_school_choice_after_a_failed_submit(): void
     {
-        // A failed submit round-trips old('student_id'); the page re-hydrates it from
-        // the database, within this school only.
+        // A failed submit round-trips old('student_id') with the typed name and
+        // admission number; the page re-verifies them and re-hydrates from the
+        // database, within this school only.
         $this->from('/s/alpha/payment')
             ->pay(['academic_term_id' => $this->alphaSecondTerm->id]) // term fee in the wrong term -> validation error
             ->assertRedirect('/s/alpha/payment');
@@ -118,13 +126,16 @@ class PaymentStudentContextTest extends TestCase
             ->assertSee('name="student_id" value="'.$this->alphaStudent->id.'"', false)
             ->assertSee('Adaeze Okonkwo');
 
-        // A foreign id in old input is simply not echoed back.
+        // A foreign id in old input is simply not echoed back — even with that
+        // student's own correct name and number.
         $this->from('/s/alpha/payment')
-            ->pay(['student_id' => $this->betaStudent->id, 'academic_term_id' => $this->alphaSecondTerm->id]);
+            ->pay(['student_id' => $this->betaStudent->id, 'student_name' => 'Beta Student', 'student_admission_number' => 'B/001', 'academic_term_id' => $this->alphaSecondTerm->id]);
 
+        // (The typed text is refilled into the inputs as the parent's own input; what
+        // matters is that no student is re-selected from the database.)
         $this->get('/s/alpha/payment')
             ->assertOk()
-            ->assertDontSee('Beta Student')
+            ->assertSee("data-old-student='null'", false)
             ->assertSee('name="student_id" value=""', false);
     }
 
@@ -406,42 +417,47 @@ class PaymentStudentContextTest extends TestCase
         $this->get('/s/gamma/payment')->assertOk()->assertDontSee('name="student_id"', false);
     }
 
-    // ------------------------------------------------------------ student search
+    // ------------------------------------------------------------ student lookup
 
-    public function test_student_search_is_tenant_scoped_and_returns_only_what_the_picker_needs(): void
+    /** The page's verified lookup (L8): full name AND complete admission number. */
+    private function lookup(string $name, string $admissionNumber, string $slug = 'alpha')
     {
-        $this->getJson('/s/alpha/payment/student-search?q=ada')
+        return $this->postJson("/s/{$slug}/payment/student-search", ['name' => $name, 'admission_number' => $admissionNumber]);
+    }
+
+    public function test_student_lookup_is_tenant_scoped_and_returns_only_what_the_picker_needs(): void
+    {
+        $this->lookup('Adaeze Okonkwo', 'A/2026/001')
             ->assertOk()
-            ->assertExactJson(['students' => [[
+            ->assertExactJson(['student' => [
                 'id' => $this->alphaStudent->id,
                 'full_name' => 'Adaeze Okonkwo',
                 'class_name' => 'JSS 1',
                 'admission_number_masked' => '*/****/001',
-            ]]]);
+            ]]);
 
         // Guardian details never leave the server.
         $this->alphaStudent->forceFill(['guardian_name' => 'Mrs Okonkwo', 'guardian_phone' => '08010000000', 'guardian_email' => 'g@example.test'])->save();
-        $this->getJson('/s/alpha/payment/student-search?q=ada')
+        $this->lookup('Adaeze Okonkwo', 'A/2026/001')
             ->assertOk()
             ->assertDontSee('Mrs Okonkwo')
             ->assertDontSee('08010000000')
             ->assertDontSee('g@example.test')
-            ->assertJsonMissingPath('students.0.guardian_name')
-            ->assertJsonMissingPath('students.0.guardian_phone')
-            ->assertJsonMissingPath('students.0.guardian_email')
-            ->assertJsonMissingPath('students.0.school_id');
+            ->assertJsonMissingPath('student.guardian_name')
+            ->assertJsonMissingPath('student.guardian_phone')
+            ->assertJsonMissingPath('student.guardian_email')
+            ->assertJsonMissingPath('student.school_id');
     }
 
-    public function test_public_search_masks_the_admission_number_but_the_server_still_stores_the_real_one(): void
+    public function test_public_lookup_masks_the_admission_number_but_the_server_still_stores_the_real_one(): void
     {
-        // Searching BY admission number still works, but the response never echoes
-        // the full number back — only enough of the tail to tell students apart.
-        $response = $this->getJson('/s/alpha/payment/student-search?q=a/2026/001')
+        // The parent typed the full number, but the response never echoes it back —
+        // only enough of the tail to confirm the right student.
+        $response = $this->lookup('Adaeze Okonkwo', 'a/2026/001')
             ->assertOk()
-            ->assertJsonCount(1, 'students')
-            ->assertJsonPath('students.0.class_name', 'JSS 1')
-            ->assertJsonPath('students.0.admission_number_masked', '*/****/001')
-            ->assertJsonMissingPath('students.0.admission_number');
+            ->assertJsonPath('student.class_name', 'JSS 1')
+            ->assertJsonPath('student.admission_number_masked', '*/****/001')
+            ->assertJsonMissingPath('student.admission_number');
         $this->assertStringNotContainsString('A/2026/001', $response->getContent());
         $this->assertStringNotContainsString('A\\/2026\\/001', $response->getContent());
 
@@ -452,7 +468,6 @@ class PaymentStudentContextTest extends TestCase
         $this->get('/s/alpha/payment')
             ->assertOk()
             ->assertSee('*\/****\/001', false) // inside the @json() re-hydration payload
-            ->assertDontSee('A/2026/001')
             ->assertDontSee('A\/2026\/001', false);
 
         // The transaction (and therefore the receipt) still carries the real number,
@@ -481,105 +496,65 @@ class PaymentStudentContextTest extends TestCase
         }
     }
 
-    public function test_another_schools_student_never_appears_in_search_results(): void
+    public function test_another_schools_student_is_never_found(): void
     {
-        // Beta's student is a perfect match for "beta" — at beta.
-        $this->getJson('/s/beta/payment/student-search?q=beta')->assertOk()->assertJsonCount(1, 'students');
+        // Beta's student is found — at beta, with beta's details.
+        $this->lookup('Beta Student', 'B/001', 'beta')->assertOk()->assertJsonPath('student.full_name', 'Beta Student');
 
-        // At alpha, the same query finds nothing, by name or by admission number.
-        $this->getJson('/s/alpha/payment/student-search?q=beta')->assertOk()->assertExactJson(['students' => []]);
-        $this->getJson('/s/alpha/payment/student-search?q=B/001')->assertOk()->assertExactJson(['students' => []]);
+        // At alpha, the same correct pair finds nothing.
+        $this->lookup('Beta Student', 'B/001')->assertOk()->assertExactJson(['student' => null]);
 
         // And alpha's student is invisible at beta.
-        $this->getJson('/s/beta/payment/student-search?q=Adaeze')->assertOk()->assertExactJson(['students' => []]);
-        $this->getJson('/s/beta/payment/student-search?q=A/2026')->assertOk()->assertExactJson(['students' => []]);
+        $this->lookup('Adaeze Okonkwo', 'A/2026/001', 'beta')->assertOk()->assertExactJson(['student' => null]);
 
-        // A school that does not exist is a 404, not an empty list.
-        $this->getJson('/s/nope/payment/student-search?q=Adaeze')->assertNotFound();
+        // A school that does not exist is a 404, not an empty result.
+        $this->postJson('/s/nope/payment/student-search', ['name' => 'Adaeze Okonkwo', 'admission_number' => 'A/2026/001'])->assertNotFound();
     }
 
-    public function test_selecting_a_student_yields_the_correct_admission_number_and_class(): void
+    public function test_the_found_student_is_the_one_stored_on_submit(): void
     {
         $this->makeStudent($this->alpha, 'A/2026/002', 'Adaeze Okafor', 'SS 2');
 
-        $r = $this->getJson('/s/alpha/payment/student-search?q=Adaeze Oka')->assertOk()->assertJsonCount(1, 'students');
-        $picked = $r->json('students.0');
+        $picked = $this->lookup('Adaeze Okafor', 'A/2026/002')->assertOk()->json('student');
 
         $this->assertSame('Adaeze Okafor', $picked['full_name']);
         $this->assertSame('*/****/002', $picked['admission_number_masked']);
         $this->assertArrayNotHasKey('admission_number', $picked);
         $this->assertSame('SS 2', $picked['class_name']);
 
-        // What the page auto-fills is exactly what the server stores on submit.
-        $this->pay(['student_id' => $picked['id']])->assertRedirect();
+        // What the page shows is exactly what the server stores on submit.
+        $this->pay(['student_id' => $picked['id'], 'student_name' => 'Adaeze Okafor', 'student_admission_number' => 'A/2026/002'])->assertRedirect();
         $t = Transaction::firstOrFail();
         $this->assertSame('A/2026/002', $t->student_admission_number);
         $this->assertSame('SS 2', $t->student_class);
         $this->assertSame('Adaeze Okafor', $t->student_name);
     }
 
-    public function test_students_with_similar_or_identical_names_can_be_told_apart(): void
+    public function test_students_with_identical_names_are_told_apart_by_admission_number(): void
     {
         $twinA = $this->makeStudent($this->alpha, 'A/2026/010', 'Chidi Eze', 'JSS 2');
         $twinB = $this->makeStudent($this->alpha, 'A/2026/011', 'Chidi Eze', 'SS 1');
-        $this->makeStudent($this->alpha, 'A/2026/012', 'Chidinma Eze', 'JSS 1');
 
-        $students = $this->getJson('/s/alpha/payment/student-search?q=chidi')
-            ->assertOk()
-            ->assertJsonCount(3, 'students')
-            ->json('students');
+        // The admission number decides which "Chidi Eze" is meant.
+        $this->assertSame($twinA->id, $this->lookup('Chidi Eze', 'A/2026/010')->json('student.id'));
+        $found = $this->lookup('Chidi Eze', 'A/2026/011')->assertJsonPath('student.class_name', 'SS 1')->json('student');
+        $this->assertSame($twinB->id, $found['id']);
 
-        // Every suggestion carries a class and admission number, so two "Chidi Eze"
-        // rows are distinguishable, and each maps to its own id.
-        $identical = array_values(array_filter($students, fn ($s) => $s['full_name'] === 'Chidi Eze'));
-        $this->assertCount(2, $identical);
-        $this->assertNotSame($identical[0]['id'], $identical[1]['id']);
-        $this->assertEqualsCanonicalizing(['JSS 2', 'SS 1'], array_column($identical, 'class_name'));
-        $this->assertEqualsCanonicalizing(['*/****/010', '*/****/011'], array_column($identical, 'admission_number_masked'));
-
-        // Picking the second twin stores the second twin.
+        // Paying for the second twin stores the second twin.
         $this->pay(['student_id' => $twinB->id])->assertRedirect();
         $t = Transaction::firstOrFail();
         $this->assertSame($twinB->id, (int) $t->student_id);
         $this->assertSame('SS 1', $t->student_class);
         $this->assertSame('A/2026/011', $t->student_admission_number);
-        $this->assertNotSame($twinA->id, (int) $t->student_id);
     }
 
-    public function test_student_search_matches_admission_numbers_and_ranks_name_prefixes_first(): void
-    {
-        $this->makeStudent($this->alpha, 'A/2026/020', 'Ngozi Adaeze', 'JSS 3');
-
-        // Secondary: admission number, case-insensitive.
-        $this->getJson('/s/alpha/payment/student-search?q=a/2026/020')
-            ->assertOk()->assertJsonCount(1, 'students')->assertJsonPath('students.0.full_name', 'Ngozi Adaeze');
-
-        // Primary: name, case-insensitive, and "Adaeze …" outranks "… Adaeze".
-        $names = array_column($this->getJson('/s/alpha/payment/student-search?q=ADAEZE')->assertOk()->json('students'), 'full_name');
-        $this->assertSame(['Adaeze Okonkwo', 'Ngozi Adaeze'], $names);
-    }
-
-    public function test_student_search_needs_a_query_and_caps_its_results(): void
-    {
-        $this->getJson('/s/alpha/payment/student-search')->assertUnprocessable();
-        $this->getJson('/s/alpha/payment/student-search?q=a')->assertUnprocessable();
-        $this->getJson('/s/alpha/payment/student-search?q='.str_repeat('a', 101))->assertUnprocessable();
-
-        for ($i = 0; $i < 15; $i++) {
-            $this->makeStudent($this->alpha, 'A/2026/1'.str_pad((string) $i, 2, '0', STR_PAD_LEFT), 'Common Name '.$i, 'JSS 1');
-        }
-        $this->getJson('/s/alpha/payment/student-search?q=common')
-            ->assertOk()
-            ->assertJsonCount(\App\Http\Controllers\PaymentController::STUDENT_SEARCH_LIMIT, 'students');
-    }
-
-    public function test_student_search_is_rate_limited(): void
+    public function test_student_lookup_is_rate_limited(): void
     {
         for ($i = 0; $i < 60; $i++) {
-            $this->getJson('/s/alpha/payment/student-search?q=zz'.$i)->assertOk();
+            $this->lookup('Nobody '.$i, 'X/'.$i)->assertOk();
         }
 
-        $this->getJson('/s/alpha/payment/student-search?q=Adaeze')->assertStatus(429);
+        $this->lookup('Adaeze Okonkwo', 'A/2026/001')->assertStatus(429);
     }
 
     public function test_settlement_keeps_the_student_link_and_records_the_school_share_payout(): void
