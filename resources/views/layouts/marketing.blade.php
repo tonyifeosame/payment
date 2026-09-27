@@ -13,6 +13,7 @@
     </title>
     <meta name="description" content="@hasSection('meta_description') @yield('meta_description') @else @include('marketing.partials.brand-name') gives parents a simple way to pay school fees online while the school tracks every payment, receipt and payout in one place. @endif">
     <link rel="icon" type="image/svg+xml" href="{{ asset('favicon.svg') }}">
+    <link rel="apple-touch-icon" href="{{ asset('apple-touch-icon.png') }}">
 
     @include('marketing.partials.head-tokens')
     @stack('head')

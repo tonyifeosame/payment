@@ -5,6 +5,7 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>@yield('title', 'Admin') · {{ $school->name }}</title>
+    <meta name="robots" content="noindex">
     <link rel="icon" type="image/svg+xml" href="{{ asset('favicon.svg') }}">
     {{-- Installable admin app ("FEYRA Admin"). Admin layout only: the marketing and
          payment layouts never link this manifest, so public pages are not installable.

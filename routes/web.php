@@ -276,14 +276,10 @@ Route::prefix('s/{school:slug}')->group(function () use ($schoolAdminRoutes) {
     Route::middleware([EnsureSchoolAdmin::class, RedirectLegacyAdminUrls::class])->scopeBindings()->name('legacy.')->group($schoolAdminRoutes);
 });
 
-// Optional success & failed pages -> redirect to index with flash
-Route::get('/payment/success', function () {
-    return redirect()->route('payment.index')->with('success', 'Payment successful!');
-})->name('payment.success');
-
-Route::get('/payment/failed', function () {
-    return redirect()->route('payment.index')->with('error', 'Payment failed!');
-})->name('payment.failed');
+// The unused /payment/success and /payment/failed routes were removed. Nothing
+// linked to them (Paystack returns payers to /payment/callback), and both
+// redirected to the admin-only /payment, so a parent reaching either one was sent
+// to the admin login.
 
 // The temporary /test-mail route was removed. It accepted an arbitrary ?to=
 // address with no authentication, throttling or ownership check, so anyone who
