@@ -31,6 +31,18 @@
 
             <ul class="mt-8 space-y-3">
                 <li>
+                    <a href="mailto:ifeosamenkem@gmail.com"
+                       class="flex min-h-[56px] items-center gap-3 rounded-2xl border border-brand-ash/60 bg-white px-4 py-3 text-brand-obsidian hover:border-brand-obsidian focus:outline-none focus-visible:ring-4 focus-visible:ring-brand-violet/30">
+                        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-violet/10 text-brand-violet">
+                            <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>
+                        </span>
+                        <span class="min-w-0">
+                            <span class="block text-xs font-semibold uppercase tracking-[0.12em] text-brand-slate">Official support email</span>
+                            <span class="block break-all font-semibold">ifeosamenkem@gmail.com</span>
+                        </span>
+                    </a>
+                </li>
+                <li>
                     <a href="https://wa.me/2348143369102" target="_blank" rel="noopener"
                        class="flex min-h-[56px] items-center gap-3 rounded-2xl border border-brand-ash/60 bg-white px-4 py-3 text-brand-obsidian hover:border-brand-obsidian focus:outline-none focus-visible:ring-4 focus-visible:ring-brand-violet/30">
                         <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-violet/10 text-brand-violet">

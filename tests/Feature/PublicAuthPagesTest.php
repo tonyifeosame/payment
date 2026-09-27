@@ -79,13 +79,15 @@ class PublicAuthPagesTest extends TestCase
             ->assertSee('value="alpha@example.test"', false);
     }
 
-    public function test_contact_page_lists_only_the_whatsapp_channel(): void
+    public function test_contact_page_lists_the_support_email_and_whatsapp_only(): void
     {
         $html = $this->get('/contact')->getContent();
 
+        $this->assertStringContainsString('href="mailto:ifeosamenkem@gmail.com"', $html);
+        $this->assertStringContainsString('Official support email', $html);
+        $this->assertSame(1, substr_count($html, 'mailto:'));
         $this->assertStringContainsString('href="https://wa.me/2348143369102"', $html);
         $this->assertStringNotContainsString('instagram', strtolower($html));
-        $this->assertStringNotContainsString('mailto:', $html);
         $this->assertStringNotContainsString('tel:', $html);
     }
 }
