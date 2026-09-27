@@ -20,8 +20,9 @@ class EnsureSchoolAdmin
     public function handle(Request $request, Closure $next)
     {
         // No session, a deleted school, or a session that predates the school's
-        // current password (H6) all mean "not signed in".
-        $school = SchoolSession::school($request);
+        // current password (H6) all mean "not signed in" — unless a valid
+        // "Remember me" cookie signs this browser back in.
+        $school = SchoolSession::resolve($request);
         if (! $school) {
             return redirect()->route('admin.login')->with('error', $request->session()->get('error', 'Please log in.'));
         }

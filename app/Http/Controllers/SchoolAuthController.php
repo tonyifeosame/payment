@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Mail\SchoolPasswordResetMail;
 use App\Models\School;
 use App\Support\CredentialThrottle;
+use App\Support\SchoolRemember;
 use App\Support\SchoolSession;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -20,9 +21,17 @@ class SchoolAuthController extends Controller
 
     public function login(Request $request)
     {
+        // A checkbox without a value attribute submits "on" — what login pages
+        // opened before "Remember me" was implemented still send. The boolean
+        // rule below does not accept it, so normalise exactly that value first.
+        if ($request->input('remember') === 'on') {
+            $request->merge(['remember' => true]);
+        }
+
         $credentials = $request->validate([
             'name' => 'required|string',
             'password' => 'required|string',
+            'remember' => 'nullable|boolean',
         ]);
 
         // L7: failed logins only, per typed school name + client IP (5 per 60
@@ -51,11 +60,21 @@ class SchoolAuthController extends Controller
         // Fresh session id (fixation protection), then the school context.
         SchoolSession::login($request, $school);
 
+        // "Remember me" issues this browser a persistent credential; without it,
+        // any credential the browser already held is revoked and cleared.
+        if ($credentials['remember'] ?? false) {
+            SchoolRemember::issue($request, $school);
+        } else {
+            SchoolRemember::forgetBrowser($request);
+        }
+
         return redirect()->route('school.dashboard', ['school' => $school])->with('success', 'Logged in successfully.');
     }
 
     public function logout(Request $request)
     {
+        // This browser's remember credential only; other devices stay remembered.
+        SchoolRemember::forgetBrowser($request);
         SchoolSession::logout($request);
 
         return redirect()->route('admin.login')->with('success', 'Logged out.');
@@ -68,7 +87,7 @@ class SchoolAuthController extends Controller
      */
     public function app(Request $request)
     {
-        $school = SchoolSession::school($request);
+        $school = SchoolSession::resolve($request);
 
         if (! $school) {
             return redirect()->route('admin.login');
@@ -191,6 +210,10 @@ class SchoolAuthController extends Controller
         $school->save();
 
         Password::broker()->deleteToken($school);
+
+        // A reset revokes every remembered browser of the school, as it does every session.
+        SchoolRemember::revokeAllFor($school);
+        SchoolRemember::forgetBrowser($request);
 
         // Every session authenticated under the old password — including one in
         // this browser — now fails the fingerprint check; start this one clean.

@@ -112,4 +112,24 @@ return [
 
     'password_timeout' => env('AUTH_PASSWORD_TIMEOUT', 10800),
 
+    /*
+    |--------------------------------------------------------------------------
+    | School Admin "Remember Me"
+    |--------------------------------------------------------------------------
+    |
+    | School admins do not use the guards above: they sign in through
+    | App\Support\SchoolSession, and "Remember me" is App\Support\SchoolRemember.
+    | `cookie` is the name of the persistent cookie (never the session cookie).
+    | `lifetime_days` is how long a remembered browser stays signed in, counted
+    | from the login where the box was ticked; using it does not extend it.
+    | Logout, a password change or a password reset ends it sooner. The cookie
+    | takes its path, domain, Secure and SameSite settings from config/session.php.
+    |
+    */
+
+    'school_remember' => [
+        'cookie' => env('SCHOOL_REMEMBER_COOKIE', 'school_remember'),
+        'lifetime_days' => (int) env('SCHOOL_REMEMBER_DAYS', 30),
+    ],
+
 ];

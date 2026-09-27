@@ -75,7 +75,7 @@
 
                 <div class="flex items-center justify-between gap-4">
                     <label for="remember" class="inline-flex cursor-pointer select-none items-center gap-2 text-sm text-brand-obsidian">
-                        <input id="remember" name="remember" type="checkbox"
+                        <input id="remember" name="remember" type="checkbox" value="1" @checked(old('remember'))
                                class="h-4 w-4 rounded border-brand-ash text-brand-violet focus:ring-4 focus:ring-brand-violet/20" />
                         Remember me
                     </label>

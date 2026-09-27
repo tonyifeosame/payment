@@ -8,6 +8,7 @@ use App\Models\SchoolLogo;
 use App\Services\SchoolBankDetailsService;
 use App\Support\CredentialThrottle;
 use App\Support\RecordsSchoolAudit;
+use App\Support\SchoolRemember;
 use App\Support\SchoolSession;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -193,6 +194,10 @@ class SchoolSettingsController extends Controller
         DB::transaction(function () use ($school, $validator, $audit, $request) {
             $school->forceFill(['admin_password' => Hash::make($validator->validated()['password'])])->save();
 
+            // Every remembered browser of the school, including this one, is revoked
+            // with the password it was issued under.
+            SchoolRemember::revokeAllFor($school);
+
             $audit->record($school, SchoolAuditEvent::ACTION_PASSWORD_CHANGED, 'school', $school->id, null, request: $request);
         });
 
@@ -200,6 +205,7 @@ class SchoolSettingsController extends Controller
         // fingerprint); every other session for this school is revoked on its next
         // request by the fingerprint check in EnsureSchoolAdmin (H6).
         SchoolSession::refresh($request, $school);
+        SchoolRemember::forgetBrowser($request);
         CredentialThrottle::clear($throttleKey);
 
         return redirect()->route('school.settings.edit', ['school' => $school->slug])

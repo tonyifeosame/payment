@@ -111,4 +111,14 @@ final class SchoolSession
 
         return $school;
     }
+
+    /**
+     * The signed-in school, or — when the session is not signed in — the school a
+     * valid "Remember me" cookie restores (SchoolRemember), or null. For the admin
+     * entry points only; school() itself never restores.
+     */
+    public static function resolve(Request $request): ?School
+    {
+        return self::school($request) ?? SchoolRemember::restore($request);
+    }
 }
