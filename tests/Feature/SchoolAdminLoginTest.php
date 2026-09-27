@@ -27,7 +27,7 @@ class SchoolAdminLoginTest extends TestCase
     {
         $this->get('/admin/login')
             ->assertOk()
-            ->assertSee('School Name')
+            ->assertSee('School name')
             ->assertSee('name="name"', false)
             ->assertSee('not its email address');
     }
