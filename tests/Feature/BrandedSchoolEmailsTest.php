@@ -185,14 +185,23 @@ class BrandedSchoolEmailsTest extends TestCase
         }
     }
 
-    public function test_the_layout_the_removed_views_shared_is_still_used_by_live_pages(): void
+    public function test_the_old_app_layout_is_gone_and_the_pages_that_used_it_still_load(): void
     {
-        // layouts.app is NOT dead — admin login, the password pages and contact
-        // still extend it. Guards against deleting it in a later tidy-up.
-        $this->assertTrue(File::exists(base_path('resources/views/layouts/app.blade.php')));
+        // layouts.app was removed once its last consumers — admin login, the two
+        // password pages and contact — moved to layouts.marketing.
+        $this->assertFalse(File::exists(base_path('resources/views/layouts/app.blade.php')));
+
+        $sources = collect(File::allFiles(base_path('resources/views')))
+            ->merge(File::allFiles(base_path('app')))
+            ->merge(File::allFiles(base_path('routes')))
+            ->filter(fn ($f) => $f->getExtension() === 'php')
+            ->map(fn ($f) => File::get($f->getPathname()))
+            ->implode("\n");
+        $this->assertStringNotContainsString('layouts.app', $sources, 'a view still references the removed layouts.app');
 
         $this->get('/admin/login')->assertOk();
         $this->get('/contact')->assertOk();
         $this->get('/admin/forgot-password')->assertOk();
+        $this->get('/admin/reset-password/some-token?email=alpha%40example.test')->assertOk();
     }
 }
