@@ -4,6 +4,7 @@
     Contact us — @include('marketing.partials.brand-name')
 @endsection
 @section('meta_description', 'Questions about collecting school fees with FEYRA? Send us a message or reach us on WhatsApp.')
+@section('share', 'on')
 
 @section('nav')
     @include('marketing.partials.slim-header', [
