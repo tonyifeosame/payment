@@ -54,7 +54,7 @@ class HomepageTest extends TestCase
             'Reports',          // no reports module exists
             '9AM',              // payouts are immediate, not scheduled
             'Pricing',          // no public pricing page or claim
-            'Privacy', 'Terms', // no legal pages yet
+            'Terms',            // no terms page yet (Privacy Policy: PrivacyPolicyPageTest)
             'Greenwood',        // reference-image artefact
             'AccessLink',       // previous project name
             'Lemon Squeezy',

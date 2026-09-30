@@ -26,6 +26,7 @@
             <p class="flex gap-4">
                 <a href="{{ route('home') }}" class="hover:text-brand-obsidian">Homepage</a>
                 <a href="{{ route('contact.show') }}" class="hover:text-brand-obsidian">Contact</a>
+                <a href="{{ route('privacy.show') }}" class="hover:text-brand-obsidian">Privacy</a>
             </p>
         </div>
     </footer>

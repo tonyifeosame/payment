@@ -18,6 +18,7 @@
                     <h2 class="font-sans text-xs font-semibold uppercase tracking-[0.12em] text-brand-obsidian">Company</h2>
                     <ul class="mt-4 space-y-3 text-sm">
                         <li><a href="{{ route('contact.show') }}" class="text-brand-slate hover:text-brand-obsidian">Contact</a></li>
+                        <li><a href="{{ route('privacy.show') }}" class="text-brand-slate hover:text-brand-obsidian">Privacy Policy</a></li>
                     </ul>
                 </div>
             </nav>
