@@ -25,6 +25,7 @@
     <title>Payment receipt{{ $school ? ' — '.$school->name : '' }}</title>
     <meta name="robots" content="noindex">
     <link rel="icon" type="image/svg+xml" href="{{ asset('favicon.svg') }}">
+    <link rel="apple-touch-icon" href="{{ asset('apple-touch-icon.png') }}">
     @include('marketing.partials.head-tokens')
 </head>
 <body class="receipt-page min-h-screen bg-brand-fog text-brand-obsidian">

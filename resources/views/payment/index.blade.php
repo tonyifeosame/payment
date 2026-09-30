@@ -26,6 +26,7 @@
     <meta name="twitter:description" content="{{ $shareDescription }}">
     <meta name="twitter:image" content="{{ $shareImage }}">
     <link rel="icon" type="image/svg+xml" href="{{ asset('favicon.svg') }}">
+    <link rel="apple-touch-icon" href="{{ asset('apple-touch-icon.png') }}">
     @include('marketing.partials.head-tokens')
 </head>
 <body class="min-h-screen bg-brand-fog text-brand-obsidian">
@@ -49,6 +50,12 @@
     // priced fee has nothing payable — and the form would render as an empty
     // dropdown with no explanation.
     $hasPayableFees = $categoriesForJs->contains(fn ($c) => count($c['subcategories']) > 0);
+
+    // The payer has just paid, or been told not to pay again (still processing, or
+    // received but not yet recorded): the page shows that message and its actions,
+    // not the form and its Pay button. "Make another payment" reloads the page with
+    // the form.
+    $paymentClosed = session('success') || in_array(session('payment_outcome'), ['pending', 'conflict'], true);
 @endphp
 
     {{-- Top bar: brand + trust cue. Deliberately not a link — parents arriving from a
@@ -129,6 +136,11 @@
                 @unless($outcome)
                     <p class="mt-2 text-sm text-red-800">Your details are still filled in below — check them and try again.</p>
                 @endunless
+                @if(in_array($outcome, ['pending', 'conflict'], true))
+                    <div class="mt-4 flex flex-col gap-2 sm:flex-row">
+                        <a href="{{ url()->current() }}" class="btn-outline w-full sm:w-auto">Make another payment</a>
+                    </div>
+                @endif
             </section>
         @endif
 
@@ -143,10 +155,11 @@
             </section>
         @endif
 
-        @if(session('success'))
-            {{-- A completed payment ends here: the success card above, with its receipt
-                 actions and "Make another payment", which reloads this page with the
-                 form. No form and no sticky Pay bar under a confirmation. --}}
+        @if($paymentClosed)
+            {{-- A completed payment, or one the payer was told not to repeat, ends here:
+                 the card above, with its actions and "Make another payment", which
+                 reloads this page with the form. No form and no sticky Pay bar under a
+                 confirmation or a "don't pay again". --}}
         @elseif(! $hasPayableFees)
             {{-- L6: nothing to pay for yet. Better to say so plainly than to show a
                  form whose dropdowns are empty. The school's own contact details are
@@ -394,7 +407,7 @@
 {{-- L6: the script caches the form's elements unconditionally, so it is only
      loaded when the form is actually on the page. Without this the empty state
      would fill the console with TypeErrors on missing nodes. --}}
-@if($hasPayableFees && ! session('success'))
+@if($hasPayableFees && ! $paymentClosed)
 @include('payment._script')
 @endif
 </body>

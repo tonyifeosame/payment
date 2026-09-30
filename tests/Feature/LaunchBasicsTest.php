@@ -33,6 +33,18 @@ class LaunchBasicsTest extends TestCase
         $this->assertSame([16, 32, 48], $sizes);
     }
 
+    public function test_the_payment_page_and_receipt_link_the_apple_touch_icon(): void
+    {
+        $school = $this->makeSchool('Alpha School', 'alpha');
+        $transaction = $this->makeSuccessfulTransaction($school);
+        $link = '<link rel="apple-touch-icon" href="'.asset('apple-touch-icon.png').'">';
+
+        $this->get('/pay/alpha')->assertOk()->assertSee($link, false);
+        $this->get('/s/alpha/payment')->assertOk()->assertSee($link, false);
+        $this->get(\Illuminate\Support\Facades\URL::signedRoute('payment.receipt', ['transaction' => $transaction->id]))
+            ->assertOk()->assertSee($link, false);
+    }
+
     public function test_apple_touch_icon_is_opaque_180px_and_linked_from_the_marketing_layout(): void
     {
         [$width, $height, $type] = getimagesize(public_path('apple-touch-icon.png'));

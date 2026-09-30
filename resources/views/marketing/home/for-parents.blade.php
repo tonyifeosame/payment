@@ -41,6 +41,8 @@
                                class="min-h-[48px] w-full flex-1 rounded-xl border border-brand-ash bg-white px-4 text-base text-brand-obsidian placeholder:text-brand-slate/70 focus:border-brand-violet focus:outline-none focus:ring-4 focus:ring-brand-violet/20">
                         <button id="goSchool" type="submit" class="btn-obsidian sm:shrink-0">Go to payment page</button>
                     </form>
+                    {{-- Shown when the form is submitted empty; role="alert" announces it. --}}
+                    <p id="schoolSlugError" class="field-error hidden" role="alert"></p>
                     <p class="mt-3 text-xs text-brand-slate">Your school's payment link looks like <code class="rounded bg-white px-1.5 py-0.5 font-mono text-[11px] text-brand-violet">/s/your-school/payment</code>. Ask the school if you're not sure of the name.</p>
                 </div>
             </div>
@@ -52,11 +54,27 @@
 (function () {
     var form = document.getElementById('findSchoolForm');
     var input = document.getElementById('schoolSlug');
+    var error = document.getElementById('schoolSlugError');
     if (!form || !input) return;
+    function showError(message) {
+        if (!error) return;
+        error.textContent = message;
+        error.classList.toggle('hidden', !message);
+        input.classList.toggle('field-input-error', !!message);
+        if (message) {
+            input.setAttribute('aria-invalid', 'true');
+            input.setAttribute('aria-describedby', 'schoolSlugError');
+        } else {
+            input.removeAttribute('aria-invalid');
+            input.removeAttribute('aria-describedby');
+        }
+    }
+    input.addEventListener('input', function () { if (input.value.trim()) showError(''); });
     form.addEventListener('submit', function (e) {
         e.preventDefault();
         var raw = (input.value || '').trim();
-        if (!raw) { input.focus(); return; }
+        if (!raw) { showError("Please enter your school's name."); input.focus(); return; }
+        showError('');
         // Same slug rule as before: lowercase, strip anything but a-z 0-9 - and spaces, spaces -> hyphens.
         var slug = raw.toLowerCase().replace(/[^a-z0-9\-\s]/g, '').replace(/\s+/g, '-');
         window.location.href = '/pay/' + encodeURIComponent(slug);

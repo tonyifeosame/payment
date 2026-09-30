@@ -10,6 +10,19 @@ use Tests\TestCase;
  */
 class HomepageTest extends TestCase
 {
+    public function test_the_find_your_school_form_has_an_accessible_empty_submission_message(): void
+    {
+        // The message itself is shown by the page's script (verified in a browser);
+        // here: the announced error element exists, starts hidden and empty, and the
+        // script fills it, marks the field invalid and links the two.
+        $this->get('/')
+            ->assertOk()
+            ->assertSee('<p id="schoolSlugError" class="field-error hidden" role="alert"></p>', false)
+            ->assertSee('showError("Please enter your school\'s name."); input.focus(); return;', false)
+            ->assertSee("input.setAttribute('aria-invalid', 'true');", false)
+            ->assertSee("input.setAttribute('aria-describedby', 'schoolSlugError');", false);
+    }
+
     public function test_homepage_renders_the_marketing_page(): void
     {
         $response = $this->get('/');

@@ -279,6 +279,57 @@ class PaymentCallbackExperienceTest extends TestCase
             ->assertDontSee('Payment successful');
     }
 
+    public function test_pending_and_conflict_outcomes_hide_the_form_and_offer_make_another_payment(): void
+    {
+        $conflictTx = $this->pendingTransaction('ref-conflict-form');
+
+        foreach (['pending' => 'Payment still processing', 'conflict' => 'Payment not yet recorded'] as $outcome => $heading) {
+            $this->flushSession();
+
+            if ($outcome === 'pending') {
+                $this->paystackReports('pending');
+                $this->pendingTransaction('ref-pending-form');
+                $this->get('/payment/callback?reference=ref-pending-form')->assertSessionHas('payment_outcome', 'pending');
+            } else {
+                $this->mock(PaymentSettlementService::class, fn ($m) => $m->shouldReceive('settleByReference')->andReturn([
+                    'outcome' => PaymentSettlementService::SETTLEMENT_CONFLICT, 'transaction' => $conflictTx,
+                    'message' => null, 'paystack_status' => null,
+                ]));
+                $this->get('/payment/callback?reference=ref-conflict-form')->assertSessionHas('payment_outcome', 'conflict');
+            }
+
+            $page = $this->get('/s/alpha/payment')->assertOk();
+            $html = $page->getContent();
+
+            // The "don't pay again" message stands on its own: no form, no sticky Pay
+            // bar, no form script underneath it.
+            $page->assertSee($heading)->assertSee("Please don't pay again.")
+                ->assertSee('<a href="'.url('/s/alpha/payment').'" class="btn-outline w-full sm:w-auto">Make another payment</a>', false);
+            foreach (['id="paymentForm"', 'id="submitBtn"', 'id="submitTotal"', 'const maxQuantity'] as $absent) {
+                $this->assertStringNotContainsString($absent, $html, "{$outcome}: {$absent}");
+            }
+
+            // "Make another payment" is a plain link back: the message has been shown,
+            // so the normal form is back.
+            $this->get('/s/alpha/payment')
+                ->assertSee('id="paymentForm"', false)
+                ->assertSee('id="submitBtn"', false)
+                ->assertDontSee($heading);
+        }
+    }
+
+    public function test_declined_and_cancelled_outcomes_keep_the_form_to_try_again(): void
+    {
+        foreach (['failed' => 'Payment did not go through. You can try again.', 'abandoned' => 'Payment was not completed. You can try again.'] as $status => $message) {
+            $this->flushSession();
+            $this->paystackReports($status);
+            $this->pendingTransaction('ref-retry-'.$status);
+
+            $this->get('/payment/callback?reference=ref-retry-'.$status);
+            $this->get('/s/alpha/payment')->assertSee($message)->assertSee('id="paymentForm"', false)->assertDontSee('Make another payment');
+        }
+    }
+
     public function test_the_success_wording_is_not_repeated(): void
     {
         $this->paystackReports('success');
