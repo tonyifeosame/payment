@@ -362,7 +362,8 @@ class PaymentIntegrityTest extends TestCase
 
     public function test_callback_without_a_reference_is_handled_safely(): void
     {
-        $this->get('/payment/callback')->assertRedirect(route('payment.index'));
+        // The public "payment not found" page, never the admin sign-in.
+        $this->get('/payment/callback')->assertNotFound()->assertSee('We couldn’t find this payment');
 
         $this->assertSame('pending', $this->pending->refresh()->status);
     }

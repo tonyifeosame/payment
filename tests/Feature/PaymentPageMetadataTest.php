@@ -138,8 +138,10 @@ class PaymentPageMetadataTest extends TestCase
     {
         $transaction = $this->makeSuccessfulTransaction($this->school, ['reference' => 'txref-secret-4242', 'amount' => 98765.43]);
 
+        // The success state exactly as the callback leaves it when it grants the receipt.
         $response = $this->withSession([
-            'success' => 'Payment successful! A receipt has been sent to your email.',
+            'success' => 'A receipt has been sent to your email. You can also view or download it below.',
+            'receipt_available' => true,
             'last_transaction_id' => $transaction->id,
         ])->get('/pay/alpha')->assertOk();
 

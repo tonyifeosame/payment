@@ -114,7 +114,7 @@ class PaymentAttemptLifecycleTest extends TestCase
             'ref-reversed' => Http::response($this->verifyAnswer('reversed'), 200),
         ]);
 
-        $this->get('/payment/callback?reference=ref-declined')->assertRedirect('/s/alpha/payment')->assertSessionHas('error', 'Payment failed!');
+        $this->get('/payment/callback?reference=ref-declined')->assertRedirect('/s/alpha/payment')->assertSessionHas('error', 'Payment did not go through. You can try again.');
 
         $t->refresh();
         $this->assertSame('failed', $t->status);

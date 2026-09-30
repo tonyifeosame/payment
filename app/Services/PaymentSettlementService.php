@@ -37,14 +37,23 @@ class PaymentSettlementService
 
     // Outcomes.
     public const SETTLED = 'settled';                       // transitioned now; receipt queued
+
     public const ALREADY_SETTLED = 'already_settled';       // idempotent no-op
+
     public const NOT_FOUND = 'not_found';                   // no local transaction for this reference
+
     public const NOT_SUCCESSFUL = 'not_successful';         // Paystack says the charge did not succeed
+
     public const AMOUNT_MISMATCH = 'amount_mismatch';
+
     public const CURRENCY_MISMATCH = 'currency_mismatch';
+
     public const VERIFICATION_FAILED = 'verification_failed'; // transient: could not reach/parse Paystack
+
     public const SETTLEMENT_CONFLICT = 'settlement_conflict'; // durable DB conflict; needs a human, not a retry
+
     public const FAILED_RECORDED = 'failed_recorded';         // H5: Paystack's definitive failure written to the row
+
     public const ALREADY_FAILED = 'already_failed';           // H5: it was already recorded as failed; no-op
 
     /**
@@ -62,7 +71,7 @@ class PaymentSettlementService
     ) {}
 
     /**
-     * @return array{outcome: string, transaction: ?Transaction, message: ?string}
+     * @return array{outcome: string, transaction: ?Transaction, message: ?string, paystack_status: ?string}
      */
     public function settleByReference(?string $reference): array
     {
@@ -100,7 +109,7 @@ class PaymentSettlementService
      * reference Paystack has never seen, are recorded as failed. Anything Paystack
      * still calls open, and any answer we could not get, leaves the row pending.
      *
-     * @return array{outcome: string, transaction: ?Transaction, message: ?string}
+     * @return array{outcome: string, transaction: ?Transaction, message: ?string, paystack_status: ?string}
      */
     public function reconcilePendingAttempt(Transaction $transaction): array
     {
@@ -155,7 +164,7 @@ class PaymentSettlementService
 
             // pending / ongoing / queued / processing / abandoned-but-within-window /
             // anything new: not proof of anything. Leave it.
-            return $this->result(self::NOT_SUCCESSFUL, $transaction, $status !== '' ? 'Paystack reports the transaction as '.$status : null);
+            return $this->result(self::NOT_SUCCESSFUL, $transaction, $status !== '' ? 'Paystack reports the transaction as '.$status : null, $status !== '' ? $status : null);
         }
 
         $expectedMinorUnits = (int) round(((float) $transaction->amount) * 100);
@@ -357,7 +366,7 @@ class PaymentSettlementService
             return [self::FAILED_RECORDED, $locked];
         });
 
-        return $this->result($outcome, $row, $outcome === self::FAILED_RECORDED ? $reason : null);
+        return $this->result($outcome, $row, $outcome === self::FAILED_RECORDED ? $reason : null, $paystackStatus);
     }
 
     /**
@@ -517,8 +526,14 @@ class PaymentSettlementService
         });
     }
 
-    private function result(string $outcome, ?Transaction $transaction, ?string $message = null): array
+    /**
+     * paystack_status is informational only: the status Paystack reported when it is
+     * what explains the outcome (a charge still pending, abandoned, failed or
+     * reversed), so the browser callback can word its message. It never changes an
+     * outcome; every other result carries null.
+     */
+    private function result(string $outcome, ?Transaction $transaction, ?string $message = null, ?string $paystackStatus = null): array
     {
-        return ['outcome' => $outcome, 'transaction' => $transaction, 'message' => $message];
+        return ['outcome' => $outcome, 'transaction' => $transaction, 'message' => $message, 'paystack_status' => $paystackStatus];
     }
 }

@@ -93,20 +93,42 @@
                         <p class="mt-1 text-sm text-green-800">{{ session('success') }}</p>
                     </div>
                 </div>
-                @if(session('last_transaction_id'))
-                    <div class="mt-4 flex flex-col gap-2 sm:flex-row">
+                {{-- The receipt actions only for the payment the callback just granted
+                     (receipt_available is flashed with it): an older payment's id still
+                     in the session is never offered as this one's receipt. --}}
+                <div class="mt-4 flex flex-col gap-2 sm:flex-row">
+                    @if(session('receipt_available') && session('last_transaction_id'))
                         <a href="{{ route('payment.receipt', session('last_transaction_id')) }}" class="btn-obsidian w-full sm:w-auto">View receipt</a>
                         <a href="{{ route('payment.receipt.download', session('last_transaction_id')) }}" class="btn-outline w-full sm:w-auto">Download PDF</a>
-                    </div>
-                @endif
+                    @endif
+                    <a href="{{ url()->current() }}" class="btn-outline w-full sm:w-auto">Make another payment</a>
+                </div>
             </section>
         @endif
 
         @if(session('error'))
-            <section class="mt-6 rounded-3xl border border-red-200 bg-red-50 p-5" role="alert">
-                <p class="font-display text-lg font-bold text-red-900">Payment not completed</p>
-                <p class="mt-1 text-sm text-red-800">{{ session('error') }}</p>
-                <p class="mt-2 text-sm text-red-800">Your details are still filled in below — check them and try again.</p>
+            @php
+                // payment_outcome is set by the Paystack callback; without it this is
+                // an error from starting the checkout, where the form keeps the
+                // payer's details. Outcomes where money may already be on its way are
+                // shown neutrally (and tell the payer not to pay again).
+                $outcome = session('payment_outcome');
+                $outcomeHeading = match ($outcome) {
+                    'pending' => 'Payment still processing',
+                    'conflict' => 'Payment not yet recorded',
+                    'unverified' => 'Payment not yet confirmed',
+                    'unconfirmed' => 'Payment could not be confirmed',
+                    'declined' => 'Payment unsuccessful',
+                    default => 'Payment not completed',
+                };
+                $outcomeNeutral = in_array($outcome, ['pending', 'conflict', 'unverified', 'unconfirmed'], true);
+            @endphp
+            <section class="mt-6 rounded-3xl border p-5 {{ $outcomeNeutral ? 'border-brand-ash/60 bg-white' : 'border-red-200 bg-red-50' }}" role="{{ $outcomeNeutral ? 'status' : 'alert' }}">
+                <p class="font-display text-lg font-bold {{ $outcomeNeutral ? 'text-brand-obsidian' : 'text-red-900' }}">{{ $outcomeHeading }}</p>
+                <p class="mt-1 text-sm {{ $outcomeNeutral ? 'text-brand-slate' : 'text-red-800' }}">{{ session('error') }}</p>
+                @unless($outcome)
+                    <p class="mt-2 text-sm text-red-800">Your details are still filled in below — check them and try again.</p>
+                @endunless
             </section>
         @endif
 
@@ -121,7 +143,11 @@
             </section>
         @endif
 
-        @unless($hasPayableFees)
+        @if(session('success'))
+            {{-- A completed payment ends here: the success card above, with its receipt
+                 actions and "Make another payment", which reloads this page with the
+                 form. No form and no sticky Pay bar under a confirmation. --}}
+        @elseif(! $hasPayableFees)
             {{-- L6: nothing to pay for yet. Better to say so plainly than to show a
                  form whose dropdowns are empty. The school's own contact details are
                  in the footer below, so a parent has somewhere to go. --}}
@@ -356,7 +382,7 @@
                 </div>
             </div>
         </form>
-        @endunless
+        @endif
 
         <footer class="mt-10 space-y-1 text-center text-xs text-brand-slate">
             @if($school->address)<p>{{ $school->address }}</p>@endif
@@ -368,7 +394,7 @@
 {{-- L6: the script caches the form's elements unconditionally, so it is only
      loaded when the form is actually on the page. Without this the empty state
      would fill the console with TypeErrors on missing nodes. --}}
-@if($hasPayableFees)
+@if($hasPayableFees && ! session('success'))
 @include('payment._script')
 @endif
 </body>

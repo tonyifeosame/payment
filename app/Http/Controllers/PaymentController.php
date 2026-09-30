@@ -22,6 +22,29 @@ class PaymentController extends Controller
     /** Most units of one fee a single payment may buy, when the fee allows multiple units. */
     public const MAX_QUANTITY = 100;
 
+    /** Session key: the transactions whose checkout this browser started. */
+    private const CHECKOUT_SESSION_KEY = 'checkout_transaction_ids';
+
+    /**
+     * What the payer is told when they return from Paystack, by outcome. The success
+     * heading ("Payment successful") is in the view, so no message repeats it.
+     */
+    public const MESSAGE_RECEIPT_AVAILABLE = 'A receipt has been sent to your email. You can also view or download it below.';
+
+    public const MESSAGE_RECEIPT_EMAILED = 'A receipt has been sent to your email.';
+
+    public const MESSAGE_PENDING = "Your payment is still being processed. Please don't pay again. Your receipt will be emailed if the payment succeeds. Contact the school if you're unsure about the payment status.";
+
+    public const MESSAGE_CANCELLED = 'Payment was not completed. You can try again.';
+
+    public const MESSAGE_DECLINED = 'Payment did not go through. You can try again.';
+
+    public const MESSAGE_CONFLICT = "Your payment was received but has not yet been recorded. Please don't pay again. Contact support.";
+
+    public const MESSAGE_MISMATCH = 'We could not confirm this payment. Please contact the school with your payment reference before paying again.';
+
+    public const MESSAGE_UNVERIFIED = 'We could not reach the payment provider to confirm this payment. If you were charged, it will be confirmed automatically shortly.';
+
     /**
      * Admin entry point for the payment page.
      *
@@ -172,6 +195,16 @@ class PaymentController extends Controller
         ]);
 
         $transaction = $checkout->createPendingTransaction($school, $validated);
+
+        // Remember that this browser started this checkout, so it can be offered the
+        // receipt even when the webhook settles the payment before the payer is
+        // redirected back (see callback()). Server-side session only; the id never
+        // appears in a URL. The last few are kept, for a parent who retries.
+        $request->session()->put(
+            self::CHECKOUT_SESSION_KEY,
+            array_slice([...(array) $request->session()->get(self::CHECKOUT_SESSION_KEY, []), $transaction->id], -5)
+        );
+
         $amount = (float) $transaction->amount;
         $generatedRef = $transaction->reference;
 
@@ -250,55 +283,109 @@ class PaymentController extends Controller
         $result = $settlement->settleByReference($request->query('reference'));
         $transaction = $result['transaction'];
 
-        $successMessage = 'Payment successful! A receipt has been sent to your email. You can also download it here.';
+        // No payment to return the payer to: no reference, one we do not know, or a
+        // school that no longer exists. One generic public page for all of them, so
+        // the callback never reveals whether a given reference exists.
+        if (! $transaction?->school?->slug) {
+            return $this->paymentNotFound();
+        }
 
         switch ($result['outcome']) {
             case PaymentSettlementService::SETTLED:
-                // Only a real transition grants this browser the receipt link, so a
-                // replayed callback cannot be used to open someone else's receipt.
-                session(['last_transaction_id' => $transaction->id]);
-
-                return $this->backToPaymentPage($transaction)->with('success', $successMessage);
+                // This callback settled the payment, so this browser is the payer's.
+                return $this->paymentSucceeded($transaction, true);
 
             case PaymentSettlementService::ALREADY_SETTLED:
-                return $this->backToPaymentPage($transaction)->with('success', $successMessage);
+                // Settled before the payer got back — usually by the webhook, which
+                // races this redirect. The receipt is offered only to the browser that
+                // started this checkout; anyone else replaying the callback URL gets
+                // the confirmation, never the receipt.
+                return $this->paymentSucceeded($transaction, $this->startedCheckout($transaction));
 
             case PaymentSettlementService::AMOUNT_MISMATCH:
             case PaymentSettlementService::CURRENCY_MISMATCH:
-                return $this->backToPaymentPage($transaction)->with(
-                    'error',
-                    'We could not confirm this payment. Please contact the school with your payment reference before paying again.'
-                );
+                return $this->paymentOutcome($transaction, 'unconfirmed', self::MESSAGE_MISMATCH);
 
             case PaymentSettlementService::VERIFICATION_FAILED:
-                return $this->backToPaymentPage($transaction)->with(
-                    'error',
-                    'We could not reach the payment provider to confirm this payment. If you were charged, it will be confirmed automatically shortly.'
-                );
+                return $this->paymentOutcome($transaction, 'unverified', self::MESSAGE_UNVERIFIED);
+
+            case PaymentSettlementService::SETTLEMENT_CONFLICT:
+                return $this->paymentOutcome($transaction, 'conflict', self::MESSAGE_CONFLICT);
+
+            case PaymentSettlementService::FAILED_RECORDED:
+            case PaymentSettlementService::ALREADY_FAILED:
+                return $this->paymentOutcome($transaction, 'declined', self::MESSAGE_DECLINED);
+
+            case PaymentSettlementService::NOT_SUCCESSFUL:
+                // Paystack has not confirmed it. Only a status it reports as final is
+                // a failure; anything else may still succeed, so the payer is told not
+                // to pay again.
+                return match ($result['paystack_status'] ?? null) {
+                    'abandoned' => $this->paymentOutcome($transaction, 'cancelled', self::MESSAGE_CANCELLED),
+                    'failed', 'reversed' => $this->paymentOutcome($transaction, 'declined', self::MESSAGE_DECLINED),
+                    default => $this->paymentOutcome($transaction, 'pending', self::MESSAGE_PENDING),
+                };
 
             default:
-                return $this->backToPaymentPage($transaction)->with('error', 'Payment failed!');
+                return $this->paymentOutcome($transaction, 'unverified', self::MESSAGE_UNVERIFIED);
         }
+    }
+
+    /**
+     * The success state on the school's payment page. When $offerReceipt, this
+     * browser is authorised for the receipt (last_transaction_id, checked by
+     * authorizeReceipt()) and the page shows the receipt actions for exactly this
+     * payment — receipt_available is flashed only now, so an older payment's id left
+     * in the session is never offered as this one's receipt.
+     */
+    private function paymentSucceeded(Transaction $transaction, bool $offerReceipt)
+    {
+        if (! $offerReceipt) {
+            return $this->backToPaymentPage($transaction)->with('success', self::MESSAGE_RECEIPT_EMAILED);
+        }
+
+        session(['last_transaction_id' => $transaction->id]);
+
+        return $this->backToPaymentPage($transaction)
+            ->with('success', self::MESSAGE_RECEIPT_AVAILABLE)
+            ->with('receipt_available', true);
+    }
+
+    /**
+     * A payment that did not (or not yet) succeed. The message goes in `error`, as
+     * before; `payment_outcome` tells the page which heading and styling to use.
+     */
+    private function paymentOutcome(Transaction $transaction, string $outcome, string $message)
+    {
+        return $this->backToPaymentPage($transaction)
+            ->with('error', $message)
+            ->with('payment_outcome', $outcome);
+    }
+
+    /** Did this browser start the checkout for this transaction (initializeSchool)? */
+    private function startedCheckout(Transaction $transaction): bool
+    {
+        return in_array($transaction->id, (array) session(self::CHECKOUT_SESSION_KEY, []), true);
+    }
+
+    /** The generic, public "payment not found" page. */
+    private function paymentNotFound()
+    {
+        return response()->view('payment.not-found', [], 404);
     }
 
     /**
      * Send the payer back to the school page the transaction actually belongs to.
      * Derived from our own record so metadata cannot redirect across tenants.
      */
-    private function backToPaymentPage(?Transaction $transaction)
+    private function backToPaymentPage(Transaction $transaction)
     {
-        $slug = $transaction?->school?->slug;
-
-        if ($slug) {
-            // Deliberately the legacy /s/{school}/payment URL, not /pay/{school}. Both
-            // serve the same page and both stay registered (the URL migration only
-            // moved link generation to /pay/, without redirecting public routes), so
-            // the post-payment leg of the checkout flow stays byte-for-byte the same.
-            // Switch this to public.payment only as a separate public-payment change.
-            return redirect()->route('school.payment.index', ['school' => $slug]);
-        }
-
-        return redirect()->route('payment.index');
+        // Deliberately the legacy /s/{school}/payment URL, not /pay/{school}. Both
+        // serve the same page and both stay registered (the URL migration only
+        // moved link generation to /pay/, without redirecting public routes), so
+        // the post-payment leg of the checkout flow stays byte-for-byte the same.
+        // Switch this to public.payment only as a separate public-payment change.
+        return redirect()->route('school.payment.index', ['school' => $transaction->school->slug]);
     }
 
     /**
