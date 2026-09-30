@@ -27,6 +27,7 @@
                 <a href="{{ route('home') }}" class="hover:text-brand-obsidian">Homepage</a>
                 <a href="{{ route('contact.show') }}" class="hover:text-brand-obsidian">Contact</a>
                 <a href="{{ route('privacy.show') }}" class="hover:text-brand-obsidian">Privacy</a>
+                <a href="{{ route('terms.show') }}" class="hover:text-brand-obsidian">Terms</a>
             </p>
         </div>
     </footer>

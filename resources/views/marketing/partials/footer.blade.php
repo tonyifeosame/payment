@@ -19,6 +19,7 @@
                     <ul class="mt-4 space-y-3 text-sm">
                         <li><a href="{{ route('contact.show') }}" class="text-brand-slate hover:text-brand-obsidian">Contact</a></li>
                         <li><a href="{{ route('privacy.show') }}" class="text-brand-slate hover:text-brand-obsidian">Privacy Policy</a></li>
+                        <li><a href="{{ route('terms.show') }}" class="text-brand-slate hover:text-brand-obsidian">Terms of Service</a></li>
                     </ul>
                 </div>
             </nav>

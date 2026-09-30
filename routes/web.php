@@ -79,6 +79,10 @@ Route::get('/privacy', function () {
     return view('privacy');
 })->name('privacy.show');
 
+Route::get('/terms', function () {
+    return view('terms');
+})->name('terms.show');
+
 Route::post('/contact', function (\Illuminate\Http\Request $request) {
     $data = $request->validate([
         'name' => 'required|string|max:255',
