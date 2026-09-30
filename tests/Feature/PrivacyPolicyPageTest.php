@@ -76,6 +76,22 @@ class PrivacyPolicyPageTest extends TestCase
             ->assertSee('does not currently offer self-service deletion');
     }
 
+    public function test_it_no_longer_lists_google_fonts_or_the_tailwind_cdn_as_third_parties(): void
+    {
+        // Fonts and styling are now self-hosted (CompiledStylesheetTest), so the page
+        // must not describe them as third-party services the browser connects to.
+        $html = $this->get('/privacy')->assertOk()->getContent();
+        preg_match('/<main\b[^>]*>(.*)<\/main>/s', $html, $main);
+
+        foreach (['Google Fonts', 'Tailwind', 'cdn.tailwindcss.com', 'fonts.googleapis', 'providers of fonts and styling files'] as $gone) {
+            $this->assertStringNotContainsString($gone, $main[1], $gone);
+        }
+
+        $this->get('/privacy')
+            ->assertSee('FEYRA serves its own fonts and compiled styling files from its own website, so loading our pages does not connect your browser to a separate font or styling provider.')
+            ->assertSee('This includes our hosting provider, Render, and our email service provider.');
+    }
+
     public function test_it_carries_no_review_notes_placeholders_or_unsupported_claims(): void
     {
         $html = $this->get('/privacy')->getContent();

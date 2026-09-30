@@ -26,25 +26,8 @@
     <meta name="robots" content="noindex">
     <link rel="icon" type="image/svg+xml" href="{{ asset('favicon.svg') }}">
     @include('marketing.partials.head-tokens')
-    <style type="text/tailwindcss">
-        @layer components {
-            /* Receipt rows: label left, value right; values may wrap on 375px phones
-               (UUID references) without ever forcing horizontal scroll. */
-            .receipt-section { @apply border-t border-brand-ash/60 px-5 py-4 sm:px-6; }
-            .receipt-section-title { @apply text-xs font-semibold uppercase tracking-[0.12em] text-brand-slate; }
-            .receipt-rows { @apply mt-2 divide-y divide-brand-fog; }
-            .receipt-row { @apply flex items-start justify-between gap-4 py-2.5; }
-            .receipt-row dt { @apply shrink-0 text-sm text-brand-slate; }
-            .receipt-row dd { @apply min-w-0 break-words text-right text-sm font-semibold text-brand-obsidian; }
-        }
-        @media print {
-            .no-print { display: none !important; }
-            body { background: #fff !important; }
-            .receipt-card { box-shadow: none !important; border: 1px solid #D1D1DB; }
-        }
-    </style>
 </head>
-<body class="min-h-screen bg-brand-fog text-brand-obsidian">
+<body class="receipt-page min-h-screen bg-brand-fog text-brand-obsidian">
 
     {{-- Top bar: brand + what this page is. Not a link — parents should stay on their receipt. --}}
     <header class="border-b border-brand-ash/60 bg-white no-print">

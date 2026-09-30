@@ -16,17 +16,6 @@
     @include('marketing.partials.slim-footer')
 @endsection
 
-@push('head')
-    <style type="text/tailwindcss">
-        .policy h2 { @apply mt-12 scroll-mt-24 font-display text-2xl font-bold tracking-tight text-brand-obsidian; }
-        .policy h3 { @apply mt-8 font-sans text-base font-semibold text-brand-obsidian; }
-        .policy p, .policy ul { @apply mt-4 text-base leading-relaxed text-brand-slate; }
-        .policy ul { @apply list-disc space-y-2 pl-5; }
-        .policy strong { @apply font-semibold text-brand-obsidian; }
-        .policy a { @apply font-medium text-brand-violet underline underline-offset-2 hover:text-brand-obsidian; }
-    </style>
-@endpush
-
 @php
     // Set both before publishing (e.g. '1 November 2026'). While either is null the
     // date line is not shown: live terms must never show a placeholder date.

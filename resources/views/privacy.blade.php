@@ -16,18 +16,6 @@
     @include('marketing.partials.slim-footer')
 @endsection
 
-@push('head')
-    <style type="text/tailwindcss">
-        .policy h2 { @apply mt-12 scroll-mt-24 font-display text-2xl font-bold tracking-tight text-brand-obsidian; }
-        .policy h3 { @apply mt-8 font-sans text-base font-semibold text-brand-obsidian; }
-        .policy p, .policy ul, .policy dl { @apply mt-4 text-base leading-relaxed text-brand-slate; }
-        .policy ul { @apply list-disc space-y-2 pl-5; }
-        .policy ul ul { @apply mt-2; }
-        .policy strong { @apply font-semibold text-brand-obsidian; }
-        .policy a { @apply font-medium text-brand-violet underline underline-offset-2 hover:text-brand-obsidian; }
-    </style>
-@endpush
-
 @php
     // Set both before publishing (e.g. '1 November 2026'). While either is null the
     // date line is not shown: a live policy must never show a placeholder date.
@@ -194,12 +182,7 @@
                 <li><strong>With our email service provider</strong>, which delivers the emails FEYRA sends: receipts, password resets, school notifications, contact-form messages and operational emails. The provider receives the contents and recipients of those emails.</li>
                 <li><strong>With Render</strong>, which hosts FEYRA’s application, database, background processing and logs.</li>
             </ul>
-            <p>When you visit the FEYRA website, your browser also connects directly to:</p>
-            <ul>
-                <li><strong>Google Fonts</strong>, to load the fonts used on our pages;</li>
-                <li><strong>the Tailwind CSS CDN</strong> (cdn.tailwindcss.com), to load the styling library used on our pages.</li>
-            </ul>
-            <p>As with any web request, these providers receive technical information from your browser, such as your IP address and browser details.</p>
+            <p>FEYRA serves its own fonts and compiled styling files from its own website, so loading our pages does not connect your browser to a separate font or styling provider.</p>
             <p>If you choose to use the WhatsApp link on our contact page, WhatsApp handles that conversation under its own terms and privacy policy.</p>
             <p>FEYRA does not use analytics services, advertising networks or tracking pixels.</p>
 
@@ -258,7 +241,7 @@
             <p>On a school’s public payment page, a student is found only when the payer enters that student’s full name and complete admission number, as the school recorded them. The page then shows only the student’s name, class and a partly hidden admission number.</p>
 
             <h2 id="third-party-services">12. International and Third-Party Services</h2>
-            <p>FEYRA relies on the third-party services described in <a href="#sharing">section 6</a>. Some of them may process information in countries other than the one where you live, including countries outside Nigeria. This includes our hosting provider, Render; our email service provider; and the providers of fonts and styling files that your browser loads.</p>
+            <p>FEYRA relies on the third-party services described in <a href="#sharing">section 6</a>. Some of them may process information in countries other than the one where you live, including countries outside Nigeria. This includes our hosting provider, Render, and our email service provider.</p>
             <p>Each third-party service handles information under its own terms and privacy policy.</p>
 
             <h2 id="changes">13. Changes to This Privacy Policy</h2>

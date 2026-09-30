@@ -46,3 +46,7 @@ Desktop.ini
 $RECYCLE.BIN/
 *.swp
 *~
+
+# Tailwind CSS standalone CLI binary (see README, "Building the CSS"): never commit it.
+/tailwindcss
+/tailwindcss.exe

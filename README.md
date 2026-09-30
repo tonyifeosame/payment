@@ -7,6 +7,33 @@
 <a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
 </p>
 
+## Building the CSS
+
+FEYRA's stylesheet is compiled ahead of time and committed as `public/css/app.css`.
+Nothing is built at deploy time and no Node.js is needed: it is produced by the
+**Tailwind CSS v3.4.17 standalone CLI**, a single binary.
+
+1. Download the v3.4.17 binary for your platform from
+   <https://github.com/tailwindlabs/tailwindcss/releases/tag/v3.4.17>
+   (for example `tailwindcss-windows-x64.exe`, `tailwindcss-linux-x64`,
+   `tailwindcss-macos-arm64`), save it in the project root as `tailwindcss`
+   (`tailwindcss.exe` on Windows) and make it executable. It is git-ignored; never
+   commit it. Stay on v3.4.17: a different version can render differently.
+2. From the project root, run:
+
+   ```sh
+   ./tailwindcss -c tailwind.config.js -i resources/css/app.css -o public/css/app.css --minify
+   ```
+
+3. Commit the updated `public/css/app.css` together with the change that needed it.
+
+Rebuild whenever you change `resources/css/app.css`, `resources/css/fonts.css`,
+`tailwind.config.js`, or add a Tailwind class to a Blade view: classes are found by
+scanning `resources/views`, and one missing from the build is simply unstyled. The
+build is deterministic, so rebuilding unchanged sources reproduces the committed
+file byte for byte. The fonts (Inter and Plus Jakarta Sans, SIL Open Font License)
+are self-hosted in `public/fonts` and declared in `resources/css/fonts.css`.
+
 ## About Laravel
 
 Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:

@@ -1,0 +1,173 @@
+/*
+ * FEYRA's compiled stylesheet: Tailwind CSS v3.4.17, built by the standalone CLI into
+ * public/css/app.css (see the README, "Building the CSS"). Edit this file, never the
+ * build output.
+ *
+ * Everything here used to be compiled in the browser by the Tailwind Play CDN from
+ * <style type="text/tailwindcss"> blocks in the views. The rules are unchanged and
+ * keep the order the CDN gave them: layered rules in their layers, and rules that
+ * were outside any layer after the utilities, as the CDN emitted them. Three rules
+ * that applied only on one page are now scoped to that page with a class, so they do
+ * not reach any other page:
+ *   - .slim-header ~ #main   (the slim header's tint; was pushed by slim-header)
+ *   - html.payment-page      (the payment page's scroll padding)
+ *   - body.receipt-page      (the receipt's print background)
+ */
+@import './fonts.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* --------------------------------------------------------------------------
+ * Shared design tokens (was head-tokens.blade.php)
+ * ------------------------------------------------------------------------ */
+
+@layer base {
+    html { scroll-padding-top: 5.5rem; }
+    body { @apply font-sans text-brand-obsidian bg-brand-paper antialiased; }
+    h1, h2, h3, h4 { @apply font-display; }
+    @media (prefers-reduced-motion: reduce) {
+        html { scroll-behavior: auto; }
+        *, *::before, *::after { transition-duration: 0.01ms !important; animation: none !important; }
+    }
+}
+
+@layer components {
+    .container-x { @apply mx-auto w-full max-w-site px-4 sm:px-6 lg:px-8; }
+
+    /* Buttons: 12px radius, 44–48px tall. Surface rule — on violet the primary is
+       Lemon Zest + Obsidian text; on light surfaces it is Obsidian + white text. */
+    .btn { @apply inline-flex items-center justify-center gap-2 rounded-xl px-6 min-h-[48px] text-base font-semibold whitespace-nowrap transition-colors focus:outline-none focus-visible:ring-4; }
+    .btn-sm { @apply min-h-[44px] px-5 text-sm; }
+    .btn-obsidian { @apply btn bg-brand-obsidian text-white hover:bg-[#2B2B36] focus-visible:ring-brand-obsidian/25; }
+    .btn-outline { @apply btn border border-brand-ash bg-white text-brand-obsidian hover:border-brand-obsidian focus-visible:ring-brand-obsidian/20; }
+    .btn-zest { @apply btn bg-brand-zest text-brand-obsidian hover:bg-[#FFD15C] focus-visible:ring-white/60; }
+    .btn-outline-light { @apply btn border border-white/45 text-white hover:bg-white/10 focus-visible:ring-white/60; }
+
+    .eyebrow { @apply inline-flex items-center rounded-full px-3.5 py-1.5 text-xs font-semibold uppercase tracking-[0.12em]; }
+    .eyebrow-violet { @apply eyebrow bg-brand-violet/10 text-brand-violet; }
+    .section-title { @apply mt-5 font-display text-3xl sm:text-4xl lg:text-5xl font-extrabold leading-[1.1] tracking-tight text-brand-obsidian; }
+    .section-lead { @apply mt-4 text-lg text-brand-slate max-w-2xl; }
+
+    .nav-link { @apply inline-flex items-center whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium text-brand-slate hover:text-brand-obsidian focus:outline-none focus-visible:ring-4 focus-visible:ring-brand-violet/30 transition-colors; }
+
+    /* Form fields (registration and other public forms). */
+    .field-label { @apply block text-sm font-semibold text-brand-obsidian; }
+    .field-input { @apply mt-2 block w-full min-h-[48px] rounded-xl border border-brand-ash bg-white px-4 text-base text-brand-obsidian placeholder:text-brand-slate/60 focus:border-brand-violet focus:outline-none focus:ring-4 focus:ring-brand-violet/20; }
+    .field-input-error { @apply border-red-500 focus:border-red-500 focus:ring-red-500/20; }
+    .field-help { @apply mt-1.5 text-sm text-brand-slate; }
+    .field-error { @apply mt-1.5 text-sm font-medium text-red-600; }
+}
+
+/* --------------------------------------------------------------------------
+ * Admin layout (was layouts/admin.blade.php). The legacy class names
+ * (.card .btn-primary .input .th …) are kept so pages not yet redesigned render
+ * on the new system without markup changes.
+ * ------------------------------------------------------------------------ */
+
+@layer components {
+    /* Sidebar */
+    .side-link { @apply flex min-h-[48px] items-center gap-3 rounded-xl px-3 text-[15px] font-medium text-brand-obsidian hover:bg-brand-fog focus:outline-none focus-visible:ring-4 focus-visible:ring-brand-violet/30 transition-colors; }
+    .side-link svg { @apply h-5 w-5 shrink-0 text-brand-slate; }
+    .side-link.is-active { @apply relative bg-brand-violet/10 text-brand-violet font-semibold; }
+    .side-link.is-active svg { @apply text-brand-violet; }
+    .side-link.is-active::before { content: ''; @apply absolute left-0 top-3 bottom-3 w-[3px] rounded-full bg-brand-violet; }
+    .side-group { @apply px-3 pt-5 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-brand-slate; }
+
+    /* Surfaces */
+    .card { @apply rounded-2xl border border-brand-ash/60 bg-white; }
+
+    /* Legacy button aliases → FEYRA buttons (48px, no gradients). */
+    .btn-primary { @apply btn-obsidian; }
+    .btn-secondary { @apply btn-outline; }
+    .btn-danger { @apply btn border border-red-200 bg-white text-red-700 hover:border-red-600 hover:bg-red-50 focus-visible:ring-red-500/20; }
+
+    /* Legacy form aliases → FEYRA fields. */
+    .label { @apply field-label mb-2; }
+    .input { @apply block w-full min-h-[48px] rounded-xl border border-brand-ash bg-white px-4 text-base text-brand-obsidian placeholder:text-brand-slate/60 focus:border-brand-violet focus:outline-none focus:ring-4 focus:ring-brand-violet/20; }
+    select.input { @apply pr-10; }
+    textarea.input { @apply py-3; }
+
+    /* Tables */
+    .th { @apply px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.08em] text-brand-slate; }
+    .td { @apply px-4 py-3.5 text-sm text-brand-obsidian align-top; }
+
+    /* Badges */
+    .badge { @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold; }
+}
+
+/* Admin table component (was components/admin/table.blade.php). */
+@layer components {
+    .admin-table tbody tr { @apply hover:bg-brand-fog/60 transition-colors; }
+    .admin-table .td-actions { @apply text-right whitespace-nowrap; }
+    .admin-table .td-actions > * { @apply align-middle; }
+    /* Stacked rows below md: every cell becomes a label/value line. */
+    @media (max-width: 767px) {
+        .admin-table--stacked, .admin-table--stacked tbody, .admin-table--stacked tr, .admin-table--stacked td { @apply block w-full; }
+        .admin-table--stacked tr { @apply px-4 py-3; }
+        .admin-table--stacked td { @apply flex items-start justify-between gap-4 px-0 py-1.5 text-right; }
+        .admin-table--stacked td[data-label]::before { content: attr(data-label); @apply shrink-0 text-left text-xs font-semibold uppercase tracking-[0.08em] text-brand-slate; }
+        .admin-table--stacked td[data-label=""]::before { @apply hidden; }
+        .admin-table--stacked .td-actions { @apply justify-end pt-3; }
+    }
+}
+
+/* --------------------------------------------------------------------------
+ * Public payment page (was payment/index.blade.php)
+ * ------------------------------------------------------------------------ */
+
+@layer base {
+    /* Room for the sticky pay bar on phones so a focused field is never hidden behind it. */
+    @media (max-width: 1023px) { html.payment-page { scroll-padding-bottom: 7.5rem; } }
+}
+
+@layer components {
+    .step-card { @apply rounded-3xl bg-white p-5 shadow-sm sm:p-6; }
+    .step-heading { @apply flex items-center gap-3 font-display text-lg font-bold tracking-tight text-brand-obsidian; }
+    .step-num { @apply flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-violet text-sm font-bold text-white; }
+    .field-select { @apply field-input appearance-none pr-11 disabled:bg-brand-fog disabled:text-brand-slate; }
+    .select-chevron { @apply pointer-events-none absolute right-4 top-1/2 mt-1 h-5 w-5 -translate-y-1/2 text-brand-slate; }
+}
+
+/* --------------------------------------------------------------------------
+ * Receipt page (was payment/receipt.blade.php)
+ * ------------------------------------------------------------------------ */
+
+@layer components {
+    /* Receipt rows: label left, value right; values may wrap on 375px phones
+       (UUID references) without ever forcing horizontal scroll. */
+    .receipt-section { @apply border-t border-brand-ash/60 px-5 py-4 sm:px-6; }
+    .receipt-section-title { @apply text-xs font-semibold uppercase tracking-[0.12em] text-brand-slate; }
+    .receipt-rows { @apply mt-2 divide-y divide-brand-fog; }
+    .receipt-row { @apply flex items-start justify-between gap-4 py-2.5; }
+    .receipt-row dt { @apply shrink-0 text-sm text-brand-slate; }
+    .receipt-row dd { @apply min-w-0 break-words text-right text-sm font-semibold text-brand-obsidian; }
+}
+
+/* ==========================================================================
+ * Rules that were outside any layer: the CDN emitted them after the utilities,
+ * so they stay after the utilities here.
+ * ======================================================================== */
+
+/* Receipt print rules (was payment/receipt.blade.php). */
+@media print {
+    .no-print { display: none !important; }
+    body.receipt-page { background: #fff !important; }
+    .receipt-card { box-shadow: none !important; border: 1px solid #D1D1DB; }
+}
+
+/* Privacy Policy and Terms of Service content (was privacy.blade.php and
+   terms.blade.php; the Privacy rules are the superset — Terms has no <dl> and no
+   nested list, so the extra selectors change nothing there). */
+.policy h2 { @apply mt-12 scroll-mt-24 font-display text-2xl font-bold tracking-tight text-brand-obsidian; }
+.policy h3 { @apply mt-8 font-sans text-base font-semibold text-brand-obsidian; }
+.policy p, .policy ul, .policy dl { @apply mt-4 text-base leading-relaxed text-brand-slate; }
+.policy ul { @apply list-disc space-y-2 pl-5; }
+.policy ul ul { @apply mt-2; }
+.policy strong { @apply font-semibold text-brand-obsidian; }
+.policy a { @apply font-medium text-brand-violet underline underline-offset-2 hover:text-brand-obsidian; }
+
+/* Tint the whole main area on slim-header pages, so a short page has no white band
+   above the footer (was pushed by marketing/partials/slim-header.blade.php). */
+.slim-header ~ #main { @apply bg-brand-fog/50; }

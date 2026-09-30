@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="payment-page">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,19 +7,6 @@
     <meta name="robots" content="noindex">
     <link rel="icon" type="image/svg+xml" href="{{ asset('favicon.svg') }}">
     @include('marketing.partials.head-tokens')
-    <style type="text/tailwindcss">
-        @layer base {
-            /* Room for the sticky pay bar on phones so a focused field is never hidden behind it. */
-            @media (max-width: 1023px) { html { scroll-padding-bottom: 7.5rem; } }
-        }
-        @layer components {
-            .step-card { @apply rounded-3xl bg-white p-5 shadow-sm sm:p-6; }
-            .step-heading { @apply flex items-center gap-3 font-display text-lg font-bold tracking-tight text-brand-obsidian; }
-            .step-num { @apply flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-violet text-sm font-bold text-white; }
-            .field-select { @apply field-input appearance-none pr-11 disabled:bg-brand-fog disabled:text-brand-slate; }
-            .select-chevron { @apply pointer-events-none absolute right-4 top-1/2 mt-1 h-5 w-5 -translate-y-1/2 text-brand-slate; }
-        }
-    </style>
 </head>
 <body class="min-h-screen bg-brand-fog text-brand-obsidian">
 @php
