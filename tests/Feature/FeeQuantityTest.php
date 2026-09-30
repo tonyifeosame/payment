@@ -281,7 +281,10 @@ class FeeQuantityTest extends TestCase
             ->assertSee('max="100"', false)
             ->assertSee('const maxQuantity = 100;', false)
             ->assertSee("getAttribute('data-allows-quantity') === '1'", false)
-            ->assertDontSee('school fee');
+            // The removed category-name rule (L1). Matched precisely: the page's own
+            // link-preview description legitimately says "school fees".
+            ->assertDontSee("includes('school fee')", false)
+            ->assertDontSee('isSchoolFees', false);
     }
 
     // ------------------------------------------------------------- history

@@ -4,7 +4,27 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ $school->name }} — School fees payment</title>
+    @php
+        // Link-preview metadata (WhatsApp, Facebook, X). Built from the school record
+        // alone, never from the session, flash messages, old input, fees or anything
+        // the payer typed, so a shared or re-rendered page cannot leak payment details.
+        // The page stays noindex. No og:url / canonical until the production domain is
+        // decided; asset() builds the image URL from the requesting host.
+        $shareTitle = $school->name.' — School fees payment';
+        $shareDescription = 'Pay '.$school->name.' school fees online with FEYRA. Checkout is handled securely by Paystack and a receipt is emailed after payment.';
+        $shareImage = asset('images/feyra-og.png');
+    @endphp
+    <meta name="description" content="{{ $shareDescription }}">
     <meta name="robots" content="noindex">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="FEYRA">
+    <meta property="og:title" content="{{ $shareTitle }}">
+    <meta property="og:description" content="{{ $shareDescription }}">
+    <meta property="og:image" content="{{ $shareImage }}">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{{ $shareTitle }}">
+    <meta name="twitter:description" content="{{ $shareDescription }}">
+    <meta name="twitter:image" content="{{ $shareImage }}">
     <link rel="icon" type="image/svg+xml" href="{{ asset('favicon.svg') }}">
     @include('marketing.partials.head-tokens')
 </head>

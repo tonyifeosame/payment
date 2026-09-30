@@ -111,12 +111,13 @@ class SocialMetadataTest extends TestCase
         $school = $this->makeSchool('Alpha School', 'alpha');
         $transaction = $this->makeSuccessfulTransaction($school);
 
+        // The public payment page has its own link-preview metadata (no longer opted
+        // out): see PaymentPageMetadataTest.
         $pages = [
             'sign in' => [$this->get('/admin/login'), 200],
             'forgot password' => [$this->get('/admin/forgot-password'), 200],
             'reset password' => [$this->get('/admin/reset-password/some-token?email=alpha%40example.test'), 200],
             'error page' => [$this->get('/no-such-page-anywhere'), 404],
-            'public payment page' => [$this->get('/pay/alpha'), 200],
             'receipt' => [$this->get(URL::signedRoute('payment.receipt', ['transaction' => $transaction->id])), 200],
             'admin dashboard' => [$this->actingAsSchoolAdmin($school)->get('/admin/alpha/dashboard'), 200],
         ];
