@@ -43,7 +43,7 @@
     {{-- School identity --}}
     <div class="mx-4 mt-2 flex items-center gap-3 rounded-2xl bg-brand-fog p-3 lg:mx-5">
         @if($school->logoUrl())
-            <img src="{{ $school->logoUrl() }}" alt="" class="h-10 w-10 shrink-0 rounded-xl border border-brand-ash/60 bg-white object-contain">
+            <img src="{{ $school->logoUrl() }}" alt="" width="40" height="40" class="h-10 w-10 shrink-0 rounded-xl border border-brand-ash/60 bg-white object-contain">
         @else
             <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-violet font-display text-base font-bold text-white" aria-hidden="true">{{ mb_substr($school->name, 0, 1) }}</span>
         @endif

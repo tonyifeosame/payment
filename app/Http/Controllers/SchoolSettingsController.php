@@ -8,6 +8,7 @@ use App\Models\SchoolLogo;
 use App\Services\SchoolBankDetailsService;
 use App\Support\CredentialThrottle;
 use App\Support\RecordsSchoolAudit;
+use App\Support\SchoolLogoImage;
 use App\Support\SchoolRemember;
 use App\Support\SchoolSession;
 use Illuminate\Http\Request;
@@ -52,9 +53,30 @@ class SchoolSettingsController extends Controller
             'phone' => ['nullable', 'string', 'max:30'],
             'address' => ['nullable', 'string', 'max:255'],
             'receipt_footer' => ['nullable', 'string', 'max:500'],
-            'logo' => ['nullable', 'file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:1024'],
+            // Content-based type and size first; then, from the header alone and
+            // before any pixel is decoded, the dimension limit and animated WebP.
+            'logo' => [
+                'bail', 'nullable', 'file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:1024',
+                function ($attribute, $value, $fail) {
+                    if (($problem = SchoolLogoImage::problem((string) $value->get())) !== null) {
+                        $fail($problem);
+                    }
+                },
+            ],
             'remove_logo' => ['nullable', 'boolean'],
         ]);
+
+        // The logo is normalised (SchoolLogoImage) before anything is written, so
+        // an image that cannot be processed fails validation instead of leaving a
+        // half-applied update.
+        $logoAttributes = null;
+        if ($request->hasFile('logo')) {
+            try {
+                $logoAttributes = SchoolLogo::attributesFor($request->file('logo'));
+            } catch (\InvalidArgumentException $e) {
+                throw ValidationException::withMessages(['logo' => $e->getMessage()]);
+            }
+        }
 
         // M7 audits the identity fields only: the name is the login identifier and
         // the email is the password-reset identifier, so a change to either moves
@@ -82,8 +104,8 @@ class SchoolSettingsController extends Controller
             $logoChanged = true;
         }
 
-        if ($request->hasFile('logo')) {
-            $school->logo()->updateOrCreate([], SchoolLogo::attributesFor($request->file('logo')));
+        if ($logoAttributes !== null) {
+            $school->logo()->updateOrCreate([], $logoAttributes);
             $logoChanged = true;
         }
 
@@ -235,6 +257,8 @@ class SchoolSettingsController extends Controller
             'Cache-Control' => 'public, max-age=86400',
             'ETag' => $logo->etag(),
             'Last-Modified' => $logo->updated_at->toRfc7231String(),
+            // Served only as the stored image type, never sniffed as anything else.
+            'X-Content-Type-Options' => 'nosniff',
         ]);
 
         if ($response->isNotModified($request)) {

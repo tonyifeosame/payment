@@ -5,12 +5,14 @@ namespace Tests\Feature;
 use App\Mail\PaymentReceiptMail;
 use App\Models\School;
 use App\Models\SchoolLogo;
+use App\Support\SchoolLogoImage;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
+use Tests\Concerns\BuildsLogoFixtures;
 use Tests\Concerns\InteractsWithSchools;
 use Tests\TestCase;
 
@@ -22,7 +24,7 @@ use Tests\TestCase;
  */
 class SchoolLogoTest extends TestCase
 {
-    use InteractsWithSchools, RefreshDatabase;
+    use BuildsLogoFixtures, InteractsWithSchools, RefreshDatabase;
 
     private School $alpha;
 
@@ -66,14 +68,15 @@ class SchoolLogoTest extends TestCase
     public function test_upload_persists_in_the_database_and_writes_no_file(): void
     {
         $file = UploadedFile::fake()->image('logo.png', 200, 200);
-        $bytes = $file->get();
+        // What is stored is the normalised image, not the upload (SchoolLogoImage).
+        $bytes = SchoolLogoImage::normalize($file->get())['bytes'];
 
         $this->upload($this->alpha, $file);
 
         $logo = SchoolLogo::find($this->alpha->id);
         $this->assertNotNull($logo);
         $this->assertSame('image/png', $logo->mime);
-        $this->assertSame(strlen($bytes), $logo->size);
+        $this->assertSame(strlen($bytes), $logo->size, 'size is the stored bytes');
         $this->assertSame($bytes, $logo->bytes(), 'the stored bytes must round-trip exactly');
         $this->assertSame(base64_encode($bytes), $logo->getRawOriginal('data'), 'stored as base64 text, safe for every driver');
 
@@ -81,18 +84,17 @@ class SchoolLogoTest extends TestCase
         $this->assertFalse(Schema::hasColumn('schools', 'logo_path'));
     }
 
-    public function test_logo_route_returns_the_exact_image(): void
+    public function test_logo_route_returns_exactly_the_stored_image(): void
     {
-        $file = UploadedFile::fake()->image('logo.png', 64, 64);
-        $bytes = $file->get();
-        $this->upload($this->alpha, $file);
+        $this->upload($this->alpha, UploadedFile::fake()->image('logo.png', 64, 64));
 
         $response = $this->get('/s/alpha/logo')
             ->assertOk()
             ->assertHeader('Content-Type', 'image/png')
-            ->assertHeader('Cache-Control', 'max-age=86400, public');
+            ->assertHeader('Cache-Control', 'max-age=86400, public')
+            ->assertHeader('X-Content-Type-Options', 'nosniff');
 
-        $this->assertSame($bytes, $response->getContent());
+        $this->assertSame(SchoolLogo::find($this->alpha->id)->bytes(), $response->getContent());
     }
 
     public function test_replacing_a_png_with_a_webp_replaces_the_row(): void
@@ -101,7 +103,7 @@ class SchoolLogoTest extends TestCase
         $this->assertDatabaseHas('school_logos', ['school_id' => $this->alpha->id, 'mime' => 'image/png']);
 
         $webp = UploadedFile::fake()->image('logo.webp', 48, 48);
-        $webpBytes = $webp->get();
+        $webpBytes = SchoolLogoImage::normalize($webp->get())['bytes'];
         $this->upload($this->alpha, $webp);
 
         $this->assertSame(1, SchoolLogo::where('school_id', $this->alpha->id)->count(), 'one row per school, replaced in place');
@@ -277,7 +279,7 @@ class SchoolLogoTest extends TestCase
     public function test_logos_are_isolated_per_school(): void
     {
         $alphaFile = UploadedFile::fake()->image('alpha.png', 32, 32);
-        $alphaBytes = $alphaFile->get();
+        $alphaBytes = SchoolLogoImage::normalize($alphaFile->get())['bytes'];
         $this->upload($this->alpha, $alphaFile);
 
         // Beta has none: its URL 404s and never falls through to alpha's row.
@@ -296,7 +298,7 @@ class SchoolLogoTest extends TestCase
 
         // Beta uploading its own logo leaves alpha's untouched, and each URL serves its own.
         $betaFile = UploadedFile::fake()->image('beta.webp', 40, 40);
-        $betaBytes = $betaFile->get();
+        $betaBytes = SchoolLogoImage::normalize($betaFile->get())['bytes'];
         $this->upload($this->beta, $betaFile);
 
         $this->assertSame(2, SchoolLogo::count());
@@ -306,6 +308,180 @@ class SchoolLogoTest extends TestCase
             $this->get('/s/alpha/logo')->headers->get('ETag'),
             $this->get('/s/beta/logo')->headers->get('ETag')
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Normalisation on upload (SchoolLogoImage)
+    // -----------------------------------------------------------------------
+
+    public function test_a_large_upload_is_stored_resized_in_its_own_format(): void
+    {
+        foreach (['logo.jpg' => 'image/jpeg', 'logo.png' => 'image/png', 'logo.webp' => 'image/webp'] as $name => $mime) {
+            $file = UploadedFile::fake()->image($name, 2000, 1200);
+            $this->upload($this->alpha, $file);
+
+            $logo = SchoolLogo::find($this->alpha->id);
+            $this->assertSame($mime, $logo->mime, $name);
+            $this->assertSame([512, 307], array_slice(getimagesizefromstring($logo->bytes()), 0, 2), "{$name}: longest side 512, aspect ratio kept");
+            $this->assertSame(strlen($logo->bytes()), $logo->size, "{$name}: size is the stored bytes");
+            $this->assertSame($logo->bytes(), $this->get('/s/alpha/logo')->assertOk()->assertHeader('Content-Type', $mime)->getContent());
+        }
+    }
+
+    public function test_an_image_over_4000_pixels_is_rejected_with_a_clear_message(): void
+    {
+        $this->actingAsSchoolAdmin($this->alpha)
+            ->from('/admin/alpha/settings')
+            ->put('/admin/alpha/settings', $this->profile(['logo' => UploadedFile::fake()->image('wide.png', 4001, 10)]))
+            ->assertRedirect('/admin/alpha/settings')
+            ->assertSessionHasErrors(['logo' => 'The logo must be at most 4000 × 4000 pixels.']);
+
+        $this->assertDatabaseMissing('school_logos', ['school_id' => $this->alpha->id]);
+    }
+
+    public function test_a_decompression_bomb_upload_is_rejected_from_its_header(): void
+    {
+        $bomb = UploadedFile::fake()->createWithContent('bomb.png', $this->bombPng(10000));
+
+        memory_reset_peak_usage();
+        $before = memory_get_peak_usage();
+
+        $this->actingAsSchoolAdmin($this->alpha)
+            ->from('/admin/alpha/settings')
+            ->put('/admin/alpha/settings', $this->profile(['logo' => $bomb]))
+            ->assertRedirect('/admin/alpha/settings')
+            ->assertSessionHasErrors(['logo' => 'The logo must be at most 4000 × 4000 pixels.']);
+
+        $this->assertLessThan(32 * 1024 * 1024, memory_get_peak_usage() - $before, 'never decoded: decoding would need ~400 MB');
+        $this->assertDatabaseMissing('school_logos', ['school_id' => $this->alpha->id]);
+    }
+
+    public function test_an_animated_webp_is_rejected_with_a_clear_message_not_an_error(): void
+    {
+        $this->actingAsSchoolAdmin($this->alpha)
+            ->from('/admin/alpha/settings')
+            ->put('/admin/alpha/settings', $this->profile(['logo' => UploadedFile::fake()->createWithContent('moving.webp', $this->animatedWebp())]))
+            ->assertRedirect('/admin/alpha/settings')
+            ->assertSessionHasErrors(['logo' => 'Animated images cannot be used as a logo. Please upload a still PNG, JPG or WebP image.']);
+
+        $this->assertDatabaseMissing('school_logos', ['school_id' => $this->alpha->id]);
+    }
+
+    public function test_a_jpeg_with_malformed_exif_is_accepted_upright_not_a_server_error(): void
+    {
+        // libjpeg warns about this file ("corrupt data"); inside a request an
+        // unsilenced warning would become an exception and a 500.
+        ob_start();
+        imagejpeg(imagecreatetruecolor(120, 80), null, 90);
+        $jpeg = (string) ob_get_clean();
+        $malformed = substr($jpeg, 0, 2)."\xFF\xE1\x00\x40Exif\0\0MM".substr($jpeg, 2);
+
+        $this->upload($this->alpha, UploadedFile::fake()->createWithContent('logo.jpg', $malformed));
+
+        $logo = SchoolLogo::find($this->alpha->id);
+        $this->assertSame('image/jpeg', $logo->mime);
+        $this->assertSame([120, 80], array_slice(getimagesizefromstring($logo->bytes()), 0, 2));
+    }
+
+    public function test_gif_and_bmp_are_still_rejected(): void
+    {
+        foreach (['logo.gif', 'logo.bmp'] as $name) {
+            $this->actingAsSchoolAdmin($this->alpha)
+                ->from('/admin/alpha/settings')
+                ->put('/admin/alpha/settings', $this->profile(['logo' => UploadedFile::fake()->image($name, 16, 16)]))
+                ->assertRedirect('/admin/alpha/settings')
+                ->assertSessionHasErrors('logo');
+        }
+
+        $this->assertDatabaseMissing('school_logos', ['school_id' => $this->alpha->id]);
+    }
+
+    public function test_a_rejected_logo_leaves_the_rest_of_the_update_unapplied(): void
+    {
+        $this->giveLogo($this->alpha);
+        $before = SchoolLogo::find($this->alpha->id)->bytes();
+
+        $this->actingAsSchoolAdmin($this->alpha)
+            ->from('/admin/alpha/settings')
+            ->put('/admin/alpha/settings', $this->profile(['phone' => '0801 234 5678', 'logo' => UploadedFile::fake()->createWithContent('moving.webp', $this->animatedWebp())]))
+            ->assertSessionHasErrors('logo');
+
+        $this->assertSame($before, SchoolLogo::find($this->alpha->id)->bytes(), 'the existing logo is untouched');
+        $this->assertNull($this->alpha->fresh()->phone, 'nothing else from the rejected submit was saved');
+    }
+
+    public function test_existing_logos_are_served_exactly_as_stored_and_never_reprocessed(): void
+    {
+        // A logo stored before normalisation: 1,600px wide, never resized. It must
+        // be served byte-for-byte; nothing in this change rewrites existing rows.
+        ob_start();
+        imagepng(imagecreatetruecolor(1600, 900));
+        $legacy = (string) ob_get_clean();
+        SchoolLogo::create(['school_id' => $this->alpha->id, 'mime' => 'image/png', 'size' => strlen($legacy), 'data' => base64_encode($legacy)]);
+
+        $this->assertSame($legacy, $this->get('/s/alpha/logo')->assertOk()->getContent());
+        $this->assertSame($legacy, SchoolLogo::find($this->alpha->id)->bytes());
+    }
+
+    public function test_pdf_and_email_receive_the_normalised_logo(): void
+    {
+        $this->upload($this->alpha, UploadedFile::fake()->image('logo.png', 1600, 1000));
+        $transaction = $this->makeSuccessfulTransaction($this->alpha, ['reference' => 'alpha-ref-1']);
+
+        // The PDF embeds the stored (normalised) image, not the 1,600px upload.
+        $dataUri = $this->alpha->fresh()->logoDataUri();
+        $this->assertStringStartsWith('data:image/png;base64,', $dataUri);
+        $embedded = base64_decode(substr($dataUri, strlen('data:image/png;base64,')));
+        $this->assertSame([512, 320], array_slice(getimagesizefromstring($embedded), 0, 2));
+        $this->get(URL::signedRoute('payment.receipt.download', ['transaction' => $transaction->id]))
+            ->assertOk()->assertHeader('Content-Type', 'application/pdf');
+
+        // The email links the same route, which serves the normalised bytes.
+        $html = unserialize(serialize(new PaymentReceiptMail($transaction)))->render();
+        $this->assertStringContainsString('http://localhost/s/alpha/logo?v=', $html);
+        $this->assertSame(SchoolLogo::find($this->alpha->id)->bytes(), $this->get('/s/alpha/logo')->getContent());
+    }
+
+    // -----------------------------------------------------------------------
+    // Delivery: explicit dimensions and nosniff
+    // -----------------------------------------------------------------------
+
+    public function test_every_web_logo_img_has_explicit_width_and_height(): void
+    {
+        $this->upload($this->alpha, UploadedFile::fake()->image('logo.png', 64, 64));
+        $transaction = $this->makeSuccessfulTransaction($this->alpha, ['reference' => 'alpha-ref-1']);
+        $admin = fn () => $this->actingAsSchoolAdmin($this->alpha);
+
+        // Admin pages also carry the 40px sidebar logo alongside their own.
+        $pages = [
+            'admin sidebar (dashboard)' => [$admin()->get('/admin/alpha/dashboard'), [40]],
+            'public payment page' => [$this->get('/pay/alpha'), [56]],
+            'legacy payment page' => [$this->get('/s/alpha/payment'), [56]],
+            'receipt page' => [$this->get(URL::signedRoute('payment.receipt', ['transaction' => $transaction->id])), [56]],
+            'share page' => [$admin()->get('/admin/alpha/share'), [40, 64]],
+            'settings page' => [$admin()->get('/admin/alpha/settings'), [40, 80]],
+        ];
+
+        foreach ($pages as $name => [$response, $sizes]) {
+            preg_match_all('/<img\b[^>]*\/s\/alpha\/logo\?v=[^>]*>/', $response->assertOk()->getContent(), $tags);
+
+            $found = [];
+            foreach ($tags[0] as $tag) {
+                $this->assertMatchesRegularExpression('/ width="(\d+)" height="\1"/', $tag, "{$name}: every logo <img> is sized");
+                preg_match('/ width="(\d+)"/', $tag, $m);
+                $found[] = (int) $m[1];
+            }
+            sort($found);
+            $this->assertSame($sizes, $found, $name);
+        }
+    }
+
+    public function test_the_logo_response_is_nosniff_including_when_not_modified(): void
+    {
+        $this->upload($this->alpha, UploadedFile::fake()->image('logo.png', 64, 64));
+
+        $etag = $this->get('/s/alpha/logo')->assertOk()->assertHeader('X-Content-Type-Options', 'nosniff')->headers->get('ETag');
+        $this->get('/s/alpha/logo', ['If-None-Match' => $etag])->assertStatus(304)->assertHeader('X-Content-Type-Options', 'nosniff');
     }
 
     // -----------------------------------------------------------------------

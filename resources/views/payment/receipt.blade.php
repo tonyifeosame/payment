@@ -97,7 +97,7 @@
             {{-- School --}}
             <div class="flex items-center gap-4 px-5 py-5 sm:px-6">
                 @if($school?->logoUrl())
-                    <img src="{{ $school->logoUrl() }}" alt="{{ $school->name }} logo" class="h-14 w-14 shrink-0 rounded-2xl border border-brand-ash/60 bg-white object-contain">
+                    <img src="{{ $school->logoUrl() }}" alt="{{ $school->name }} logo" width="56" height="56" class="h-14 w-14 shrink-0 rounded-2xl border border-brand-ash/60 bg-white object-contain">
                 @elseif($school)
                     <span class="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-brand-violet font-display text-xl font-bold text-white" aria-hidden="true">{{ mb_substr($school->name, 0, 1) }}</span>
                 @endif

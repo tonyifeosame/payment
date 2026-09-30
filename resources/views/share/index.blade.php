@@ -33,7 +33,7 @@ You will need the student's admission number.</p>
 
     <div class="card p-6 text-center" id="qrPoster">
         @if($school->logoUrl())
-            <img src="{{ $school->logoUrl() }}" alt="" class="w-16 h-16 mx-auto mb-3 object-contain">
+            <img src="{{ $school->logoUrl() }}" alt="" width="64" height="64" class="w-16 h-16 mx-auto mb-3 object-contain">
         @endif
         <h2 class="text-2xl font-black text-slate-900">{{ $school->name }}</h2>
         <p class="text-slate-600 font-medium mb-4">Scan to pay school fees</p>

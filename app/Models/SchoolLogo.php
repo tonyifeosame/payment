@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\SchoolLogoImage;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Http\UploadedFile;
@@ -35,15 +36,20 @@ class SchoolLogo extends Model
         return $this->belongsTo(School::class);
     }
 
-    /** The row's attributes for an upload the controller has already validated. */
+    /**
+     * The row's attributes for an upload the controller has already validated.
+     * What is stored is the normalised image (SchoolLogoImage), not the upload.
+     *
+     * @throws \InvalidArgumentException when the image cannot be normalised
+     */
     public static function attributesFor(UploadedFile $file): array
     {
-        $bytes = $file->get();
+        $logo = SchoolLogoImage::normalize((string) $file->get());
 
         return [
-            'mime' => $file->getMimeType() ?: 'application/octet-stream',
-            'size' => strlen($bytes),
-            'data' => base64_encode($bytes),
+            'mime' => $logo['mime'],
+            'size' => strlen($logo['bytes']),
+            'data' => base64_encode($logo['bytes']),
         ];
     }
 
