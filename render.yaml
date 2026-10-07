@@ -296,7 +296,9 @@ services:
     #                             Blueprint one — see the runbook).
     # All three always run; the job's exit status is the first non-zero one, so a
     # failure in any pass is visible in Render without hiding the others.
-    dockerCommand: /docker-entrypoint.sh sh -c 'php artisan payouts:run --dispatch; a=$?; php artisan payments:expire-pending; b=$?; php artisan jobs:check; c=$?; if [ "$a" -ne 0 ]; then exit "$a"; fi; if [ "$b" -ne 0 ]; then exit "$b"; fi; exit "$c"'
+    # The script is docker/payout-reconciliation.sh, not an inline sh -c '...':
+    # Render does not remove shell quotes from dockerCommand.
+    dockerCommand: /docker-entrypoint.sh sh /app/docker/payout-reconciliation.sh
     envVars:
       # See the worker's note: only the web service runs migrations.
       - key: SKIP_MIGRATIONS

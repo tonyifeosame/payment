@@ -72,6 +72,9 @@ class DockerRuntimeStartupTest extends TestCase
         $this->assertCount(3, $services);
         foreach ($services as $service) {
             $this->assertStringStartsWith('/docker-entrypoint.sh ', $service['dockerCommand'], $service['name']);
+            // Render splits dockerCommand on whitespace and keeps quote
+            // characters, so a quoted argument never arrives as intended.
+            $this->assertFalse(strpbrk($service['dockerCommand'], '\'"\\'), $service['name'].' has a quote or backslash');
         }
     }
 
@@ -229,6 +232,7 @@ class DockerRuntimeStartupTest extends TestCase
         mkdir($this->dir.'/bin', 0777, true);
         copy($this->root.'/.env.example', $this->dir.'/app/.env.example');
         copy($this->root.'/docker/write-dotenv.sh', $this->dir.'/app/docker/write-dotenv.sh');
+        copy($this->root.'/docker/payout-reconciliation.sh', $this->dir.'/app/docker/payout-reconciliation.sh');
 
         // The stub records "args|APP_KEY|APP_URL|DB_CONNECTION|FEYRA_RUNTIME_PREPARED".
         file_put_contents($this->dir.'/bin/php', "#!/bin/sh\n"
@@ -237,10 +241,16 @@ class DockerRuntimeStartupTest extends TestCase
         chmod($this->dir.'/bin/php', 0755);
         touch($this->dir.'/calls.log');
 
-        // As Render runs it, with the image path swapped for the repository's script.
-        $command = str_replace('/docker-entrypoint.sh', $this->root.'/docker/docker-entrypoint.sh', $dockerCommand);
+        // As Render runs it: split on whitespace with no shell parsing (quotes
+        // stay literal), the first word executed by path. Image paths are
+        // swapped for the repository's entrypoint and the scratch app root.
+        $argv = array_map(fn (string $word) => match (true) {
+            $word === '/docker-entrypoint.sh' => $this->root.'/docker/docker-entrypoint.sh',
+            str_starts_with($word, '/app/') => $this->dir.'/app/'.substr($word, strlen('/app/')),
+            default => $word,
+        }, preg_split('/\s+/', trim($dockerCommand)));
 
-        $process = new Process([$sh, '-c', $command], $this->dir, $env + [
+        $process = new Process([$sh, '-c', 'exec "$@"', 'sh', ...$argv], $this->dir, $env + [
             'PATH' => $this->dir.'/bin'.PATH_SEPARATOR.getenv('PATH'),
             'FEYRA_APP_ROOT' => $this->dir.'/app',
             'FAKE_PHP_LOG' => $this->dir.'/calls.log',
