@@ -281,12 +281,13 @@ class Transaction extends Model
             $like = '%'.$q.'%';
             $admission = Student::normalizeAdmissionNumber($q);
             $query->where(function (Builder $w) use ($like, $admission) {
-                $w->where('transactions.name', 'like', $like)
-                    ->orWhere('transactions.email', 'like', $like)
-                    ->orWhere('transactions.reference', 'like', $like)
-                    ->orWhere('transactions.paystack_reference', 'like', $like)
-                    ->orWhere('transactions.student_name', 'like', $like)
-                    ->orWhere('transactions.student_admission_number', 'like', '%'.$admission.'%');
+                // whereLike: case-insensitive on PostgreSQL too (ILIKE).
+                $w->whereLike('transactions.name', $like)
+                    ->orWhereLike('transactions.email', $like)
+                    ->orWhereLike('transactions.reference', $like)
+                    ->orWhereLike('transactions.paystack_reference', $like)
+                    ->orWhereLike('transactions.student_name', $like)
+                    ->orWhereLike('transactions.student_admission_number', '%'.$admission.'%');
             });
         }
 

@@ -59,13 +59,14 @@ class PayoutController extends Controller
             ->when($q !== '', function ($query) use ($q, $school) {
                 $like = '%'.$q.'%';
                 $query->where(function ($w) use ($like, $school) {
-                    $w->where('payouts.reference', 'like', $like)
+                    // whereLike: case-insensitive on PostgreSQL too (ILIKE).
+                    $w->whereLike('payouts.reference', $like)
                         ->orWhereHas('transaction', fn ($t) => $t->where('school_id', $school->id)->where(fn ($x) => $x
-                            ->where('reference', 'like', $like)
-                            ->orWhere('student_name', 'like', $like)
-                            ->orWhere('student_admission_number', 'like', $like)
-                            ->orWhere('name', 'like', $like)
-                            ->orWhere('email', 'like', $like)));
+                            ->whereLike('reference', $like)
+                            ->orWhereLike('student_name', $like)
+                            ->orWhereLike('student_admission_number', $like)
+                            ->orWhereLike('name', $like)
+                            ->orWhereLike('email', $like)));
                 });
             })
             ->when($from, fn ($query) => $query->where('payouts.created_at', '>=', $from))

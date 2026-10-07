@@ -203,9 +203,11 @@ class Student extends Model
 
         return $query->where(function (Builder $q) use ($term) {
             $like = '%'.$term.'%';
-            $q->where('full_name', 'like', $like)
-                ->orWhere('admission_number', 'like', '%'.self::normalizeAdmissionNumber($term).'%')
-                ->orWhere('class_name', 'like', $like);
+            // whereLike: case-insensitive on every engine (ILIKE on PostgreSQL, where
+            // plain LIKE is case-sensitive and "two" did not find "Student Two").
+            $q->whereLike('full_name', $like)
+                ->orWhereLike('admission_number', '%'.self::normalizeAdmissionNumber($term).'%')
+                ->orWhereLike('class_name', $like);
         });
     }
 }

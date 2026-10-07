@@ -121,7 +121,9 @@ class SchoolIdentityUniquenessTest extends TestCase
             ['name' => 'Other', 'slug' => 'other', 'email' => 'ALPHA@EXAMPLE.TEST'],
         ] as $dup) {
             try {
-                School::create(array_merge(['admin_password' => Hash::make('x')], $dup));
+                // A savepoint, so the expected violation does not abort the test's
+                // own transaction on PostgreSQL.
+                DB::transaction(fn () => School::create(array_merge(['admin_password' => Hash::make('x')], $dup)));
                 $this->fail('the unique index did not fire for '.json_encode($dup));
             } catch (UniqueConstraintViolationException) {
                 $this->addToAssertionCount(1);
@@ -140,9 +142,11 @@ class SchoolIdentityUniquenessTest extends TestCase
         // Validation passes (no such school yet); a competing registration commits
         // the same name between validation and our insert. The constraint fires and
         // the registrant sees a validation message, not a 500.
+        // The competitor commits right after our name check has run — outside the
+        // savepoint our insert uses, exactly as a separate request would.
         $raced = false;
-        School::creating(function (School $school) use (&$raced) {
-            if (! $raced && $school->slug === 'sunrise-academy') {
+        DB::listen(function ($query) use (&$raced) {
+            if (! $raced && str_contains($query->sql, 'LOWER(name)')) {
                 $raced = true;
                 DB::table('schools')->insert(['name' => 'SUNRISE ACADEMY', 'slug' => 'sunrise-academy-race', 'email' => 'race@example.com', 'created_at' => now(), 'updated_at' => now()]);
             }
@@ -246,7 +250,7 @@ class SchoolIdentityUniquenessTest extends TestCase
         School::where('slug', 'legacy-2')->update(['name' => 'Legacy School Ikeja', 'email' => 'legacy-ikeja@example.test']);
         $this->migration()->up();
         try {
-            School::create(['name' => 'legacy school', 'slug' => 'legacy-3', 'email' => 'z@example.test']);
+            DB::transaction(fn () => School::create(['name' => 'legacy school', 'slug' => 'legacy-3', 'email' => 'z@example.test']));
             $this->fail('index not in place');
         } catch (UniqueConstraintViolationException) {
             $this->addToAssertionCount(1);

@@ -8,6 +8,7 @@ use App\Services\PaystackService;
 use App\Support\SchoolSession;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash; // This seems unused, but I'll leave it.
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rules\Password as PasswordRule;
@@ -67,7 +68,10 @@ class RegistrationController extends Controller
         $data['admin_password'] = Hash::make($data['admin_password']);
 
         try {
-            $school = School::create($data);
+            // In its own savepoint: on PostgreSQL a failed statement aborts the whole
+            // enclosing transaction, so the violation must roll back only this insert
+            // for the catch below to leave the connection usable.
+            $school = DB::transaction(fn () => School::create($data));
         } catch (UniqueConstraintViolationException) {
             // Two registrations raced past validation; the database kept one.
             return back()->withInput($request->except(['admin_password', 'admin_password_confirmation']))
