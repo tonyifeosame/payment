@@ -22,12 +22,26 @@
     <link rel="icon" type="image/svg+xml" href="{{ asset('favicon.svg') }}">
     <link rel="apple-touch-icon" href="{{ asset('apple-touch-icon.png') }}">
 
+    {{-- The page's one public URL, for the canonical link and og:url / twitter:url.
+         Built from APP_URL (https://feyra.site in production), never from the
+         request: the same page reached through www., the onrender.com host or with
+         a query string still names a single URL. Canonical is opt-in with
+         @section('canonical', 'on') on the indexable pages — home, contact,
+         registration, privacy and terms (the sitemap's list) — so sign-in, password
+         and error pages, which share this layout, never claim one. --}}
+    @php
+        $pageUrl = \App\Support\AppUrl::to(request()->path());
+    @endphp
+    @hasSection('canonical')
+        <link rel="canonical" href="{{ $pageUrl }}">
+    @endif
+
     {{-- Social sharing (Open Graph, X). Opt-in with @section('share', 'on'): home,
          contact and registration. Sign-in, password and error pages share this layout
          and must not become share cards. The title and description are the page's own,
          flattened to plain text: section content is HTML (titles span lines, and
-         @section('x', '…') values arrive escaped). No og:url, twitter:url or canonical
-         until the production domain is confirmed; asset() uses the requesting host. --}}
+         @section('x', '…') values arrive escaped). asset() uses the requesting host
+         outside production; in production every URL is rooted at APP_URL. --}}
     @hasSection('share')
         @php
             $plain = fn (string $html) => trim(preg_replace('/\s+/u', ' ', html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_HTML5, 'UTF-8')));
@@ -37,6 +51,7 @@
             $shareImageAlt = $brand.' — School fees. Collected without the stress.';
         @endphp
         <meta property="og:type" content="website">
+        <meta property="og:url" content="{{ $pageUrl }}">
         <meta property="og:site_name" content="{{ $brand }}">
         <meta property="og:title" content="{{ $shareTitle }}">
         <meta property="og:description" content="{{ $shareDescription }}">
@@ -45,6 +60,7 @@
         <meta property="og:image:height" content="630">
         <meta property="og:image:alt" content="{{ $shareImageAlt }}">
         <meta name="twitter:card" content="summary_large_image">
+        <meta name="twitter:url" content="{{ $pageUrl }}">
         <meta name="twitter:title" content="{{ $shareTitle }}">
         <meta name="twitter:description" content="{{ $shareDescription }}">
         <meta name="twitter:image" content="{{ $shareImage }}">

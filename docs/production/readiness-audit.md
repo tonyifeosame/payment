@@ -728,6 +728,9 @@ are **not** code changes:
    net-reporting rows exist and whose numbers will therefore change.
 5. **B2's runbook checklist** — Paystack dashboard settlement destination,
    transfers enabled, OTP disabled, webhook URL and secret registered.
+6. **Production domain** — `https://feyra.site`: Render custom domains (apex
+   plus the www redirect), DNS, and `APP_URL` on all three services, before the
+   first receipt is emailed. Runbook §1a.
 
 ---
 

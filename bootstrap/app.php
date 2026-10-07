@@ -45,6 +45,8 @@ return Application::configure(basePath: dirname(__DIR__))
                 | Request::HEADER_X_FORWARDED_PORT,
         );
 
+        // Before ForceHttps, so http://www.… reaches https://feyra.site in one hop.
+        $middleware->append(\App\Http\Middleware\RedirectWwwToApex::class);
         $middleware->append(\App\Http\Middleware\ForceHttps::class);
 
         // M4: CSP (nonce-based scripts), framing, nosniff, referrer and

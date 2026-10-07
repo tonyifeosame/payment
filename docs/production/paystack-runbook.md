@@ -36,7 +36,7 @@ every secret `sync: false` on purpose, so nothing secret is in the repo.
 | `APP_ENV` | `production` | enables HTTPS enforcement and production rules |
 | `APP_DEBUG` | `false` | error pages must never show configuration |
 | `APP_KEY` | one value, **identical on all three services**, never rotated | signs receipt links (worker signs, web validates) and encrypts sessions; a new key invalidates every receipt link ever emailed |
-| `APP_URL` | `https://<your-host>` — identical on all three services | builds the webhook/callback URLs Paystack uses and every emailed link; must be HTTPS |
+| `APP_URL` | `https://feyra.site` — the apex, no `www.`, no trailing slash; identical on all three services | builds the webhook/callback URLs Paystack uses, every emailed link, and the canonical, `og:url` and sitemap URLs; must be HTTPS |
 | `PAYSTACK_SECRET_KEY` | the **live** secret key (`sk_live_…`) | verifies charges, signs/validates webhooks, sends transfers; the only Paystack credential the code reads |
 | `PAYSTACK_PUBLIC_KEY` | live public key (optional) | not read by any code today (checkout is a server-side redirect); set it for completeness |
 | `PAYSTACK_PAYMENT_URL` | `https://api.paystack.co` | API base |
@@ -54,11 +54,49 @@ every secret `sync: false` on purpose, so nothing secret is in the repo.
 | `HEALTH_FAILED_JOBS_THRESHOLD`, `HEALTH_QUEUE_DEPTH_THRESHOLD`, `HEALTH_STALLED_PAYOUTS_THRESHOLD`, `HEALTH_ATTENTION_PAYOUTS_THRESHOLD` | `1`, `100`, `1`, `1` (defaults) | the counts at which `jobs:check` reports unhealthy (`config/operations.php`) |
 | `SKIP_MIGRATIONS` | `true` on worker and cron only | only the web service runs `migrate --force` at start |
 
+Values may contain spaces, quotes, `#`, `$` and backslashes (`MAIL_FROM_NAME`
+= `FEYRA Payments` is fine). The container's `.env` holds only the
+`.env.example` defaults that the environment does not override
+(`docker/write-dotenv.sh`); every value set here is read from the environment
+and never written to disk. A variable left blank falls back to its
+`.env.example` default.
+
 Transfers need nothing beyond `PAYSTACK_SECRET_KEY`: the platform fee is
 `config/fees.php` (`markup_percent`, 2.5 % by default), the school's share is
 read from each transaction's stored breakdown, and the Paystack transfer
 recipient for a school is created automatically on its first payout from the
 bank details verified at registration or in Settings.
+
+## 1a. Domain: feyra.site
+
+The production address is **`https://feyra.site`**. `www.feyra.site` and the
+service's `onrender.com` host are aliases, never the address the app names.
+
+1. **Render → laravel-app → Settings → Custom Domains:** add `feyra.site`.
+   Render should add `www.feyra.site` alongside it and redirect www to the
+   apex; confirm both are listed. Add the DNS records exactly as that page
+   shows them at the registrar, and wait until both domains are verified and
+   their certificates issued.
+2. **`APP_URL=https://feyra.site`** on all three services, then redeploy them.
+   It is the one source of every absolute URL — receipt and password-reset
+   links, the Paystack callback, payment-page and QR links, canonical and
+   `og:url` tags, and `/sitemap.xml`. Set it once, before the first real
+   receipt is emailed: a later change breaks every link already sent.
+3. **www redirect.** `curl -sI https://www.feyra.site/contact` must answer
+   `301` with `location: https://feyra.site/contact`. If Render's redirect is
+   not in place, the app does the same itself (`RedirectWwwToApex`, for that
+   exact host only). The `onrender.com` host keeps serving pages; its canonical
+   and `og:url` tags still name `feyra.site`.
+4. **SEO.** `https://feyra.site/robots.txt` names
+   `https://feyra.site/sitemap.xml` (a fixed line in `public/robots.txt` — edit
+   it if the domain ever changes); the sitemap lists home, registration,
+   contact, privacy and terms. School payment pages, receipts and `/admin` are
+   noindex and stay out of it.
+5. **Do not** set `SESSION_DOMAIN`: unset, the session cookie belongs to
+   `feyra.site` alone, which is what a single canonical host needs.
+6. **Schools' links and QR codes.** Payment links and QR codes are built from
+   `APP_URL`; ask schools to share or print them only after step 2, or they
+   will point at the `onrender.com` host.
 
 ## 2. Paystack dashboard setup
 
@@ -78,8 +116,11 @@ Do these in the **Live** dashboard of the business whose live key is configured.
 4. **Webhook** — Settings → API Keys & Webhooks → **Live** → Webhook URL:
 
    ```
-   POST {APP_URL}/paystack/webhook
+   POST https://feyra.site/paystack/webhook
    ```
+
+   Register the apex exactly. A delivery sent to `www.feyra.site` is answered
+   with a redirect, and a webhook must not depend on the sender following one.
 
    There is no separate webhook secret: the endpoint verifies the
    `x-paystack-signature` header as HMAC-SHA512 of the raw body with
@@ -101,7 +142,7 @@ Run `php artisan paystack:check --production` — every `FAIL` fixed, every
 with the first production transaction (section 4).
 
 **Collections**
-- [ ] `https://<host>/pay/{school-slug}` renders the school's fees and finds an active student
+- [ ] `https://feyra.site/pay/{school-slug}` renders the school's fees and finds an active student
 - [ ] "Pay" redirects to Paystack's hosted checkout with the expected total (fee + service fee)
 - [ ] `GET /payment/callback` returns the payer to the school page with a success message
 - [ ] the `charge.success` webhook is delivered and acknowledged (`200`, body `{"status":"settled"}` or `already_settled`)

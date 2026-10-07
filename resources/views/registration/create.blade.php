@@ -5,6 +5,7 @@
 @endsection
 @section('meta_description', 'Create a school account to collect school fees online, send receipts automatically and track payouts to your bank.')
 @section('share', 'on')
+@section('canonical', 'on')
 
 {{-- Slim header: logo + sign in. The full marketing nav would distract from the form. --}}
 @section('nav')

@@ -11,7 +11,8 @@ use Tests\TestCase;
  * Link-preview metadata on the public school payment page (/pay/{school} and the
  * legacy /s/{school}/payment). Built from the school record alone: nothing from the
  * session, flash messages, old input, fees, students or payers may reach <head>.
- * The page stays noindex, with no canonical or og:url until the domain is decided.
+ * The page stays noindex with no canonical link; og:url and twitter:url name the
+ * canonical /pay/{school} address on APP_URL, whichever URL was opened.
  */
 class PaymentPageMetadataTest extends TestCase
 {
@@ -20,8 +21,8 @@ class PaymentPageMetadataTest extends TestCase
     private const DESCRIPTION = 'Pay %s school fees online with FEYRA. Checkout is handled securely by Paystack and a receipt is emailed after payment.';
 
     private const TAGS = [
-        'description', 'og:type', 'og:site_name', 'og:title', 'og:description', 'og:image',
-        'twitter:card', 'twitter:title', 'twitter:description', 'twitter:image',
+        'description', 'og:type', 'og:url', 'og:site_name', 'og:title', 'og:description', 'og:image',
+        'twitter:card', 'twitter:url', 'twitter:title', 'twitter:description', 'twitter:image',
     ];
 
     private School $school;
@@ -47,6 +48,8 @@ class PaymentPageMetadataTest extends TestCase
 
         $this->assertSame($description, $tags['description'][0]);
         $this->assertSame('website', $tags['og:type'][0]);
+        $this->assertSame('http://localhost/pay/alpha', $tags['og:url'][0]);
+        $this->assertSame($tags['og:url'][0], $tags['twitter:url'][0]);
         $this->assertSame('FEYRA', $tags['og:site_name'][0]);
         $this->assertSame($title, $tags['og:title'][0]);
         $this->assertSame($description, $tags['og:description'][0]);
@@ -90,15 +93,25 @@ class PaymentPageMetadataTest extends TestCase
         $this->assertSame('https://feyra.example/images/feyra-og.png', $tags['twitter:image'][0]);
     }
 
-    public function test_the_page_stays_noindex_with_no_canonical_or_url_tags(): void
+    public function test_the_page_stays_noindex_with_no_canonical_link(): void
     {
         foreach (['/pay/alpha', '/s/alpha/payment'] as $path) {
             $head = $this->headOf($this->get($path)->assertOk());
 
             $this->assertSame(1, substr_count($head, '<meta name="robots" content="noindex">'), $path);
             $this->assertStringNotContainsString('rel="canonical"', $head, $path);
-            $this->assertStringNotContainsString('og:url', $head, $path);
-            $this->assertStringNotContainsString('twitter:url', $head, $path);
+        }
+    }
+
+    public function test_the_shared_url_is_the_canonical_payment_address_on_app_url(): void
+    {
+        config(['app.url' => 'https://feyra.site']);
+
+        foreach (['https://feyra-app.onrender.com/pay/alpha?ref=whatsapp', 'https://feyra-app.onrender.com/s/alpha/payment'] as $url) {
+            $tags = $this->metaTags($this->headOf($this->get($url)->assertOk()));
+
+            $this->assertSame('https://feyra.site/pay/alpha', $tags['og:url'][0], $url);
+            $this->assertSame('https://feyra.site/pay/alpha', $tags['twitter:url'][0], $url);
         }
     }
 

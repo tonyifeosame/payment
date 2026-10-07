@@ -68,9 +68,10 @@ services:
       # sync:false, NOT ${RENDER_EXTERNAL_URL}: Render does not interpolate
       # variables inside Blueprint values, so that expression is stored as the
       # literal string "${RENDER_EXTERNAL_URL}" — the same bug that already bit
-      # SESSION_DOMAIN. Paste the real https URL into all three services'
-      # dashboards; they must match, because the worker signs the receipt links
-      # this service has to validate.
+      # SESSION_DOMAIN. Paste the real https URL — https://feyra.site, the apex —
+      # into all three services' dashboards; they must match, because the worker
+      # signs the receipt links this service has to validate. See the runbook's
+      # §1a for the custom domain and the www redirect.
       - key: APP_URL
         sync: false
       # Required: DATABASE_URL only populates the pgsql connection, so without an

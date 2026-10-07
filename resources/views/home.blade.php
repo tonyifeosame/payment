@@ -1,6 +1,7 @@
 @extends('layouts.marketing')
 
 @section('share', 'on')
+@section('canonical', 'on')
 
 {{-- Public homepage. Story order: school → students → fees → payment → receipt → records.
      Every section is a partial under resources/views/marketing/home. --}}

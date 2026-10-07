@@ -11,6 +11,7 @@ use App\Http\Controllers\RegistrationController;
 use App\Http\Controllers\SchoolAuthController;
 use App\Http\Controllers\SchoolSettingsController;
 use App\Http\Controllers\ShareController;
+use App\Http\Controllers\SitemapController;
 use App\Http\Controllers\StudentController;
 use App\Http\Controllers\StudentPromotionController;
 use App\Http\Controllers\SubcategoryController;
@@ -86,6 +87,9 @@ Route::get('/privacy', function () {
 Route::get('/terms', function () {
     return view('terms');
 })->name('terms.show');
+
+// The indexable public pages, on APP_URL; named by public/robots.txt.
+Route::get('/sitemap.xml', SitemapController::class)->name('sitemap');
 
 Route::post('/contact', function (\Illuminate\Http\Request $request) {
     $data = $request->validate([

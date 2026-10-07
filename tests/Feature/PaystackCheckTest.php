@@ -354,8 +354,9 @@ class PaystackCheckTest extends TestCase
         $this->assertFileExists($path);
         $runbook = file_get_contents($path);
 
-        // Webhook URL pattern and signature scheme.
-        $this->assertStringContainsString('POST {APP_URL}/paystack/webhook', $runbook);
+        // Webhook URL (the production domain plus the real route) and signature scheme.
+        $this->assertSame('/paystack/webhook', route('paystack.webhook', [], false));
+        $this->assertStringContainsString('POST https://feyra.site/paystack/webhook', $runbook);
         $this->assertStringContainsString('HMAC-SHA512', $runbook);
         $this->assertStringContainsString('x-paystack-signature', $runbook);
         $this->assertStringContainsString('/payment/callback', $runbook);

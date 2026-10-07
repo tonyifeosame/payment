@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Support\AppUrl;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\URL;
@@ -10,18 +11,19 @@ use Tests\Concerns\InteractsWithSchools;
 use Tests\TestCase;
 
 /**
- * Open Graph / X share metadata on the marketing layout. Opt-in: only the pages
- * that declare @section('share') carry it, and no page carries an og:url,
- * twitter:url or canonical until a production domain is confirmed.
+ * Open Graph / X share metadata and canonical links on the marketing layout.
+ * Both are opt-in: only the pages that declare @section('share') carry share
+ * tags, and only the indexable pages (@section('canonical')) a canonical link.
+ * Every page URL is built from APP_URL, never from the request's host.
  */
 class SocialMetadataTest extends TestCase
 {
     use InteractsWithSchools, RefreshDatabase;
 
     private const SHARE_TAGS = [
-        'og:type', 'og:site_name', 'og:title', 'og:description',
+        'og:type', 'og:url', 'og:site_name', 'og:title', 'og:description',
         'og:image', 'og:image:width', 'og:image:height', 'og:image:alt',
-        'twitter:card', 'twitter:title', 'twitter:description', 'twitter:image', 'twitter:image:alt',
+        'twitter:card', 'twitter:url', 'twitter:title', 'twitter:description', 'twitter:image', 'twitter:image:alt',
     ];
 
     /** @return array<string, array{string, string, string}> path, share title, share description */
@@ -45,6 +47,8 @@ class SocialMetadataTest extends TestCase
         }
 
         $this->assertSame('website', $tags['og:type'][0]);
+        $this->assertSame(AppUrl::to($path), $tags['og:url'][0]);
+        $this->assertSame($tags['og:url'][0], $tags['twitter:url'][0]);
         $this->assertSame('FEYRA', $tags['og:site_name'][0]);
         $this->assertSame($title, $tags['og:title'][0]);
         $this->assertSame($title, $tags['twitter:title'][0]);
@@ -95,15 +99,46 @@ class SocialMetadataTest extends TestCase
         $this->assertLessThan(300 * 1024, filesize($file));
     }
 
-    public function test_no_page_declares_a_url_or_canonical_before_the_domain_is_confirmed(): void
+    /** @return array<string, array{string}> */
+    public static function indexablePages(): array
     {
-        foreach (array_column(self::sharedPages(), 0) as $path) {
-            $html = $this->get($path)->getContent();
+        return [
+            'home' => ['/'],
+            'registration' => ['/registration/create'],
+            'contact' => ['/contact'],
+            'privacy' => ['/privacy'],
+            'terms' => ['/terms'],
+        ];
+    }
 
-            $this->assertStringNotContainsString('og:url', $html, $path);
-            $this->assertStringNotContainsString('twitter:url', $html, $path);
-            $this->assertStringNotContainsString('rel="canonical"', $html, $path);
-        }
+    #[DataProvider('indexablePages')]
+    public function test_indexable_page_has_exactly_one_canonical_link_on_app_url(string $path): void
+    {
+        // The shared pages' og:url is checked against the same AppUrl::to($path)
+        // above, so canonical and og:url always agree.
+        $this->assertSame([AppUrl::to($path)], $this->canonicalLinks($this->get($path)->assertOk()->getContent()));
+    }
+
+    public function test_page_urls_come_from_app_url_not_the_request_host_or_query(): void
+    {
+        config(['app.url' => 'https://feyra.site']);
+
+        $html = $this->get('https://feyra-app.onrender.com/contact?utm_source=whatsapp')->assertOk()->getContent();
+        $tags = $this->shareTags($html);
+
+        $this->assertSame(['https://feyra.site/contact'], $this->canonicalLinks($html));
+        $this->assertSame('https://feyra.site/contact', $tags['og:url'][0]);
+        $this->assertSame('https://feyra.site/contact', $tags['twitter:url'][0]);
+
+        $this->assertSame(['https://feyra.site/'], $this->canonicalLinks($this->get('https://feyra-app.onrender.com/')->getContent()));
+    }
+
+    public function test_every_shared_page_is_also_an_indexable_page(): void
+    {
+        $this->assertSame(
+            [],
+            array_diff(array_column(self::sharedPages(), 0), array_column(self::indexablePages(), 0)),
+        );
     }
 
     public function test_pages_that_did_not_opt_in_carry_no_share_tags(): void
@@ -125,7 +160,17 @@ class SocialMetadataTest extends TestCase
         foreach ($pages as $name => [$response, $status]) {
             $this->assertSame($status, $response->status(), $name);
             $this->assertSame([], $this->shareTags($response->getContent()), "{$name} carries share tags");
+            $this->assertSame([], $this->canonicalLinks($response->getContent()), "{$name} claims a canonical URL");
         }
+    }
+
+    /** @return list<string> every canonical link's href, decoded */
+    private function canonicalLinks(string $html): array
+    {
+        preg_match_all('/<link\s+rel="canonical"\s+href="([^"]*)"\s*>/', $html, $matches);
+        $this->assertSame(count($matches[1]), substr_count($html, 'rel="canonical"'));
+
+        return array_map(fn ($href) => html_entity_decode($href, ENT_QUOTES | ENT_HTML5, 'UTF-8'), $matches[1]);
     }
 
     /**

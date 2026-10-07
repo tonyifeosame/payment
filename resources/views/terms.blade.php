@@ -4,6 +4,7 @@
     Terms of Service — @include('marketing.partials.brand-name')
 @endsection
 @section('meta_description', 'The terms for using FEYRA to collect school fees online: school accounts, payment pages, payments through Paystack, the service fee, payouts and receipts.')
+@section('canonical', 'on')
 
 @section('nav')
     @include('marketing.partials.slim-header', [

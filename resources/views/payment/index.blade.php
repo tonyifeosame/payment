@@ -8,8 +8,12 @@
         // Link-preview metadata (WhatsApp, Facebook, X). Built from the school record
         // alone, never from the session, flash messages, old input, fees or anything
         // the payer typed, so a shared or re-rendered page cannot leak payment details.
-        // The page stays noindex. No og:url / canonical until the production domain is
-        // decided; asset() builds the image URL from the requesting host.
+        // The page stays noindex, so it has no canonical link. og:url / twitter:url name
+        // the canonical /pay/{school} address on APP_URL (https://feyra.site in
+        // production) whichever URL was shared — the legacy /s/{school}/payment, www.
+        // or the onrender.com host. asset() uses the requesting host outside
+        // production; in production every URL is rooted at APP_URL.
+        $shareUrl = \App\Support\AppUrl::to(route('public.payment', ['school' => $school->slug], false));
         $shareTitle = $school->name.' — School fees payment';
         $shareDescription = 'Pay '.$school->name.' school fees online with FEYRA. Checkout is handled securely by Paystack and a receipt is emailed after payment.';
         $shareImage = asset('images/feyra-og.png');
@@ -17,11 +21,13 @@
     <meta name="description" content="{{ $shareDescription }}">
     <meta name="robots" content="noindex">
     <meta property="og:type" content="website">
+    <meta property="og:url" content="{{ $shareUrl }}">
     <meta property="og:site_name" content="FEYRA">
     <meta property="og:title" content="{{ $shareTitle }}">
     <meta property="og:description" content="{{ $shareDescription }}">
     <meta property="og:image" content="{{ $shareImage }}">
     <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:url" content="{{ $shareUrl }}">
     <meta name="twitter:title" content="{{ $shareTitle }}">
     <meta name="twitter:description" content="{{ $shareDescription }}">
     <meta name="twitter:image" content="{{ $shareImage }}">

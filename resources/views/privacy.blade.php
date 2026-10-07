@@ -4,6 +4,7 @@
     Privacy Policy — @include('marketing.partials.brand-name')
 @endsection
 @section('meta_description', 'How FEYRA collects, uses, shares and protects information about schools, parents and other payers, students and website visitors.')
+@section('canonical', 'on')
 
 @section('nav')
     @include('marketing.partials.slim-header', [
