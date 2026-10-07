@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Category;
 use App\Models\School;
 use App\Models\Student;
+use App\Models\Subcategory;
 use App\Models\Transaction;
 use App\Services\AcademicPeriodService;
 use App\Services\PaymentCheckoutService;
@@ -43,6 +44,8 @@ class PaymentController extends Controller
 
     public const MESSAGE_MISMATCH = 'We could not confirm this payment. Please contact the school with your payment reference before paying again.';
 
+    public const MESSAGE_DUPLICATE = 'This school fee had already been paid for this student and term, so this payment was not applied. Please contact the school with your payment reference to arrange a refund.';
+
     public const MESSAGE_UNVERIFIED = 'We could not reach the payment provider to confirm this payment. If you were charged, it will be confirmed automatically shortly.';
 
     /**
@@ -76,9 +79,10 @@ class PaymentController extends Controller
      */
     private function renderPaymentPage(School $school)
     {
-        $categories = Category::with('subcategories')
+        $categories = Category::with('subcategories.classLevels:id')
             ->where('school_id', $school->id)
             ->get();
+        $requiresStudent = $school->requiresStudentOnPayment();
 
         // Only ids, names, prices, the fee's term and whether it allows multiple
         // units reach the browser. The term id lets the page hide fees that are not
@@ -90,12 +94,19 @@ class PaymentController extends Controller
         // never be offered one: it would render as "₦0" and end in Paystack's
         // refusal and a generic error. PaymentCheckoutService refuses the same fee
         // on submit, so this is presentation, not the guarantee.
-        $categoriesForJs = $categories->map(function ($c) {
+        //
+        // Fees assigned to class levels are payable only for a student in one of
+        // them, so a school with no roster (no student to verify) is not offered
+        // them at all. With a roster, the student lookup returns the ids of the fees
+        // that apply to that student (publicStudent) and the page offers only those;
+        // is_tuition lets it pick the class's main fee for the parent.
+        $categoriesForJs = $categories->map(function ($c) use ($requiresStudent) {
             return [
                 'id' => $c->id,
                 'name' => $c->name,
                 'subcategories' => $c->subcategories
                     ->filter(fn ($s) => $s->price !== null && (float) $s->price > 0)
+                    ->filter(fn ($s) => $requiresStudent || ($s->classLevels->isEmpty() && ! $s->is_tuition))
                     ->map(function ($s) {
                         return [
                             'id' => $s->id,
@@ -103,6 +114,7 @@ class PaymentController extends Controller
                             'price' => (float) $s->price,
                             'term_id' => $s->academic_term_id,
                             'allows_quantity' => (bool) $s->allows_quantity,
+                            'is_tuition' => (bool) $s->is_tuition,
                         ];
                     })->values(),
             ];
@@ -120,7 +132,6 @@ class PaymentController extends Controller
         })->values();
 
         $markupPercent = (float) config('fees.markup_percent', 2.5);
-        $requiresStudent = $school->requiresStudentOnPayment();
         $currentTerm = $school->currentTerm;
 
         // After a failed submit, re-select the student the parent had verified — but
@@ -163,7 +174,12 @@ class PaymentController extends Controller
         return response()->json(['student' => $student ? $this->publicStudent($student) : null]);
     }
 
-    /** The only student fields the public payment page ever receives. */
+    /**
+     * The only student fields the public payment page ever receives. fee_ids are
+     * the school's fees that apply to this student's class level (unassigned fees
+     * included), so the page can offer those and pick the class's tuition; the
+     * checkout service re-derives the same rule on submit.
+     */
     private function publicStudent(Student $student): array
     {
         return [
@@ -171,6 +187,22 @@ class PaymentController extends Controller
             'full_name' => $student->full_name,
             'class_name' => $student->class_name,
             'admission_number_masked' => $student->maskedAdmissionNumber(),
+            'fee_ids' => Subcategory::where('school_id', $student->school_id)
+                ->applicableTo($student)
+                ->orderBy('id')
+                ->pluck('id')
+                ->all(),
+            // Main (tuition) school fees this student has SUCCESSFULLY paid, by term.
+            // One per term: a term listed here offers no main fee at all, whichever
+            // class's it is. Checkout refuses them regardless (PaymentCheckoutService).
+            'paid_fees' => Transaction::forSchool($student->school_id)
+                ->tuitionPaid($student->id)
+                ->orderBy('transactions.id')
+                ->get(['transactions.subcategory_id', 'transactions.academic_term_id'])
+                ->map(fn ($t) => ['fee_id' => (int) $t->subcategory_id, 'term_id' => (int) $t->academic_term_id])
+                ->unique(fn ($p) => $p['fee_id'].':'.$p['term_id'])
+                ->values()
+                ->all(),
         ];
     }
 
@@ -305,6 +337,10 @@ class PaymentController extends Controller
             case PaymentSettlementService::AMOUNT_MISMATCH:
             case PaymentSettlementService::CURRENCY_MISMATCH:
                 return $this->paymentOutcome($transaction, 'unconfirmed', self::MESSAGE_MISMATCH);
+
+            case PaymentSettlementService::DUPLICATE_OBLIGATION:
+                // Charged, but the school fee was already paid: not a second success.
+                return $this->paymentOutcome($transaction, 'unconfirmed', self::MESSAGE_DUPLICATE);
 
             case PaymentSettlementService::VERIFICATION_FAILED:
                 return $this->paymentOutcome($transaction, 'unverified', self::MESSAGE_UNVERIFIED);

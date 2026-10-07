@@ -274,6 +274,27 @@
                     <h2 id="step-fee" class="step-heading"><span class="step-num" aria-hidden="true">{{ ($requiresStudent || $hasSessions) ? 2 : 1 }}</span>Select the fee</h2>
 
                     <div class="mt-4 space-y-4">
+                        {{-- Class fee: when exactly one main (tuition) fee applies to the verified
+                             student's class for this term, it is selected for the parent and shown
+                             read-only. The category and fee ids it fills in are re-checked on submit:
+                             PaymentCheckoutService resolves student -> class level -> fee itself. --}}
+                        <div id="autoFee" hidden class="rounded-2xl border border-brand-violet/30 bg-brand-violet/[0.06] p-4" aria-live="polite">
+                            <p class="text-xs font-semibold uppercase tracking-[0.12em] text-brand-violet">Fee for <span id="autoFeeClass"></span></p>
+                            <p id="autoFeeName" class="mt-0.5 break-words font-display text-lg font-bold leading-tight text-brand-obsidian"></p>
+                            <p id="autoFeeAmount" class="mt-1 font-display text-2xl font-extrabold tabular-nums"></p>
+                            <p class="mt-1 text-xs text-brand-slate">Set by the school for this student's class.</p>
+                            <button type="button" id="autoFeeOther" class="btn-outline btn-sm mt-3">Pay a different fee instead</button>
+                        </div>
+                        {{-- School fee already paid for this term: shown instead of offering it
+                             again. Only a successful payment counts; checkout refuses it too. --}}
+                        <div id="paidFee" hidden class="rounded-2xl border border-green-200 bg-green-50 p-4" role="status">
+                            <p class="font-display text-lg font-bold text-green-900">School fees paid</p>
+                            <p id="paidFeeText" class="mt-1 text-sm text-green-800"></p>
+                        </div>
+                        <p id="feeHint" class="field-help" hidden></p>
+
+                        <div id="manualFee" class="space-y-4">
+                        <button type="button" id="autoFeeBack" hidden class="btn-outline btn-sm hidden">Pay the class fee instead</button>
                         <div>
                             <label for="category" class="field-label">Category</label>
                             <div class="relative">
@@ -304,6 +325,7 @@
                             <p id="unitPrice" class="field-help">Unit Price: ₦0</p>
                             <span id="subError" class="field-error block empty:hidden"></span>
                             @include('marketing.partials.field-error', ['field' => 'subcategory_id'])
+                        </div>
                         </div>
 
                         <div id="quantityContainer">

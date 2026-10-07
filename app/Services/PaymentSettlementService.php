@@ -4,7 +4,9 @@ namespace App\Services;
 
 use App\Jobs\InitiateSchoolPayout;
 use App\Mail\PaymentReceiptMail;
+use App\Models\AcademicTerm;
 use App\Models\Payout;
+use App\Models\Subcategory;
 use App\Models\Transaction;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -55,6 +57,8 @@ class PaymentSettlementService
     public const FAILED_RECORDED = 'failed_recorded';         // H5: Paystack's definitive failure written to the row
 
     public const ALREADY_FAILED = 'already_failed';           // H5: it was already recorded as failed; no-op
+
+    public const DUPLICATE_OBLIGATION = 'duplicate_obligation'; // school fee already paid by another attempt; needs a refund
 
     /**
      * H5: Paystack statuses that are a definitive end for THIS attempt. `failed` is a
@@ -203,10 +207,21 @@ class PaymentSettlementService
                     return [self::ALREADY_SETTLED, $locked];
                 }
 
+                // A main school fee is paid once per student, fee and term. Two
+                // checkouts started before either was paid can both be charged; the
+                // second confirmed charge is recorded for a human (refund), never as a
+                // second success, and so never paid out to the school twice.
+                if ($this->obligationAlreadyPaid($locked)) {
+                    return [self::DUPLICATE_OBLIGATION, $this->markDuplicateObligation($locked)];
+                }
+
                 $attributes = [
                     'status' => 'success',
                     'paid_at' => now(),
                     'payment_method' => $verification['channel'] ?: 'paystack',
+                    // Unique: the database refuses a second success for one obligation
+                    // even if two settlements pass the check above at the same time.
+                    'settled_obligation_key' => $this->obligationKeyOf($locked),
                 ];
 
                 // M5: `paystack_reference` carries a unique index. Claim it only if no
@@ -247,6 +262,22 @@ class PaymentSettlementService
 
             if ($fresh && $fresh->status === 'success') {
                 return $this->result(self::ALREADY_SETTLED, $fresh);
+            }
+
+            // The race the unique settled_obligation_key exists for: another attempt
+            // at the same school fee settled between our check and our write.
+            if ($fresh && $fresh->status === 'pending' && $this->obligationAlreadyPaid($fresh)) {
+                $row = DB::transaction(function () use ($fresh) {
+                    $locked = $this->lockRow($fresh);
+
+                    return $locked && $locked->status === 'pending' ? $this->markDuplicateObligation($locked) : $locked;
+                });
+
+                return $this->result(
+                    $row?->status === 'mismatch' ? self::DUPLICATE_OBLIGATION : self::SETTLEMENT_CONFLICT,
+                    $row ?? $fresh,
+                    'This school fee had already been paid; this payment needs a refund.'
+                );
             }
 
             Log::critical('Payment settlement failed with a database conflict', [
@@ -367,6 +398,79 @@ class PaymentSettlementService
         });
 
         return $this->result($outcome, $row, $outcome === self::FAILED_RECORDED ? $reason : null, $paystackStatus);
+    }
+
+    /**
+     * Has this student's main school fee for this row's session and term already
+     * been paid — by ANY main fee, so a mid-term class change cannot pay it twice?
+     * Only main-fee rows with a student and a term are subject to the rule; every
+     * other payment settles exactly as before.
+     */
+    private function obligationAlreadyPaid(Transaction $transaction): bool
+    {
+        if ($this->obligationKeyOf($transaction) === null) {
+            return false;
+        }
+
+        return Transaction::paidObligation((int) $transaction->student_id, (int) $transaction->academic_term_id)
+            ->whereKeyNot($transaction->getKey())
+            ->exists();
+    }
+
+    /**
+     * The row's school-fee obligation key, "student:session:term", always rebuilt
+     * from the row itself so every row compares in one format. A row is a main-fee
+     * obligation when checkout marked it (obligation_key) or — for a pending attempt
+     * started before the key existed — when its fee is a main fee.
+     */
+    private function obligationKeyOf(Transaction $transaction): ?string
+    {
+        if (! $transaction->student_id || ! $transaction->academic_term_id) {
+            return null;
+        }
+
+        $isObligation = $transaction->obligation_key !== null
+            || ($transaction->subcategory_id && Subcategory::whereKey($transaction->subcategory_id)
+                ->where('school_id', $transaction->school_id)
+                ->where('is_tuition', true)
+                ->exists());
+        if (! $isObligation) {
+            return null;
+        }
+
+        $sessionId = $transaction->academic_session_id
+            ?? AcademicTerm::whereKey($transaction->academic_term_id)->value('academic_session_id');
+
+        return Transaction::obligationKey($transaction->student_id, $sessionId, $transaction->academic_term_id);
+    }
+
+    /**
+     * Record a confirmed charge for a school fee that was already paid. Paystack has
+     * the money, so the row cannot be failed; it is not success either (no second
+     * receipt, no second payout). `mismatch` is the existing "a human decides" state;
+     * the reason is kept beside the other verification errors. Caller holds the lock.
+     */
+    private function markDuplicateObligation(Transaction $locked): Transaction
+    {
+        Log::critical('Duplicate payment of an already-paid school fee: refund needed', [
+            'transaction_id' => $locked->id,
+            'reference' => $locked->reference,
+            'school_id' => $locked->school_id,
+            'student_id' => $locked->student_id,
+            'subcategory_id' => $locked->subcategory_id,
+            'academic_term_id' => $locked->academic_term_id,
+        ]);
+
+        $locked->forceFill([
+            'status' => 'mismatch',
+            'meta_data' => $this->mergeMeta($locked, 'verification_error', [
+                'kind' => self::DUPLICATE_OBLIGATION,
+                'obligation_key' => $this->obligationKeyOf($locked),
+                'observed_at' => now()->toIso8601String(),
+            ]),
+        ])->save();
+
+        return $locked;
     }
 
     /**

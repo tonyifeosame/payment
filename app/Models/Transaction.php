@@ -40,6 +40,7 @@ class Transaction extends Model
         'payment_method',
         'meta_data',
         'school_id',
+        'obligation_key',
     ];
 
     protected $casts = [
@@ -186,6 +187,52 @@ class Transaction extends Model
     public function scopeSuccessful(Builder $query): Builder
     {
         return $query->where('transactions.status', self::STATUS_SUCCESS);
+    }
+
+    /**
+     * The identity of a main (tuition) school-fee obligation: one student, one
+     * academic session, one term — "student:session:term". ANY main fee settles it,
+     * so a student moved to another class mid-term (whose class has a different main
+     * fee) cannot pay school fees for that term twice. Which main fee is due is still
+     * decided by class-level assignment. Null when the payment is not a main fee, or
+     * has no student or term to tie it to: the paid-once rule does not apply.
+     */
+    public static function obligationKeyFor(?Student $student, Subcategory $fee, ?AcademicTerm $term): ?string
+    {
+        if (! $fee->is_tuition || $student === null || $term === null) {
+            return null;
+        }
+
+        return self::obligationKey($student->id, $term->academic_session_id, $term->id);
+    }
+
+    public static function obligationKey(int|string $studentId, int|string|null $sessionId, int|string $termId): string
+    {
+        return (int) $studentId.':'.(int) $sessionId.':'.(int) $termId;
+    }
+
+    /**
+     * This student's successful main (tuition) school-fee payments, any term. A
+     * payment counts when its fee is a main fee, or when it was settled as a
+     * school-fee obligation (settled_obligation_key) — so editing the fee later
+     * cannot un-pay it. Matched on the rows themselves, so payments made before the
+     * key existed count too. Only `success` is paid: pending, failed and mismatch
+     * rows never are.
+     */
+    public function scopeTuitionPaid(Builder $query, int $studentId): Builder
+    {
+        return $query->successful()
+            ->where('transactions.student_id', $studentId)
+            ->whereNotNull('transactions.academic_term_id')
+            ->where(fn (Builder $q) => $q
+                ->whereNotNull('transactions.settled_obligation_key')
+                ->orWhereIn('transactions.subcategory_id', Subcategory::where('is_tuition', true)->select('id')));
+    }
+
+    /** This student's successful main school-fee payment(s) for this term (and so its session). */
+    public function scopePaidObligation(Builder $query, int $studentId, int $termId): Builder
+    {
+        return $query->tuitionPaid($studentId)->where('transactions.academic_term_id', $termId);
     }
 
     /**

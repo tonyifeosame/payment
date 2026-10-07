@@ -20,21 +20,35 @@
 
 <div class="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-1">
     <p class="text-sm text-brand-slate"><span class="font-display text-lg font-bold text-brand-obsidian">{{ $subcategories->count() }}</span> {{ Str::plural('fee type', $subcategories->count()) }} across {{ $categories->count() }} {{ Str::plural('category', $categories->count()) }}</p>
-    <p class="text-sm text-brand-slate">A term fee can only be paid for that term; general fees can be paid in any term.</p>
+    <p class="text-sm text-brand-slate">A term fee can only be paid for that term, and a fee assigned to classes only by students in those classes.</p>
 </div>
 
 <x-admin.table
-    :columns="$subcategories->isEmpty() ? [] : [['Fee type', 'left', 'xl:w-[26%]'], ['Category', 'left', 'xl:w-[16%]'], ['Amount', 'right', 'xl:w-[14%]'], ['Session', 'left', 'xl:w-[12%]'], ['Term', 'left', 'xl:w-[14%]'], ['Actions', 'actions', 'xl:w-[18%]']]"
+    :columns="$subcategories->isEmpty() ? [] : [['Fee type', 'left', 'xl:w-[22%]'], ['Category', 'left', 'xl:w-[12%]'], ['Applies to', 'left', 'xl:w-[15%]'], ['Amount', 'right', 'xl:w-[12%]'], ['Session', 'left', 'xl:w-[10%]'], ['Term', 'left', 'xl:w-[11%]'], ['Actions', 'actions', 'xl:w-[18%]']]"
     caption="Fee types of {{ $school->name }}, grouped by category"
     class="xl:[&_table]:w-full xl:[&_table]:table-fixed md:[&_.th]:px-3 md:[&_.td]:px-3"
     stacked>
     @forelse($subcategories as $sub)
         <tr>
             <td class="td" data-label="Fee type">
-                <div class="min-w-0"><span class="font-semibold">{{ $sub->name }}</span></div>
+                <div class="min-w-0">
+                    <span class="font-semibold">{{ $sub->name }}</span>
+                    @if($sub->is_tuition)
+                        <span class="block text-xs text-brand-slate">Main class fee</span>
+                    @endif
+                </div>
             </td>
             <td class="td" data-label="Category">
                 <div class="min-w-0"><span class="font-medium">{{ $sub->category->name ?? '—' }}</span></div>
+            </td>
+            <td class="td" data-label="Applies to">
+                <div class="min-w-0">
+                    @if($sub->classLevels->isEmpty())
+                        <span class="font-medium">All classes</span>
+                    @else
+                        <span class="font-medium">{{ $sub->classLevels->sortBy([['position', 'asc'], ['id', 'asc']])->pluck('name')->implode(', ') }}</span>
+                    @endif
+                </div>
             </td>
             <td class="td text-right lg:whitespace-nowrap" data-label="Amount">
                 <div class="min-w-0">

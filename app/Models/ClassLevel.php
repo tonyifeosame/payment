@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
@@ -33,6 +34,12 @@ class ClassLevel extends Model
     public function students(): HasMany
     {
         return $this->hasMany(Student::class);
+    }
+
+    /** The fees assigned to this class level (fee_assignments). */
+    public function fees(): BelongsToMany
+    {
+        return $this->belongsToMany(Subcategory::class, 'fee_assignments')->withPivot('school_id')->withTimestamps();
     }
 
     public function scopeForSchool(Builder $query, School|int $school): Builder

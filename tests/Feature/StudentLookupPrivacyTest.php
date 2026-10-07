@@ -77,6 +77,10 @@ class StudentLookupPrivacyTest extends TestCase
                     'full_name' => 'Adaeze Okonkwo',
                     'class_name' => 'JSS 1',
                     'admission_number_masked' => '*/****/001',
+                    // The fees that apply to this student's class (an unassigned fee applies to all).
+                    'fee_ids' => [$this->fee->id],
+                    // School fees already paid (none yet).
+                    'paid_fees' => [],
                 ]]);
         }
     }

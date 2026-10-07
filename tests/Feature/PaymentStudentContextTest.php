@@ -434,6 +434,9 @@ class PaymentStudentContextTest extends TestCase
                 'full_name' => 'Adaeze Okonkwo',
                 'class_name' => 'JSS 1',
                 'admission_number_masked' => '*/****/001',
+                // The fees that apply to this student's class: both are unassigned, so both.
+                'fee_ids' => [$this->alphaTermFee->id, $this->alphaGeneralFee->id],
+                'paid_fees' => [],
             ]]);
 
         // Guardian details never leave the server.

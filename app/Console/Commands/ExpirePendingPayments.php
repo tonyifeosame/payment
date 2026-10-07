@@ -106,6 +106,7 @@ class ExpirePendingPayments extends Command
                     break;
                 case PaymentSettlementService::AMOUNT_MISMATCH:
                 case PaymentSettlementService::CURRENCY_MISMATCH:
+                case PaymentSettlementService::DUPLICATE_OBLIGATION:
                 case PaymentSettlementService::SETTLEMENT_CONFLICT:
                     $counts['skipped']++;
                     $this->warn("  {$transaction->reference}: {$result['outcome']} — needs a human (see logs)");

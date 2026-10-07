@@ -122,7 +122,9 @@ class CanonicalPaymentRoutesTest extends TestCase
 
         // The verified active student, masked admission number, only these keys.
         $new->assertJsonPath('student.full_name', 'Ada Okonkwo');
-        $this->assertSame(['id', 'full_name', 'class_name', 'admission_number_masked'], array_keys($new->json('student')));
+        $this->assertSame(['id', 'full_name', 'class_name', 'admission_number_masked', 'fee_ids', 'paid_fees'], array_keys($new->json('student')));
+        // Only this school's fees, never beta's.
+        $this->assertSame([$this->fee->id], $new->json('student.fee_ids'));
         $this->assertStringNotContainsString('A/001', $new->getContent());
         $this->assertSame($this->active->maskedAdmissionNumber(), $new->json('student.admission_number_masked'));
         $this->assertNotSame('A/001', $new->json('student.admission_number_masked'));

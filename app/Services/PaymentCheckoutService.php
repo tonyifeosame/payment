@@ -19,6 +19,8 @@ use Illuminate\Validation\ValidationException;
  *
  *   - category / fee ids must belong to this school, and to each other;
  *   - the term must belong to this school, and the fee must be payable in it;
+ *   - a fee assigned to class levels is payable only for a student in one of
+ *     them (Subcategory::isPayableForStudent);
  *   - the student id is looked up WITHIN this school, so a hidden field pointing
  *     at another school's student (or at nothing) fails closed, and the name,
  *     admission number and class stored on the transaction come from that row —
@@ -82,6 +84,31 @@ class PaymentCheckoutService
 
         $student = $this->resolveStudent($school, $input);
 
+        // Class-level assignment: student -> class level -> fee assignment -> fee,
+        // resolved from the rows, never from the page. A fee assigned to other class
+        // levels (another class's tuition, say) is refused for this student however
+        // the request was built; an unassigned fee stays payable by anyone.
+        if (! $subcategory->isPayableForStudent($student)) {
+            throw ValidationException::withMessages([
+                'subcategory_id' => "The selected fee does not apply to this student's class.",
+            ]);
+        }
+
+        // ONE main (tuition) school fee per student, session and term — whichever main
+        // fee it was (a student moved to another class mid-term has already paid). Only a
+        // SUCCESSFUL payment counts: a pending, failed, cancelled or mismatched attempt
+        // never blocks a retry. The fee, student and term were all re-resolved within
+        // this school above, so a manipulated id cannot point this check elsewhere.
+        // Settlement re-checks under a row lock, backed by a unique key, for the race
+        // between two checkouts started before either was paid.
+        $obligationKey = Transaction::obligationKeyFor($student, $subcategory, $term);
+        if ($obligationKey !== null
+            && Transaction::paidObligation($student->id, $term->id)->exists()) {
+            throw ValidationException::withMessages([
+                'subcategory_id' => 'School fees have already been paid for this student for '.$term->name.', '.$term->session?->name.'.',
+            ]);
+        }
+
         $baseAmount = round((float) $subcategory->price * $quantity, 2);
         $markupPercent = (float) config('fees.markup_percent', 2.5);
         $markupAmount = round($baseAmount * ($markupPercent / 100), 2);
@@ -101,6 +128,7 @@ class PaymentCheckoutService
             'academic_term_id' => $term?->id,
             'session_name' => $term?->session?->name,
             'term_name' => $term?->name,
+            'obligation_key' => $obligationKey,
             'reference' => Str::uuid()->toString(),
             'amount' => $amount,
             'fee_amount' => $baseAmount,

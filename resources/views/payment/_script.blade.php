@@ -47,7 +47,146 @@
     const studentSearchUrl = {!! json_encode(route(request()->routeIs('public.payment') ? 'public.payment.student-search' : 'school.payment.student-search', ['school' => $school->slug])) !!};
     const maxQuantity = {{ \App\Http\Controllers\PaymentController::MAX_QUANTITY }};
 
+    // Class-level fees. With a roster, only the fees the student lookup says apply
+    // to the verified student are offered (none before a student is found); a
+    // school without a roster is only ever sent fees open to everyone. When exactly
+    // one main (tuition) fee applies, it is selected and shown read-only. All of
+    // this is presentation: the server re-resolves student -> class -> fee on submit.
+    const autoFeeBox = document.getElementById('autoFee');
+    const autoFeeClass = document.getElementById('autoFeeClass');
+    const autoFeeName = document.getElementById('autoFeeName');
+    const autoFeeAmount = document.getElementById('autoFeeAmount');
+    const autoFeeOther = document.getElementById('autoFeeOther');
+    const autoFeeBack = document.getElementById('autoFeeBack');
+    const manualFee = document.getElementById('manualFee');
+    const feeHint = document.getElementById('feeHint');
+    const requiresStudent = !!document.getElementById('studentPicker');
+    let allowedFeeIds = requiresStudent ? new Set() : null;
+    let studentFound = false;
+    let studentClassName = '';
+    let preferOtherFee = false;
+    let restoreOldFee = false;
+    // Main school fees the verified student has already paid, as {fee_id, term_id}.
+    // Paid once per term: never offered again for that term (checkout refuses it too).
+    const paidFeeBox = document.getElementById('paidFee');
+    const paidFeeText = document.getElementById('paidFeeText');
+    let paidFees = [];
+    let onFeeChange = null;
+
     function selectedTermId() { return termSelect && termSelect.value ? Number(termSelect.value) : null; }
+
+    /** Has a main school fee been paid for the selected term? One per term, whichever fee. */
+    function schoolFeesPaidThisTerm() {
+        const termId = selectedTermId();
+        return termId !== null && paidFees.some(p => Number(p.term_id) === termId);
+    }
+
+    function isPaidThisTerm(sub) {
+        return !!sub.is_tuition && schoolFeesPaidThisTerm();
+    }
+
+    /** Fees payable for the selected term and, with a roster, by the verified student. */
+    function applicableFees(cat, includePaid) {
+        const termId = selectedTermId();
+        return ((cat && cat.subcategories) ? cat.subcategories : [])
+            .filter(s => s.term_id === null || s.term_id === undefined || termId === null || Number(s.term_id) === termId)
+            .filter(s => allowedFeeIds === null || allowedFeeIds.has(Number(s.id)))
+            .filter(s => includePaid || !isPaidThisTerm(s));
+    }
+
+    /** This student's main fees already paid for the selected term. */
+    function paidFeesThisTerm() {
+        const termId = selectedTermId();
+        if (termId === null) return [];
+        // The fee actually paid, which may be another class's (a mid-term class change).
+        const all = (categories || []).flatMap(c => (c && c.subcategories) ? c.subcategories : []);
+        return paidFees.filter(p => Number(p.term_id) === termId)
+            .map(p => all.find(s => Number(s.id) === Number(p.fee_id)) || { name: 'School fees', price: null });
+    }
+
+    /** The class fee to select for the parent: the one main fee that applies, or null. */
+    function autoFeeCandidate() {
+        const tuition = [];
+        (categories || []).forEach(c => applicableFees(c).forEach(s => { if (s.is_tuition) tuition.push({ cat: c, sub: s }); }));
+        return tuition.length === 1 ? tuition[0] : null;
+    }
+
+    /** The fees the category/fee dropdowns offer in the current mode. */
+    function offeredFees(cat) {
+        const auto = autoFeeCandidate();
+        if (auto && !preferOtherFee) return applicableFees(cat).filter(s => s.id === auto.sub.id);
+        return applicableFees(cat).filter(s => !auto || s.id !== auto.sub.id);
+    }
+
+    function populateCategories() {
+        const want = catSelect.value || (oldCategoryId ? String(oldCategoryId) : '');
+        while (catSelect.firstChild) catSelect.removeChild(catSelect.firstChild);
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = '-- Select Category --';
+        catSelect.appendChild(placeholder);
+        const offered = (categories || []).filter(c => offeredFees(c).length > 0);
+        offered.forEach(c => {
+            const o = document.createElement('option');
+            o.value = c.id; o.textContent = c.name;
+            catSelect.appendChild(o);
+        });
+        catSelect.disabled = offered.length === 0;
+        if (offered.some(c => String(c.id) === want)) catSelect.value = want;
+        else if (offered.length > 0) catSelect.value = String(offered[0].id);
+    }
+
+    /** Re-decide which fees are offered and whether the class fee is selected automatically. */
+    function refreshFees() {
+        // After a failed submit of a fee other than the class fee, keep that choice —
+        // decided once the term is known, since the class fee depends on it.
+        if (restoreOldFee && (!termSelect || termSelect.options.length > 0)) {
+            const a = autoFeeCandidate();
+            preferOtherFee = !!(a && String(oldSubcategoryId) !== String(a.sub.id));
+            restoreOldFee = false;
+        }
+        const auto = autoFeeCandidate();
+        const showAuto = !!auto && !preferOtherFee;
+        if (autoFeeBox) autoFeeBox.hidden = !showAuto;
+        if (manualFee) manualFee.hidden = showAuto;
+        if (autoFeeBack) {
+            autoFeeBack.hidden = !auto || showAuto;
+            // .btn-outline sets display, which beats the hidden attribute; the utility wins.
+            autoFeeBack.classList.toggle('hidden', autoFeeBack.hidden);
+        }
+        if (showAuto) {
+            autoFeeClass.textContent = studentClassName || 'this class';
+            autoFeeName.textContent = auto.sub.name;
+            autoFeeAmount.textContent = toCurrency(auto.sub.price);
+        }
+
+        populateCategories();
+        let hint = '';
+        if (requiresStudent && !studentFound) hint = 'Find the student first to see the fees that apply to them.';
+        else if (catSelect.disabled && paidFeesThisTerm().length > 0) hint = 'There is nothing else to pay for this term.';
+        else if (catSelect.disabled) hint = 'There are no fees set up for this student’s class and term yet. Please contact the school.';
+
+        const paid = paidFeesThisTerm();
+        if (paidFeeBox) {
+            paidFeeBox.hidden = paid.length === 0;
+            if (paid.length) {
+                const termOpt = termSelect ? termSelect.options[termSelect.selectedIndex] : null;
+                const sessOpt = sessionSelect ? sessionSelect.options[sessionSelect.selectedIndex] : null;
+                const period = termOpt ? termOpt.textContent + (sessOpt ? ', ' + sessOpt.textContent : '') : 'this term';
+                paidFeeText.textContent = paid.map(s => s.price === null ? s.name : `${s.name} (${toCurrency(s.price)})`).join(', ') +
+                    ` has already been paid for ${period}.` + (catSelect.disabled ? '' : ' You can still pay other fees below.');
+            }
+        }
+        if (feeHint) { feeHint.textContent = hint; feeHint.hidden = !hint; }
+
+        if (showAuto) catSelect.value = String(auto.cat.id);
+        populateSubcategories();
+        if (showAuto) subSelect.value = String(auto.sub.id);
+        updateTotal();
+    }
+
+    if (autoFeeOther) autoFeeOther.addEventListener('click', function () { preferOtherFee = true; refreshFees(); catSelect.focus(); });
+    if (autoFeeBack) autoFeeBack.addEventListener('click', function () { preferOtherFee = false; refreshFees(); });
 
     function populateSessions() {
         if (!sessionSelect) return;
@@ -74,7 +213,7 @@
         const want = oldTermId || currentTermId;
         if (want && sess && sess.terms.some(t => String(t.id) === String(want))) termSelect.value = String(want);
         if (sTerm) { const o = termSelect.options[termSelect.selectedIndex]; sTerm.textContent = o && sess ? `${o.textContent}, ${sess.name}` : '—'; }
-        populateSubcategories();
+        refreshFees();
     }
 
     if (sessionSelect) sessionSelect.addEventListener('change', populateTerms);
@@ -82,7 +221,7 @@
         const sess = sessions.find(x => String(x.id) === String(sessionSelect.value));
         const o = termSelect.options[termSelect.selectedIndex];
         if (sTerm) sTerm.textContent = o && sess ? `${o.textContent}, ${sess.name}` : '—';
-        populateSubcategories();
+        refreshFees();
     });
 
     // Student lookup (L8). The parent types the student's full name AND complete
@@ -119,7 +258,8 @@
         }
 
         function updateSubmitState() {
-            const ok = !!idInput.value;
+            // A verified student AND a fee to pay (none when everything due is paid).
+            const ok = !!idInput.value && !!subSelect.value;
             if (submitBtn) {
                 submitBtn.disabled = !ok;
                 submitBtn.classList.toggle('opacity-60', !ok);
@@ -135,6 +275,8 @@
             admissionDisplay.value = ''; classDisplay.value = '';
             if (!keepInputs) { nameInput.value = ''; admissionInput.value = ''; }
             if (sStudent) sStudent.textContent = '—';
+            allowedFeeIds = new Set(); paidFees = []; studentFound = false; studentClassName = ''; preferOtherFee = false;
+            refreshFees();
             updateSubmitState();
         }
 
@@ -151,6 +293,12 @@
             selectedBox.hidden = false;
             searchWrap.hidden = true;           // one clear "this is who you are paying for"
             if (sStudent) sStudent.textContent = student.full_name + (student.class_name ? ' (' + student.class_name + ')' : '');
+            allowedFeeIds = new Set((student.fee_ids || []).map(Number));
+            paidFees = Array.isArray(student.paid_fees) ? student.paid_fees : [];
+            studentFound = true;
+            studentClassName = student.class_name || '';
+            preferOtherFee = false;
+            refreshFees();
             setStatus('');
             updateSubmitState();
         }
@@ -189,6 +337,7 @@
             }
         }
 
+        onFeeChange = updateSubmitState;
         findBtn.addEventListener('click', find);
         [nameInput, admissionInput].forEach(function (input) {
             // Enter looks the student up instead of submitting the payment form.
@@ -222,7 +371,7 @@
         // name and admission number posted with that submit still verify to the id.
         let old = null;
         try { old = JSON.parse(picker.dataset.oldStudent || 'null'); } catch (e) { old = null; }
-        if (old && old.id) select(old); else clearSelection(true);
+        if (old && old.id) { restoreOldFee = !!oldSubcategoryId; select(old); } else clearSelection(true);
     })();
 
     // Listeners
@@ -252,8 +401,9 @@
         const markupPercent = Number({{ isset($markupPercent) ? $markupPercent : 0 }});
         const fee = Math.round((base * (markupPercent/100)) * 100) / 100;
         const total = base + fee;
-        const catName = selectedCatOption ? selectedCatOption.textContent : '';
-        const subName = selectedOption?.getAttribute('data-subname') || (selectedOption ? selectedOption.textContent.trim() : '');
+        // A placeholder ("-- Select … --") is not a choice: nothing is selected yet.
+        const catName = selectedCatOption && catSelect.value ? selectedCatOption.textContent : '';
+        const subName = selectedOption && subSelect.value ? (selectedOption.getAttribute('data-subname') || selectedOption.textContent.trim()) : '';
 
         // Hidden inputs
         catNameInput.value = catName;
@@ -273,12 +423,20 @@
         clientTotalInput.value = String(total);
 
         // Basic inline validation
-        catError.textContent = !catSelect.value ? 'Please select a category' : '';
-        subError.textContent = !subSelect.value ? 'Please select a fee type' : '';
+        // Nothing to choose from (no student found yet, or no fee for them): the hint
+        // under the fee heading explains it, so no field error.
+        if (!catSelect.disabled) {
+            catError.textContent = !catSelect.value ? 'Please select a category' : '';
+            if (!subSelect.disabled) subError.textContent = !subSelect.value ? 'Please select a fee type' : '';
+        } else {
+            catError.textContent = '';
+            subError.textContent = '';
+        }
         const typedQty = Number(qtyInput.value) || 0;
         qtyError.textContent = typedQty < 1 ? 'Quantity must be at least 1'
             : (typedQty > maxQuantity ? 'Quantity cannot be more than ' + maxQuantity : '');
         toggleQuantityVisibility();
+        if (onFeeChange) onFeeChange();
     }
 
     // Helpers
@@ -296,9 +454,9 @@
         if (!catId) { subSelect.disabled = true; unitPriceP.textContent = 'Unit Price: ₦0'; return; }
 
         const cat = (categories || []).find(c => Number(c.id) === catId);
-        // Only fees payable in the selected term: general fees (no term) or that term's fees.
-        const termId = selectedTermId();
-        const subs = ((cat && cat.subcategories) ? cat.subcategories : []).filter(s => s.term_id === null || s.term_id === undefined || termId === null || Number(s.term_id) === termId);
+        // Only fees payable in the selected term (general fees or that term's) and,
+        // with a roster, by the verified student's class; see offeredFees().
+        const subs = offeredFees(cat);
         if (subs.length === 0) { subSelect.disabled = true; unitPriceP.textContent = 'Unit Price: ₦0'; subError.textContent = 'No fees in this category for the selected term.'; return; }
 
         subs.forEach(sub => {
@@ -345,13 +503,10 @@
 
     // Initialize on load
     try {
-        if (oldCategoryId && (categories || []).some(c => String(c.id) === String(oldCategoryId))) {
-            catSelect.value = String(oldCategoryId);
-        } else if ((categories || []).length > 0) {
-            catSelect.value = String(categories[0].id);
-        }
+        // populateSessions -> populateTerms -> refreshFees fills the category and fee
+        // dropdowns (and the class fee) for the selected term.
         populateSessions();
-        populateSubcategories();
+        if (!sessionSelect) refreshFees();
         updateTotal();
     } catch (e) {
         console.error('Initialization error:', e);

@@ -124,6 +124,12 @@ class ClassLevelController extends Controller
             return $this->back($school, null, 'Students are in "'.$classLevel->name.'". Move them first, or deactivate the class instead.');
         }
 
+        // A fee assigned only to this class would otherwise lose its last
+        // assignment and become payable by every student.
+        if ($classLevel->fees()->exists()) {
+            return $this->back($school, null, 'Fees are assigned to "'.$classLevel->name.'". Remove it from those fees first, or deactivate the class instead.');
+        }
+
         // Reuses the transaction this method already had (M7): the audit row joins
         // the existing boundary rather than opening a nested one.
         DB::transaction(function () use ($school, $classLevel, $audit, $request) {
