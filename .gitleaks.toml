@@ -1,0 +1,50 @@
+# Secret scanning for this repository (security review C1).
+#
+# Run by the `secrets` job in .github/workflows/ci.yml over the FULL history on
+# every push and pull request. Locally:
+#
+#     gitleaks git . --config .gitleaks.toml --redact
+#
+# Gitleaks' default rules are kept (useDefault) and extended. The extension is
+# not optional: the defaults do NOT detect an SMTP password assigned in an env
+# file. A Gmail app password (sixteen lowercase letters) committed to
+# .env.example passed a default-rules scan of this repository's own history
+# unflagged, which is exactly how C1 happened.
+
+title = "FEYRA secret scanning"
+
+[extend]
+useDefault = true
+
+# MAIL_PASSWORD=..., SMTP_PASSWORD: ..., MAIL_PASS="..." with a literal value.
+# Placeholders (empty, null, ${VAR} references, <...>, your-..., changeme) are
+# allowed below; anything else is treated as a real credential.
+[[rules]]
+id = "smtp-password-assignment"
+description = "SMTP / mail password assigned a literal value"
+regex = '''(?i)\b(?:mail|smtp)_?pass(?:word)?\s*[=:]\s*["']?([^\s"'#$<>]{6,})'''
+secretGroup = 1
+keywords = ["mail_pass", "smtp_pass", "mailpass", "smtppass"]
+
+[[rules.allowlists]]
+description = "Placeholder values, not credentials"
+regexes = [
+    '''(?i)^(null|none|empty|changeme|change-me|password|secret|example|placeholder|redacted)$''',
+    '''(?i)^(your|my)[-_].*''',
+    '''^[x*.]+$''',
+]
+
+# Gmail app passwords are shown as four groups of four letters and are often
+# pasted with the spaces kept, which the rule above (stops at whitespace) misses.
+[[rules]]
+id = "smtp-password-gmail-app-password"
+description = "Gmail app password (four groups of four letters) assigned to a mail password"
+regex = '''(?i)\b(?:mail|smtp)_?pass(?:word)?\s*[=:]\s*["']?([a-z]{4} [a-z]{4} [a-z]{4} [a-z]{4})'''
+secretGroup = 1
+keywords = ["mail_pass", "smtp_pass", "mailpass", "smtppass"]
+
+[[allowlists]]
+description = "Obviously fake Paystack-shaped keys used as test fixtures"
+regexes = [
+    '''^sk_test_0123456789abcdef$''',
+]

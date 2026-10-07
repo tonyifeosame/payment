@@ -1,0 +1,14 @@
+# Known, historical secret findings (security review C1). Each entry is a
+# gitleaks fingerprint (commit:file:rule:line) and contains no secret material.
+#
+# Two Gmail app passwords for the project's former SMTP account were committed
+# to .env.example between 2025-10-22 and 2025-11-02 and are permanently in the
+# public history. They are suppressed here ONLY so the full-history scan can
+# gate new commits; they are safe to ignore only because both app passwords
+# have been revoked in the Google account. Removing them from the files (done
+# in c9eabcc) did not make them safe; revocation does.
+#
+# Never add an entry for a credential that has not been revoked.
+5a86875f3df3261d597771f2a2e7df2e6892b113:.env.example:smtp-password-assignment:55
+03b4c2fec4b3714ed4193162233166d569757169:.env.example:smtp-password-assignment:56
+c9eabcc1d6b23eb10c85b194a2e69d812b4bd3f6:.env.example:smtp-password-assignment:56
