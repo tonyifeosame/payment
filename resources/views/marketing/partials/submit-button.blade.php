@@ -16,7 +16,7 @@
 
 @once
     @push('scripts')
-        <script>
+        <script @nonce>
         (function () {
             document.querySelectorAll('form[data-submit-once]').forEach(function (form) {
                 var button = form.querySelector('[data-submit]');

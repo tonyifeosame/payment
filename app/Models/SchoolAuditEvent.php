@@ -45,6 +45,12 @@ class SchoolAuditEvent extends Model
 
     public const ACTION_FEE_DELETED = 'fee.deleted';
 
+    /** H3: an operator verified the school (and/or lifted a bank-change hold); payouts may be sent. */
+    public const ACTION_PAYOUTS_APPROVED = 'payouts.approved';
+
+    /** H3: an operator withdrew the school's payout approval; payouts wait. */
+    public const ACTION_PAYOUTS_SUSPENDED = 'payouts.suspended';
+
     /** The term new payments are attributed to changed. */
     public const ACTION_TERM_CHANGED = 'settings.current_term_changed';
 

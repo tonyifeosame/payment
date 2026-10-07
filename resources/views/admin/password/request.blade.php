@@ -29,6 +29,12 @@
             @if (session('status'))
                 <div class="mb-6 rounded-2xl border border-green-200 bg-green-50 p-4 text-sm font-medium text-green-800" role="status">{{ session('status') }}</div>
             @endif
+            @isset($throttled)
+                <div class="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900" role="alert">
+                    <p class="font-semibold">Too many reset requests for this email address. Please wait {{ $throttled }} before asking again.</p>
+                    <p class="mt-1">If a reset email arrived in the last hour, use the most recent one: its link still works.</p>
+                </div>
+            @endisset
 
             <form action="{{ route('admin.password.email') }}" method="POST" class="space-y-5" data-submit-once>
                 @csrf

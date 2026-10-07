@@ -1,10 +1,52 @@
-.idea
+# Never in the image: secrets, VCS metadata, local state and build caches (L6).
+.git
 .github
+.idea
+.vscode
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+auth.json
+
+# Dependencies are installed inside the image.
 vendor
 node_modules
 .composer/cache
-.git
-*.pem
 package-lock.json
-.env
+
+# Local runtime state: logs, sessions, caches, compiled views, local databases.
+storage/logs/*
+storage/framework/cache/*
+storage/framework/sessions/*
+storage/framework/views/*
+storage/framework/testing/*
+storage/app/private/*
+storage/pail
+storage/*.key
+bootstrap/cache/*.php
+database/*.sqlite
+database/*.sqlite3
+*.sql
+*.sql.gz
+*.dump
+
+# Development and test tooling.
+tests
+phpunit.xml
+.phpunit.result.cache
+.phpunit.cache
+.gitleaks.toml
+.gitleaksignore
+.editorconfig
+docs
+DEMO.md
+settings.json
+
+# Local binaries and reference images that are not application assets.
 frankenphp
+/tailwindcss
+/tailwindcss.exe
+/accesslink-reference.png
+/accesslink-refrenceM.png

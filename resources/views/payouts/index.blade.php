@@ -6,6 +6,7 @@
 @section('subheading', 'Track money moving from student payments to your school.')
 
 @section('content')
+@include('payouts._hold_notice')
 @php
     $s = ['school' => $school->slug];
     $money = fn ($n) => '₦'.number_format((float) $n, 2);

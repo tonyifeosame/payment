@@ -3,8 +3,8 @@
 namespace App\Jobs;
 
 use App\Models\Payout;
-use App\Services\PaystackService;
 use App\Services\PayoutService;
+use App\Services\PaystackService;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -83,6 +83,21 @@ class InitiateSchoolPayout implements ShouldBeUnique, ShouldQueue
         if ($payout->status === Payout::FAILED) {
             // A previous attempt definitively failed. Re-running this job does not
             // silently re-send; an operator must reset the payout to pending.
+            return;
+        }
+
+        // H3: an unverified school, or one inside its bank-change hold, is not paid.
+        // Checked BEFORE the claim, so the payout stays `pending` with no attempt
+        // recorded: nothing failed, and `payouts:run` sends it on its first run
+        // after the school becomes eligible. The payment itself is unaffected.
+        $holder = $payout->school;
+        if ($holder && ($reason = $holder->payoutBlockReason()) !== null) {
+            Log::info('Payout held: school is not eligible for payouts', [
+                'payout_id' => $payout->id,
+                'school_id' => $holder->id,
+                'reason' => $reason,
+            ]);
+
             return;
         }
 

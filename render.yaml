@@ -104,6 +104,10 @@ services:
       # financial-integrity events.
       - key: LOG_CHANNEL
         value: stderr
+      # L7: info, not the debug default: payment, payout and security events are
+      # logged at info and above; debug-level framework noise is not.
+      - key: LOG_LEVEL
+        value: info
 
       # ---- Paystack (HIGH-3) ------------------------------------------------
       # Secrets: set in the Render dashboard, never in this file or the repo.
@@ -199,6 +203,10 @@ services:
         value: database
       - key: LOG_CHANNEL
         value: stderr
+      # L7: info, not the debug default: payment, payout and security events are
+      # logged at info and above; debug-level framework noise is not.
+      - key: LOG_LEVEL
+        value: info
 
       # ---- Paystack (HIGH-3) ------------------------------------------------
       # The worker performs the school transfers, so it needs the secret key.
@@ -314,6 +322,10 @@ services:
         value: database
       - key: LOG_CHANNEL
         value: stderr
+      # L7: info, not the debug default: payment, payout and security events are
+      # logged at info and above; debug-level framework noise is not.
+      - key: LOG_LEVEL
+        value: info
       # Used for the read-only transfer lookups of stale `initiating` payouts (H1)
       # and so the queued job is well formed. The cron never sends a transfer; the
       # worker does.

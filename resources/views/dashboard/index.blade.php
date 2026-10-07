@@ -18,7 +18,7 @@
         <form method="GET" action="{{ route('school.dashboard', ['school' => $school->slug]) }}" class="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-end">
             <div class="min-w-0 sm:w-64">
                 <label for="term" class="field-label">Term</label>
-                <select id="term" name="term" class="field-input" onchange="this.form.submit()">
+                <select id="term" name="term" class="field-input" data-autosubmit>
                     @foreach($terms as $t)
                         <option value="{{ $t->id }}" @selected($selectedTerm && $selectedTerm->id === $t->id)>{{ $t->name }}, {{ $t->session->name }}</option>
                     @endforeach
@@ -32,6 +32,7 @@
 @endsection
 
 @section('content')
+@include('payouts._hold_notice')
 @php
     $s = ['school' => $school->slug];
     $money = fn ($n) => '₦'.number_format((float) $n, 2);

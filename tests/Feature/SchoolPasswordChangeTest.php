@@ -170,7 +170,7 @@ class SchoolPasswordChangeTest extends TestCase
 
     public function test_profile_receipt_and_payout_account_flows_are_unchanged(): void
     {
-        $this->alpha()->put('/admin/alpha/settings', ['name' => 'Alpha School', 'email' => 'new@example.test', 'phone' => '0801', 'address' => '2 Road', 'receipt_footer' => 'Thank you.'])
+        $this->alpha()->put('/admin/alpha/settings', ['name' => 'Alpha School', 'email' => 'new@example.test', 'phone' => '0801', 'address' => '2 Road', 'receipt_footer' => 'Thank you.', 'identity_password' => 'password123'])
             ->assertRedirect('/admin/alpha/settings')->assertSessionHas('success', 'School settings saved.');
         $school = $this->alpha->fresh();
         $this->assertSame(['new@example.test', 'Thank you.', '0123456789', 'ALPHA SCHOOL LTD'], [$school->email, $school->receipt_footer, $school->account_number, $school->account_name]);

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Mail\SchoolPasswordResetMail;
 use App\Models\School;
+use App\Support\AppUrl;
 use App\Support\CredentialThrottle;
 use App\Support\SchoolRemember;
 use App\Support\SchoolSession;
@@ -11,6 +12,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Password;
+use Illuminate\Validation\Rules\Password as PasswordRule;
 
 class SchoolAuthController extends Controller
 {
@@ -38,19 +40,26 @@ class SchoolAuthController extends Controller
         // minutes). A successful login never counts and clears the counter, and
         // other schools on the same connection have their own. Checked before the
         // password, so a locked-out attempt is refused whether it is right or wrong.
+        //
+        // M5: two wider counters sit behind it — the school name from any address
+        // (20/hour, so rotating addresses buys no extra guesses) and the address
+        // across all names (30/hour, so one address cannot spray many schools).
+        // A success clears only the name+IP counter: clearing the wider ones would
+        // let an attacker reset them by signing in to a school of their own.
         $throttleKey = CredentialThrottle::loginKey($credentials['name'], $request->ip());
-        if (CredentialThrottle::tooManyAttempts($throttleKey)) {
+        if ($lockout = CredentialThrottle::loginLockout($credentials['name'], $request->ip())) {
             return redirect()->route('admin.login')
                 ->withInput($request->only('name'))
                 ->with('error', 'Too many failed sign-in attempts. Please wait '
-                    .CredentialThrottle::humanWait(CredentialThrottle::availableIn($throttleKey)).' and try again.');
+                    .CredentialThrottle::humanWait(CredentialThrottle::availableIn($lockout['key'])).' and try again'
+                    .($lockout['scope'] === 'account' ? ', or reset your password.' : '.'));
         }
 
         // The one school with this name, case-insensitively. Two matches (legacy
         // duplicates) is treated as no match: never sign in to "the first one".
         $school = School::findUniqueByName($credentials['name']);
         if (! $school || ! $school->admin_password || ! Hash::check($credentials['password'], $school->admin_password)) {
-            CredentialThrottle::hit($throttleKey);
+            CredentialThrottle::hitLogin($credentials['name'], $request->ip());
 
             return back()->withInput()->with('error', 'Invalid school name or password.');
         }
@@ -146,7 +155,14 @@ class SchoolAuthController extends Controller
         // because the counter exists for every address.
         $throttleKey = CredentialThrottle::resetRequestKey($request->email);
         if (CredentialThrottle::tooManyAttempts($throttleKey)) {
-            throw CredentialThrottle::exception($throttleKey);
+            // L2: still a 429 that mints no token and sends nothing, but shown on
+            // the form with what to do: a throttled request never rotates the
+            // token, so the newest link already in the inbox keeps working.
+            $exception = CredentialThrottle::exception($throttleKey);
+
+            return response()->view('admin.password.request', [
+                'throttled' => CredentialThrottle::humanWait(CredentialThrottle::availableIn($throttleKey)),
+            ], 429, $exception->getHeaders());
         }
         CredentialThrottle::hit($throttleKey);
 
@@ -164,7 +180,10 @@ class SchoolAuthController extends Controller
         // window the live token and the link already in the admin's inbox stand.
         if ($school && ! Password::broker()->getRepository()->recentlyCreatedToken($school)) {
             $token = Password::createToken($school);
-            $resetLink = url("/admin/reset-password/{$token}?email=".urlencode($request->email));
+            // H1: the link carries a live token, so its host comes from APP_URL and
+            // never from the request — a forged Host or X-Forwarded-Host would
+            // otherwise deliver the token to the forger's domain.
+            $resetLink = AppUrl::to(route('admin.password.reset', ['token' => $token, 'email' => $request->email], false));
 
             try {
                 Mail::to($request->email)->send(new SchoolPasswordResetMail($school, $resetLink));
@@ -188,7 +207,7 @@ class SchoolAuthController extends Controller
         $request->validate([
             'token' => 'required',
             'email' => 'required|email',
-            'password' => 'required|confirmed|min:8',
+            'password' => ['required', 'string', 'confirmed', PasswordRule::defaults()], // M5
         ]);
 
         $school = School::findUniqueByEmail($request->email);
@@ -210,6 +229,10 @@ class SchoolAuthController extends Controller
         $school->save();
 
         Password::broker()->deleteToken($school);
+
+        // M5: whoever can reset the password is the school; an account-wide login
+        // lockout (possibly caused by someone else's guessing) ends with it.
+        CredentialThrottle::clear(CredentialThrottle::loginAccountKey($school->name));
 
         // A reset revokes every remembered browser of the school, as it does every session.
         SchoolRemember::revokeAllFor($school);

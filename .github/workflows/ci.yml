@@ -55,6 +55,25 @@ jobs:
       - name: Scan history for secrets
         run: ./gitleaks git . --config .gitleaks.toml --redact --no-banner --verbose
 
+  # H2 — known-vulnerable dependencies fail the build. Reads composer.lock only
+  # (dev packages included); nothing is installed. A new advisory against a
+  # locked version turns this red until the package is updated.
+  dependencies:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP 8.2
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          coverage: none
+          tools: composer:v2
+
+      - name: Audit locked dependencies
+        run: composer audit --locked --no-interaction --abandoned=report
+
   test:
     runs-on: ubuntu-latest
 

@@ -37,6 +37,9 @@ final class SchoolRemember
     /** Cookie value: 32 hex selector, a colon, 64 hex verifier. */
     private const FORMAT = '/^([0-9a-f]{32}):([0-9a-f]{64})$/';
 
+    /** L5: how long after a rotation a replay is treated as a race, not theft. */
+    public const REUSE_GRACE_SECONDS = 60;
+
     public static function cookieName(): string
     {
         return (string) config('auth.school_remember.cookie', 'school_remember');
@@ -49,9 +52,11 @@ final class SchoolRemember
         // replaced, not kept alongside the new one.
         self::revokeBrowserToken($request);
 
-        // Rows that can never be used again are not worth keeping.
+        // Expired rows are not worth keeping. Revoked rows are kept until they
+        // expire (L5): a rotated token presented again is how a copied cookie is
+        // detected, and that is impossible once its row is gone.
         SchoolRememberToken::where('school_id', $school->id)
-            ->where(fn ($q) => $q->whereNotNull('revoked_at')->orWhere('expires_at', '<=', now()))
+            ->where('expires_at', '<=', now())
             ->delete();
 
         $days = max(1, (int) config('auth.school_remember.lifetime_days', 30));
@@ -80,6 +85,22 @@ final class SchoolRemember
             return self::reject($request, $token, 'verifier mismatch');
         }
         if ($token->revoked_at !== null) {
+            // L5: a token that was ROTATED (used, then replaced) being presented
+            // again means the cookie was copied: the real browser already holds its
+            // successor. Every remembered browser of the school is revoked, so the
+            // copy and anything issued from it stop working. Within the grace
+            // window this is more likely two tabs of one browser racing the
+            // rotation, so it is only refused.
+            if ($token->last_used_at !== null && $token->revoked_at->lt(now()->subSeconds(self::REUSE_GRACE_SECONDS))) {
+                SchoolRememberToken::where('school_id', $token->school_id)
+                    ->whereNull('revoked_at')
+                    ->update(['revoked_at' => now()]);
+                Log::warning('School remember token reused after rotation: all remembered browsers revoked', ['school_id' => $token->school_id]);
+                self::clearCookie();
+
+                return null;
+            }
+
             return self::reject($request, null, 'revoked');
         }
         if ($token->expires_at->isPast()) {

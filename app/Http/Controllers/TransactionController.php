@@ -8,6 +8,7 @@ use App\Models\Transaction;
 use App\Services\AcademicPeriodService;
 use App\Services\PaymentTimeline;
 use App\Support\BusinessTime;
+use App\Support\CsvCell;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\URL;
@@ -113,7 +114,9 @@ class TransactionController extends Controller
             $query->chunk(500, function ($rows) use ($out) {
                 foreach ($rows as $t) {
                     $breakdown = $t->receiptBreakdown();
-                    fputcsv($out, [
+                    // M3: payer, student and fee text is user-supplied; neutralise any
+                    // cell a spreadsheet would evaluate as a formula.
+                    fputcsv($out, CsvCell::row([
                         $t->reference,
                         $t->paystack_reference,
                         BusinessTime::display($t->paid_at ?? $t->created_at)?->format('Y-m-d H:i:s'),
@@ -132,7 +135,7 @@ class TransactionController extends Controller
                         number_format($breakdown['fee_subtotal'], 2, '.', ''),
                         $t->payout?->status,
                         $t->payout?->reference,
-                    ]);
+                    ]));
                 }
             });
 

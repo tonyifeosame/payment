@@ -86,6 +86,7 @@ class SchoolAuditEventTest extends TestCase
         $this->actingAsSchoolAdmin($this->alpha)
             ->put('/admin/alpha/settings', [
                 'name' => 'Alpha Academy',           // changed: the login identifier
+                'identity_password' => 'password123', // M1: needed to change it
                 'email' => 'alpha@example.test',     // unchanged
                 'phone' => '08012345678',            // changed, but not audited
                 'address' => 'New address',          // changed, but not audited
@@ -279,7 +280,7 @@ class SchoolAuditEventTest extends TestCase
     public function test_the_raw_session_id_is_never_stored(): void
     {
         $this->actingAsSchoolAdmin($this->alpha)
-            ->put('/admin/alpha/settings', ['name' => 'Alpha Academy', 'email' => 'alpha@example.test'])
+            ->put('/admin/alpha/settings', ['name' => 'Alpha Academy', 'email' => 'alpha@example.test', 'identity_password' => 'password123'])
             ->assertRedirect();
 
         $event = $this->onlyEvent(SchoolAuditEvent::ACTION_PROFILE_CHANGED);
@@ -301,7 +302,7 @@ class SchoolAuditEventTest extends TestCase
         $this->actingAsSchoolAdmin($this->alpha);
 
         $this->browser()
-            ->put('/admin/alpha/settings', ['name' => 'Alpha Academy', 'email' => 'alpha@example.test'])
+            ->put('/admin/alpha/settings', ['name' => 'Alpha Academy', 'email' => 'alpha@example.test', 'identity_password' => 'password123'])
             ->assertRedirect();
         $this->browser()
             ->delete('/admin/alpha/subcategories/'.$fee->id)
@@ -317,14 +318,14 @@ class SchoolAuditEventTest extends TestCase
     public function test_different_sessions_produce_different_hashes(): void
     {
         $this->actingAsSchoolAdmin($this->alpha)
-            ->put('/admin/alpha/settings', ['name' => 'Alpha Academy', 'email' => 'alpha@example.test'])
+            ->put('/admin/alpha/settings', ['name' => 'Alpha Academy', 'email' => 'alpha@example.test', 'identity_password' => 'password123'])
             ->assertRedirect();
         $first = $this->events()->first()->actor_session;
 
         // A second, separate sitting for the same school.
         $this->flushSession();
         $this->actingAsSchoolAdmin($this->alpha->fresh())
-            ->put('/admin/alpha/settings', ['name' => 'Alpha College', 'email' => 'alpha@example.test'])
+            ->put('/admin/alpha/settings', ['name' => 'Alpha College', 'email' => 'alpha@example.test', 'identity_password' => 'password123'])
             ->assertRedirect();
 
         $second = $this->events()->last()->actor_session;
@@ -403,12 +404,12 @@ class SchoolAuditEventTest extends TestCase
     public function test_events_are_scoped_to_the_school_that_acted(): void
     {
         $this->actingAsSchoolAdmin($this->alpha)
-            ->put('/admin/alpha/settings', ['name' => 'Alpha Academy', 'email' => 'alpha@example.test'])
+            ->put('/admin/alpha/settings', ['name' => 'Alpha Academy', 'email' => 'alpha@example.test', 'identity_password' => 'password123'])
             ->assertRedirect();
 
         $this->flushSession();
         $this->actingAsSchoolAdmin($this->beta)
-            ->put('/admin/beta/settings', ['name' => 'Beta Academy', 'email' => 'beta@example.test'])
+            ->put('/admin/beta/settings', ['name' => 'Beta Academy', 'email' => 'beta@example.test', 'identity_password' => 'password123'])
             ->assertRedirect();
 
         $this->assertCount(1, SchoolAuditEvent::where('school_id', $this->alpha->id)->get());
@@ -420,7 +421,7 @@ class SchoolAuditEventTest extends TestCase
         // prove nothing about tenant scoping.
         $this->flushSession();
         $this->actingAsSchoolAdmin($this->beta)
-            ->put('/admin/alpha/settings', ['name' => 'Hijacked', 'email' => 'x@example.test'])
+            ->put('/admin/alpha/settings', ['name' => 'Hijacked', 'email' => 'x@example.test', 'identity_password' => 'password123'])
             ->assertNotFound();
 
         $this->assertCount(1, SchoolAuditEvent::where('school_id', $this->alpha->id)->get());
@@ -430,7 +431,7 @@ class SchoolAuditEventTest extends TestCase
     {
         $fee = $this->fee();
 
-        $this->put('/admin/alpha/settings', ['name' => 'Alpha Academy', 'email' => 'alpha@example.test'])
+        $this->put('/admin/alpha/settings', ['name' => 'Alpha Academy', 'email' => 'alpha@example.test', 'identity_password' => 'password123'])
             ->assertRedirect('/admin/login');
         $this->delete('/admin/alpha/subcategories/'.$fee->id)->assertRedirect('/admin/login');
         $this->put('/admin/alpha/settings/password', [
@@ -449,7 +450,7 @@ class SchoolAuditEventTest extends TestCase
         $this->alpha->forceFill(['admin_password' => Hash::make('rotated-secret-9')])->save();
 
         $this->withSession($session)
-            ->put('/admin/alpha/settings', ['name' => 'Alpha Academy', 'email' => 'alpha@example.test'])
+            ->put('/admin/alpha/settings', ['name' => 'Alpha Academy', 'email' => 'alpha@example.test', 'identity_password' => 'password123'])
             ->assertRedirect('/admin/login');
 
         $this->assertCount(0, $this->events());

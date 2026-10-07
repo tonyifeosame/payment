@@ -10,6 +10,7 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash; // This seems unused, but I'll leave it.
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Validation\Rules\Password as PasswordRule;
 
 class RegistrationController extends Controller
 {
@@ -46,7 +47,7 @@ class RegistrationController extends Controller
             'bank_code' => 'required|string',
             'account_name' => 'nullable|string|max:255',
             'address' => 'nullable|string|max:255',
-            'admin_password' => 'required|string|min:8|confirmed',
+            'admin_password' => ['required', 'string', 'confirmed', PasswordRule::defaults()], // M5
         ]);
 
         // The slug is minted in one place (L10): School::availableSlugFor keeps the
@@ -102,6 +103,6 @@ class RegistrationController extends Controller
 
         return redirect()
             ->route('school.dashboard', ['school' => $school->slug])
-            ->with('success', 'School registered and you are now logged in. Start by creating your academic session, then your fees and students.');
+            ->with('success', 'School registered and you are now logged in. Start by creating your academic session, then your fees and students. Payouts to your bank account begin once FEYRA has verified your school.');
     }
 }

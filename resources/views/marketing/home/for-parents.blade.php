@@ -50,7 +50,7 @@
     </div>
 </section>
 
-<script>
+<script @nonce>
 (function () {
     var form = document.getElementById('findSchoolForm');
     var input = document.getElementById('schoolSlug');

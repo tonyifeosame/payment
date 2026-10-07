@@ -38,9 +38,64 @@ final class CredentialThrottle
 
     public const DECAY_SECONDS = 3600;
 
+    /**
+     * M5: failed logins for one school name from ANY address. The name+IP limit
+     * alone let a password guesser rotate addresses for five fresh guesses each.
+     * Higher than the per-address limit so a typo-prone office is never the one
+     * that trips it; when it does trip, a password reset clears it.
+     */
+    public const LOGIN_ACCOUNT_MAX_ATTEMPTS = 20;
+
+    /**
+     * M5: failed logins from one address across ALL school names, so one address
+     * cannot spray guesses over many schools five at a time.
+     */
+    public const LOGIN_IP_MAX_ATTEMPTS = 30;
+
     public static function loginKey(string $name, ?string $ip): string
     {
         return 'admin-login:'.sha1(self::normalize($name).'|'.$ip);
+    }
+
+    public static function loginAccountKey(string $name): string
+    {
+        return 'admin-login-account:'.sha1(self::normalize($name));
+    }
+
+    public static function loginIpKey(?string $ip): string
+    {
+        return 'admin-login-ip:'.sha1((string) $ip);
+    }
+
+    /**
+     * The exhausted login counter, if any: name+IP, then the school name from
+     * any address, then the address across all names. Null when login may proceed.
+     *
+     * @return array{key: string, scope: 'name_ip'|'account'|'ip'}|null
+     */
+    public static function loginLockout(string $name, ?string $ip): ?array
+    {
+        $checks = [
+            ['key' => self::loginKey($name, $ip), 'scope' => 'name_ip', 'max' => self::MAX_ATTEMPTS],
+            ['key' => self::loginAccountKey($name), 'scope' => 'account', 'max' => self::LOGIN_ACCOUNT_MAX_ATTEMPTS],
+            ['key' => self::loginIpKey($ip), 'scope' => 'ip', 'max' => self::LOGIN_IP_MAX_ATTEMPTS],
+        ];
+
+        foreach ($checks as $check) {
+            if (RateLimiter::tooManyAttempts($check['key'], $check['max'])) {
+                return ['key' => $check['key'], 'scope' => $check['scope']];
+            }
+        }
+
+        return null;
+    }
+
+    /** A failed login counts against all three login counters. */
+    public static function hitLogin(string $name, ?string $ip): void
+    {
+        foreach ([self::loginKey($name, $ip), self::loginAccountKey($name), self::loginIpKey($ip)] as $key) {
+            RateLimiter::hit($key, self::DECAY_SECONDS);
+        }
     }
 
     public static function bankChangeKey(School $school): string

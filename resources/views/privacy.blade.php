@@ -207,7 +207,7 @@
             <h2 id="security">8. Data Security</h2>
             <p>We use technical measures designed to protect the information we hold, including:</p>
             <ul>
-                <li><strong>Passwords:</strong> administrator passwords are stored only in a one-way hashed form.</li>
+                <li><strong>Passwords:</strong> administrator passwords are stored only in a one-way hashed form. When a new password is chosen, it is checked against passwords known from public data breaches using the Have I Been Pwned service: only the first five characters of a one-way hash of the password are sent, never the password itself.</li>
                 <li><strong>Password resets:</strong> only a hashed copy of each reset token is stored, and reset links expire after 60 minutes.</li>
                 <li><strong>Remember Me:</strong> only a hashed version of the secret is stored; the token is replaced each time it is used; and it is cancelled when the administrator signs out or the password changes.</li>
                 <li><strong>Secure connections:</strong> the live service only works over encrypted connections (HTTPS).</li>

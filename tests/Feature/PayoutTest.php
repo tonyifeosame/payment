@@ -58,6 +58,7 @@ class PayoutTest extends TestCase
             'bank_code' => '058', 'account_name' => 'Acct '.$name,
         ]);
         $school->paystack_recipient_code = 'RCP_'.$slug;
+        $school->payouts_approved_at = now(); // an established, verified school (H3)
         $school->save();
 
         return $school;
@@ -103,7 +104,7 @@ class PayoutTest extends TestCase
     {
         return $this->call('POST', '/paystack/webhook', [], [], [],
             ['HTTP_X_PAYSTACK_SIGNATURE' => hash_hmac('sha512', $body, 'sk_test_secret'),
-             'CONTENT_TYPE' => 'application/json'], $body);
+                'CONTENT_TYPE' => 'application/json'], $body);
     }
 
     // =====================================================================

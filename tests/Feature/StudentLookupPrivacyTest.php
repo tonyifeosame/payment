@@ -202,7 +202,8 @@ class StudentLookupPrivacyTest extends TestCase
 
     public function test_the_existing_rate_limit_still_applies(): void
     {
-        for ($i = 0; $i < 60; $i++) {
+        // L1: ten lookups a minute per address (StudentSearchLimiter).
+        for ($i = 0; $i < \App\Support\StudentSearchLimiter::PER_MINUTE; $i++) {
             $this->lookup('Nobody '.$i, 'X/'.$i)->assertOk();
         }
 

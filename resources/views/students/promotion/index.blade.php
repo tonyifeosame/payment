@@ -151,7 +151,7 @@
 @endsection
 
 @push('scripts')
-<script>
+<script @nonce>
 (function () {
     // Progressive enhancement only: the counts and the per-class untick buttons.
     // Without JavaScript every checkbox still submits and the server recounts.

@@ -23,6 +23,17 @@ class PaymentController extends Controller
     /** Most units of one fee a single payment may buy, when the fee allows multiple units. */
     public const MAX_QUANTITY = 100;
 
+    /**
+     * L5: receipt pages and PDFs carry a payer's and a student's details behind a
+     * long-lived signed link (a receipt is a permanent record the payer revisits
+     * from the email, so the link does not expire). They are never stored by a
+     * shared cache and never indexed, even if a link is posted somewhere public.
+     */
+    private const RECEIPT_HEADERS = [
+        'Cache-Control' => 'private, no-store, max-age=0',
+        'X-Robots-Tag' => 'noindex, nofollow',
+    ];
+
     /** Session key: the transactions whose checkout this browser started. */
     private const CHECKOUT_SESSION_KEY = 'checkout_transaction_ids';
 
@@ -217,7 +228,8 @@ class PaymentController extends Controller
     {
         $validated = $request->validate([
             'email' => 'required|email',
-            'name' => 'nullable|string|max:255',
+            // L8: one line of text; control characters (line breaks) are refused.
+            'name' => ['nullable', 'string', 'max:255', 'not_regex:/\p{Cc}/u'],
             'subcategory_id' => 'required|integer',
             'category_id' => 'required|integer',
             'quantity' => 'required|integer|min:1|max:'.self::MAX_QUANTITY,
@@ -480,10 +492,10 @@ class PaymentController extends Controller
 
         $transaction->loadMissing('school', 'payout');
 
-        return view('payment.receipt', [
+        return response()->view('payment.receipt', [
             'transaction' => $transaction,
             'downloadUrl' => $this->signedDownloadUrl($transaction),
-        ]);
+        ])->withHeaders(self::RECEIPT_HEADERS);
     }
 
     /**
@@ -507,6 +519,6 @@ class PaymentController extends Controller
 
         $filename = 'receipt-'.($transaction->reference ?: $transaction->id).'.pdf';
 
-        return $pdf->download($filename);
+        return $pdf->download($filename)->withHeaders(self::RECEIPT_HEADERS);
     }
 }

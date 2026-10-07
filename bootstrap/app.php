@@ -1,10 +1,13 @@
 <?php
 
 use App\Support\BankLookupLimiter;
+use App\Support\PaymentCallbackLimiter;
 use App\Support\PaymentInitializeLimiter;
+use App\Support\StudentSearchLimiter;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Request;
 use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
@@ -30,9 +33,23 @@ return Application::configure(basePath: dirname(__DIR__))
         // http) and collapses per-IP rate limiting into one global bucket.
         // '*' is correct here: Render's edge is the only thing that can reach the
         // container, so there is no untrusted hop to spoof these headers.
-        $middleware->trustProxies(at: '*');
+        //
+        // H1: only FOR / PROTO / PORT are trusted. X-Forwarded-Host is not: Render
+        // preserves the real Host header and never needs it, and trusting it let any
+        // client choose the host Laravel builds absolute URLs from — including the
+        // password-reset link and its token.
+        $middleware->trustProxies(
+            at: '*',
+            headers: Request::HEADER_X_FORWARDED_FOR
+                | Request::HEADER_X_FORWARDED_PROTO
+                | Request::HEADER_X_FORWARDED_PORT,
+        );
 
         $middleware->append(\App\Http\Middleware\ForceHttps::class);
+
+        // M4: CSP (nonce-based scripts), framing, nosniff, referrer and
+        // permissions policy on every response; HSTS on HTTPS in production.
+        $middleware->append(\App\Http\Middleware\SecurityHeaders::class);
 
         // The webhook is registered outside the web group (see withRouting above),
         // so CSRF validation never runs for it. This entry is kept deliberately as a
@@ -44,9 +61,8 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->booted(function (): void {
-        // Named rate limiters are registered here because this file is the
-        // active bootstrap: bootstrap/providers.php points at a provider that is
-        // not autoloadable (it sits outside app/), so nothing in it ever runs.
+        // Named rate limiters are registered here, next to the routes and
+        // middleware that use them.
         //
         // payment-initialize: 10/min and 60/hour per client IP, shared by the
         // canonical and legacy checkout POSTs (see PaymentInitializeLimiter).
@@ -62,6 +78,13 @@ return Application::configure(basePath: dirname(__DIR__))
         // open, and neither touches payment-initialize.
         RateLimiter::for(BankLookupLimiter::LIST_NAME, BankLookupLimiter::bankList(...));
         RateLimiter::for(BankLookupLimiter::RESOLVE_NAME, BankLookupLimiter::bankResolve(...));
+
+        // L1: public student lookup, 10/min and 60/hour per IP, one bucket for
+        // the canonical and legacy payment URLs (see StudentSearchLimiter).
+        RateLimiter::for(StudentSearchLimiter::NAME, StudentSearchLimiter::limits(...));
+
+        // L3: the browser return from Paystack, 20/min and 120/hour per IP.
+        RateLimiter::for(PaymentCallbackLimiter::NAME, PaymentCallbackLimiter::limits(...));
 
         // M5: every job that exhausts its retries says so, once, in one shape.
         // Only InitiateSchoolPayout had a failed() hook, so a receipt mailable

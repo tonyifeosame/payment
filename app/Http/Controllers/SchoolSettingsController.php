@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Mail\SchoolIdentityChangedMail;
 use App\Models\School;
 use App\Models\SchoolAuditEvent;
 use App\Models\SchoolLogo;
@@ -14,7 +15,9 @@ use App\Support\SchoolSession;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rules\Password as PasswordRule;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -64,7 +67,41 @@ class SchoolSettingsController extends Controller
                 },
             ],
             'remove_logo' => ['nullable', 'boolean'],
+            'identity_password' => ['nullable', 'string'],
         ]);
+
+        // M1: the name is the login identifier and the email the password-reset
+        // identifier, so changing either is a takeover step: a stolen session could
+        // point resets at its own inbox and lock the school out. Either change needs
+        // the current password, counted against the same per-school limit as the
+        // password form. Phone, address, footer and logo do not.
+        $identityBefore = ['name' => $school->name, 'email' => $school->email];
+        // Compared the way login and reset look schools up (trimmed, case-insensitive):
+        // a change of letter case alone does not change who can sign in or reset.
+        $same = fn (?string $a, ?string $b) => mb_strtolower(trim((string) $a)) === mb_strtolower(trim((string) $b));
+        $changesIdentity = ! $same($data['name'], $school->name) || ! $same($data['email'], $school->email);
+
+        if ($changesIdentity) {
+            $throttleKey = CredentialThrottle::passwordChangeKey($school);
+            if (CredentialThrottle::tooManyAttempts($throttleKey)) {
+                throw CredentialThrottle::exception($throttleKey);
+            }
+
+            $given = (string) ($data['identity_password'] ?? '');
+            if ($given === '' || ! $school->admin_password || ! Hash::check($given, $school->admin_password)) {
+                if ($given !== '') {
+                    CredentialThrottle::hit($throttleKey);
+                }
+
+                throw ValidationException::withMessages([
+                    'identity_password' => $given === ''
+                        ? 'Enter your current password to change the school name or email.'
+                        : 'The password you entered is incorrect.',
+                ]);
+            }
+
+            CredentialThrottle::clear($throttleKey);
+        }
 
         // The logo is normalised (SchoolLogoImage) before anything is written, so
         // an image that cannot be processed fails validation instead of leaving a
@@ -78,12 +115,10 @@ class SchoolSettingsController extends Controller
             }
         }
 
-        // M7 audits the identity fields only: the name is the login identifier and
-        // the email is the password-reset identifier, so a change to either moves
-        // how this school is reached. Phone, address and receipt footer are
-        // presentation and are deliberately not recorded.
-        $identityBefore = ['name' => $school->name, 'email' => $school->email];
-
+        // M7 audits the identity fields only (captured above): the name is the login
+        // identifier and the email is the password-reset identifier, so a change to
+        // either moves how this school is reached. Phone, address and receipt
+        // footer are presentation and are deliberately not recorded.
         $school->fill([
             'name' => $data['name'],
             'email' => $data['email'],
@@ -127,6 +162,26 @@ class SchoolSettingsController extends Controller
                 $audit->record($school, SchoolAuditEvent::ACTION_PROFILE_CHANGED, 'school', $school->id, $identityChanges, request: $request);
             }
         });
+
+        if ($changesIdentity) {
+            // M1: a reset link already sent to the old address must not outlive the
+            // change; tokens are keyed by email, so remove the old address's row.
+            if (! $same($identityBefore['email'], $school->email)) {
+                DB::table((string) config('auth.passwords.users.table', 'password_reset_tokens'))
+                    ->where('email', $identityBefore['email'])
+                    ->delete();
+            }
+
+            // ...and the address that WAS on file hears about it, so an unwanted
+            // change is noticed even when the new address belongs to someone else.
+            if (! empty($identityBefore['email'])) {
+                try {
+                    Mail::to($identityBefore['email'])->send(new SchoolIdentityChangedMail($school, $identityBefore));
+                } catch (\Throwable $e) {
+                    report($e); // the change is saved and audited either way
+                }
+            }
+        }
 
         return redirect()->route('school.settings.edit', ['school' => $school->slug])
             ->with('success', 'School settings saved.');
@@ -195,7 +250,7 @@ class SchoolSettingsController extends Controller
                     }
                 },
             ],
-            'password' => ['required', 'string', 'min:8', 'confirmed'],
+            'password' => ['required', 'string', 'confirmed', PasswordRule::defaults()], // M5
         ], [
             'password.confirmed' => 'The new password and its confirmation do not match.',
         ]);

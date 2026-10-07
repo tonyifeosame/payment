@@ -10,7 +10,7 @@
         <div>
             <label for="paymentUrl" class="label">Your payment link</label>
             <div class="flex gap-2">
-                <input id="paymentUrl" class="input font-mono text-sm" value="{{ $paymentUrl }}" readonly onclick="this.select()">
+                <input id="paymentUrl" class="input font-mono text-sm" value="{{ $paymentUrl }}" readonly>
                 <button type="button" class="btn-primary whitespace-nowrap" id="copyBtn">Copy</button>
             </div>
             <p id="copyStatus" class="text-xs text-green-700 mt-1 h-4"></p>
@@ -20,7 +20,7 @@
             <a href="{{ $whatsappUrl }}" target="_blank" rel="noopener" class="btn bg-[#25D366] hover:bg-[#1fb857] text-white">Share on WhatsApp</a>
             <a href="{{ $paymentUrl }}" target="_blank" rel="noopener" class="btn-secondary">Open payment page ↗</a>
             <a href="{{ $qrUrl }}" download="{{ $school->slug }}-payment-qr.svg" class="btn-secondary">Download QR (SVG)</a>
-            <button type="button" class="btn-secondary" onclick="window.print()">Print QR poster</button>
+            <button type="button" class="btn-secondary" id="printQr">Print QR poster</button>
         </div>
 
         <div class="text-sm text-slate-600 space-y-2 border-t border-slate-100 pt-4">
@@ -57,7 +57,10 @@ You will need the student's admission number.</p>
 @endpush
 
 @push('scripts')
-<script>
+<script @nonce>
+// Listeners, not inline handlers: the CSP (M4) runs nonce-carrying scripts only.
+document.getElementById('paymentUrl').addEventListener('click', function () { this.select(); });
+document.getElementById('printQr').addEventListener('click', function () { window.print(); });
 document.getElementById('copyBtn').addEventListener('click', async function () {
     const input = document.getElementById('paymentUrl');
     const status = document.getElementById('copyStatus');

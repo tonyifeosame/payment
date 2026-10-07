@@ -169,7 +169,7 @@
                                            @error('admin_password') aria-invalid="true" @enderror
                                            aria-describedby="{{ $describedBy('admin_password', true) }}">
                                     @include('marketing.partials.field-error', ['field' => 'admin_password'])
-                                    <p id="admin_password-help" class="field-help">At least 8 characters.</p>
+                                    <p id="admin_password-help" class="field-help">At least {{ config('auth.school_passwords.min_length', 10) }} characters. Avoid passwords used on other sites.</p>
                                 </div>
                                 <div>
                                     <label for="admin_password_confirmation" class="field-label">Confirm password</label>
@@ -262,7 +262,7 @@
     </div>
 </div>
 
-<script>
+<script @nonce>
 document.addEventListener('DOMContentLoaded', function() {
     const bankSelect = document.getElementById('bank');
     const bankCodeInput = document.getElementById('bank_code');

@@ -21,7 +21,7 @@
         </div>
     </form>
 </dialog>
-<script>
+<script @nonce>
 (function () {
     var dialog = document.getElementById('adminConfirm');
     if (!dialog || typeof dialog.showModal !== 'function') return;

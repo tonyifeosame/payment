@@ -66,7 +66,13 @@
 
     <x-admin.confirm />
 
-    <script>
+    <script @nonce>
+    // A select marked data-autosubmit submits its form on change (no inline
+    // handlers: the CSP only runs scripts that carry the request nonce).
+    document.querySelectorAll('select[data-autosubmit]').forEach(function (el) {
+        el.addEventListener('change', function () { el.form.submit(); });
+    });
+
     (function () {
         // Mobile drawer. The sidebar element is shared with desktop, where it is a
         // plain sticky column and this script never changes its state.

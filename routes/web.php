@@ -36,7 +36,11 @@ Route::middleware(EnsureSchoolAdmin::class)->group(function () {
     Route::get('/payment', [PaymentController::class, 'index'])->name('payment.index');
 });
 
-Route::get('/payment/callback', [PaymentController::class, 'callback'])->name('payment.callback');
+// L3: throttled (PaymentCallbackLimiter) — every hit on a pending reference is a
+// synchronous Paystack verify call. The webhook, not this redirect, is authoritative.
+Route::get('/payment/callback', [PaymentController::class, 'callback'])
+    ->middleware('throttle:payment-callback')
+    ->name('payment.callback');
 
 // The Paystack webhook lives in routes/webhooks.php, registered without the web
 // middleware group so it starts no session and issues no cookies.
@@ -257,7 +261,7 @@ Route::prefix('pay/{school:slug}')->group(function () {
         ->name('public.payment.initialize');
     // Verified student lookup (L8): name + admission number, POST so neither is in a URL.
     Route::post('/student-search', [PaymentController::class, 'studentSearch'])
-        ->middleware('throttle:60,1,student-search')
+        ->middleware('throttle:student-search') // L1: 10/min and 60/hour per IP (StudentSearchLimiter)
         ->name('public.payment.student-search');
 });
 
@@ -271,7 +275,7 @@ Route::prefix('s/{school:slug}')->group(function () use ($schoolAdminRoutes) {
     // the typed full name and complete admission number both match. Throttled per
     // IP because it is unauthenticated; one lookup per "Find student" press.
     Route::post('/payment/student-search', [PaymentController::class, 'studentSearch'])
-        ->middleware('throttle:60,1,student-search')
+        ->middleware('throttle:student-search') // L1: 10/min and 60/hour per IP (StudentSearchLimiter)
         ->name('school.payment.student-search');
     // The school's logo: public, because it appears on the parent-facing page.
     Route::get('/logo', [SchoolSettingsController::class, 'logo'])->name('school.logo');

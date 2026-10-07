@@ -31,6 +31,14 @@
         are not affected.
     </p>
 
+    @if($school->payout_hold_until && $school->payout_hold_until->isFuture())
+        <p>
+            For your protection, payouts are paused until
+            {{ \App\Support\BusinessTime::display($school->payout_hold_until)->format('d M Y, H:i') }} ({{ \App\Support\BusinessTime::label() }}).
+            Parents can keep paying as normal; their payments are recorded and paid out once the pause ends.
+        </p>
+    @endif
+
     <p style="color:#b91c1c;">
         <strong>If you did not make this change, reset your admin password immediately and contact support.</strong>
     </p>

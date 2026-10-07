@@ -3,7 +3,7 @@
      only student_id submitted, foreign ids fail closed server-side), client-side totals for display only,
      and the submit loading state. Only presentation classes and three display hooks
      (initials, live total on the pay button, quantity row visibility) were added. --}}
-<script>
+<script @nonce>
     // Cache DOM elements
     const catSelect = document.getElementById('category');
     const subSelect = document.getElementById('subcategory');

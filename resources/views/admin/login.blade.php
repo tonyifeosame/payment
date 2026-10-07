@@ -100,7 +100,7 @@
 @endsection
 
 @push('scripts')
-<script>
+<script @nonce>
 (function () {
     var toggle = document.getElementById('togglePassword');
     var input = document.getElementById('password');

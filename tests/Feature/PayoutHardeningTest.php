@@ -7,8 +7,8 @@ use App\Models\Payout;
 use App\Models\School;
 use App\Models\Transaction;
 use App\Services\PaymentSettlementService;
-use App\Services\PaystackService;
 use App\Services\PayoutService;
+use App\Services\PaystackService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
@@ -50,6 +50,7 @@ class PayoutHardeningTest extends TestCase
             'bank' => 'GTB', 'bank_code' => '058', 'account_name' => 'Acct',
         ]);
         $this->school->paystack_recipient_code = 'RCP_g';
+        $this->school->payouts_approved_at = now(); // an established, verified school (H3)
         $this->school->save();
     }
 
@@ -78,7 +79,7 @@ class PayoutHardeningTest extends TestCase
 
         return $this->call('POST', '/paystack/webhook', [], [], [],
             ['HTTP_X_PAYSTACK_SIGNATURE' => hash_hmac('sha512', $body, 'sk_test_secret'),
-             'CONTENT_TYPE' => 'application/json'], $body);
+                'CONTENT_TYPE' => 'application/json'], $body);
     }
 
     private function processingPayout(): Payout
@@ -105,7 +106,7 @@ class PayoutHardeningTest extends TestCase
     // HIGH-1 — reversals
     // =====================================================================
 
-    public function test_HIGH1_success_can_be_reversed(): void
+    public function test_hig_h1_success_can_be_reversed(): void
     {
         $p = $this->successfulPayout();
         $this->assertSame(Payout::SUCCESS, $p->status);
@@ -117,7 +118,7 @@ class PayoutHardeningTest extends TestCase
         $this->assertNotNull($p->completed_at);
     }
 
-    public function test_HIGH1_success_cannot_become_failed(): void
+    public function test_hig_h1_success_cannot_become_failed(): void
     {
         $p = $this->successfulPayout();
 
@@ -126,7 +127,7 @@ class PayoutHardeningTest extends TestCase
         $this->assertSame(Payout::SUCCESS, $p->refresh()->status, 'a late failure downgraded a completed payout');
     }
 
-    public function test_HIGH1_reversed_cannot_be_resurrected(): void
+    public function test_hig_h1_reversed_cannot_be_resurrected(): void
     {
         $p = $this->successfulPayout();
         $this->webhook('transfer.reversed', ['reference' => $p->reference, 'status' => 'reversed',
@@ -140,7 +141,7 @@ class PayoutHardeningTest extends TestCase
         }
     }
 
-    public function test_HIGH1_reversal_is_idempotent(): void
+    public function test_hig_h1_reversal_is_idempotent(): void
     {
         $p = $this->successfulPayout();
         $body = ['reference' => $p->reference, 'status' => 'reversed', 'amount' => self::BASE_KOBO, 'currency' => 'NGN'];
@@ -153,7 +154,7 @@ class PayoutHardeningTest extends TestCase
         $this->assertEquals($completedAt, $p->refresh()->completed_at);
     }
 
-    public function test_HIGH1_transition_table_is_explicit(): void
+    public function test_hig_h1_transition_table_is_explicit(): void
     {
         $p = new Payout(['status' => Payout::SUCCESS]);
         $this->assertTrue($p->canTransitionTo(Payout::REVERSED));
@@ -171,7 +172,7 @@ class PayoutHardeningTest extends TestCase
     // HIGH-2 — transfer.success validation
     // =====================================================================
 
-    public function test_HIGH2_correct_amount_and_currency_is_accepted(): void
+    public function test_hig_h2_correct_amount_and_currency_is_accepted(): void
     {
         $p = $this->processingPayout();
 
@@ -181,7 +182,7 @@ class PayoutHardeningTest extends TestCase
         $this->assertSame(Payout::SUCCESS, $p->refresh()->status);
     }
 
-    public function test_HIGH2_wrong_amount_is_rejected(): void
+    public function test_hig_h2_wrong_amount_is_rejected(): void
     {
         $p = $this->processingPayout();
 
@@ -195,7 +196,7 @@ class PayoutHardeningTest extends TestCase
         $this->assertNull($p->completed_at);
     }
 
-    public function test_HIGH2_wrong_currency_is_rejected(): void
+    public function test_hig_h2_wrong_currency_is_rejected(): void
     {
         $p = $this->processingPayout();
 
@@ -207,7 +208,7 @@ class PayoutHardeningTest extends TestCase
         $this->assertStringContainsString('currency mismatch', (string) $p->last_error);
     }
 
-    public function test_HIGH2_missing_amount_is_rejected(): void
+    public function test_hig_h2_missing_amount_is_rejected(): void
     {
         $p = $this->processingPayout();
 
@@ -216,7 +217,7 @@ class PayoutHardeningTest extends TestCase
         $this->assertSame(Payout::NEEDS_REVIEW, $p->refresh()->status);
     }
 
-    public function test_HIGH2_a_payout_needing_review_is_never_transferable(): void
+    public function test_hig_h2_a_payout_needing_review_is_never_transferable(): void
     {
         $p = $this->processingPayout();
         $this->webhook('transfer.success', ['reference' => $p->reference, 'status' => 'success', 'amount' => 1]);
@@ -240,7 +241,7 @@ class PayoutHardeningTest extends TestCase
     // HIGH-3 — untrustworthy fee split
     // =====================================================================
 
-    public function test_HIGH3_missing_metadata_never_transfers_the_gross(): void
+    public function test_hig_h3_missing_metadata_never_transfers_the_gross(): void
     {
         Queue::fake();
         Http::fake(['*transaction/verify*' => Http::response(['status' => true, 'data' => [
@@ -261,7 +262,7 @@ class PayoutHardeningTest extends TestCase
         $this->assertSame('success', Transaction::firstOrFail()->status);
     }
 
-    public function test_HIGH3_review_payout_cannot_be_claimed_for_transfer(): void
+    public function test_hig_h3_review_payout_cannot_be_claimed_for_transfer(): void
     {
         Queue::fake();
         Http::fake(['*transaction/verify*' => Http::response(['status' => true, 'data' => [
@@ -278,7 +279,7 @@ class PayoutHardeningTest extends TestCase
         Http::assertNotSent(fn ($r) => str_ends_with($r->url(), '/transfer') && $r->method() === 'POST');
     }
 
-    public function test_HIGH3_dry_run_identifies_unattributable_transactions(): void
+    public function test_hig_h3_dry_run_identifies_unattributable_transactions(): void
     {
         Transaction::create([
             'school_id' => $this->school->id, 'reference' => 'legacy', 'amount' => self::GROSS,
@@ -292,7 +293,7 @@ class PayoutHardeningTest extends TestCase
         $this->assertSame(0, Payout::count());
     }
 
-    public function test_HIGH3_reconciliation_reports_payouts_needing_review(): void
+    public function test_hig_h3_reconciliation_reports_payouts_needing_review(): void
     {
         Bus::fake();
         Transaction::create([
@@ -313,7 +314,7 @@ class PayoutHardeningTest extends TestCase
     // MEDIUM-2 — the transfer must never run inside the payment transaction
     // =====================================================================
 
-    public function test_MEDIUM2_transfer_happens_only_after_the_settlement_commits(): void
+    public function test_mediu_m2_transfer_happens_only_after_the_settlement_commits(): void
     {
         config(['queue.default' => 'sync']); // worst case: dispatch runs the job inline
 
@@ -349,7 +350,7 @@ class PayoutHardeningTest extends TestCase
     // MEDIUM-3 — the obligation must survive a dispatch failure
     // =====================================================================
 
-    public function test_MEDIUM3_dispatch_failure_leaves_a_reconcilable_obligation(): void
+    public function test_mediu_m3_dispatch_failure_leaves_a_reconcilable_obligation(): void
     {
         config(['queue.default' => 'database']);
         $this->fakeAll();
@@ -373,7 +374,7 @@ class PayoutHardeningTest extends TestCase
         $this->assertSame(0, Transaction::query()->whereDoesntHave('payout')->count());
     }
 
-    public function test_MEDIUM3_reconciliation_requeues_a_stranded_obligation(): void
+    public function test_mediu_m3_reconciliation_requeues_a_stranded_obligation(): void
     {
         // The exact state a failed dispatch leaves behind: obligation committed,
         // transferable, but never queued (attempts = 0).
@@ -399,7 +400,7 @@ class PayoutHardeningTest extends TestCase
         $this->assertSame(Payout::PENDING, $payout->refresh()->status);
     }
 
-    public function test_MEDIUM3_reconciliation_does_not_requeue_payouts_already_in_flight(): void
+    public function test_mediu_m3_reconciliation_does_not_requeue_payouts_already_in_flight(): void
     {
         $transaction = Transaction::create([
             'school_id' => $this->school->id, 'reference' => 'inflight', 'amount' => self::GROSS,
@@ -422,7 +423,7 @@ class PayoutHardeningTest extends TestCase
     // LOW-1 — uniqueness declaration
     // =====================================================================
 
-    public function test_LOW1_job_declares_uniqueness_correctly(): void
+    public function test_lo_w1_job_declares_uniqueness_correctly(): void
     {
         $job = new InitiateSchoolPayout(42);
 
@@ -431,7 +432,7 @@ class PayoutHardeningTest extends TestCase
         $this->assertSame(600, $job->uniqueFor);
     }
 
-    public function test_LOW1_database_remains_the_real_guard_even_without_the_lock(): void
+    public function test_lo_w1_database_remains_the_real_guard_even_without_the_lock(): void
     {
         // Two jobs for the same payout, no cache lock involved: the atomic
         // pending -> initiating claim still permits exactly one transfer.

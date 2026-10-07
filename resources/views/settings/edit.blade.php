@@ -46,6 +46,12 @@
                     </div>
                 </div>
                 <div>
+                    <label for="identity_password" class="field-label">Current password <span class="font-normal text-brand-slate">(only to change the name or email)</span></label>
+                    <input id="identity_password" name="identity_password" type="password" class="field-input {{ $field('identity_password') ? 'field-input-error' : '' }}" autocomplete="current-password" aria-describedby="identity-password-help{{ $field('identity_password') ? ' identity_password-error' : '' }}" @if($field('identity_password')) aria-invalid="true" @endif>
+                    <p id="identity-password-help" class="field-help">Your login name and reset email protect your account, so changing them needs your password. A notice goes to your current email.</p>
+                    @error('identity_password')<p id="identity_password-error" class="field-error">{{ $message }}</p>@enderror
+                </div>
+                <div>
                     <label for="address" class="field-label">Address <span class="font-normal text-brand-slate">(optional)</span></label>
                     <input id="address" name="address" value="{{ old('address', $school->address) }}" class="field-input {{ $field('address') ? 'field-input-error' : '' }}" maxlength="255" autocomplete="street-address" @if($field('address')) aria-invalid="true" aria-describedby="address-error" @endif>
                     @error('address')<p id="address-error" class="field-error">{{ $message }}</p>@enderror
@@ -174,7 +180,7 @@
                 @method('PUT')
                 @foreach([
                     ['current_password', 'Current password', 'current-password', null],
-                    ['password', 'New password', 'new-password', 'At least 8 characters.'],
+                    ['password', 'New password', 'new-password', 'At least '.config('auth.school_passwords.min_length', 10).' characters. Avoid passwords used on other sites.'],
                     ['password_confirmation', 'Confirm new password', 'new-password', null],
                 ] as [$pwName, $pwLabel, $pwAutocomplete, $pwHelp])
                     @php $pwErr = $field($pwName === 'password_confirmation' ? 'password' : $pwName, $pw) && ($pwName !== 'password_confirmation' || str_contains($pw->first('password'), 'confirmation')); @endphp
@@ -198,7 +204,7 @@
 @endsection
 
 @push('scripts')
-<script>
+<script @nonce>
 (function () {
     // Bank picker + live account-name preview. Lookups go through the server's
     // /api endpoints; the name shown here is a convenience — the name that gets

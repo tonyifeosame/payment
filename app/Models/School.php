@@ -38,13 +38,54 @@ class School extends Model implements CanResetPassword
     protected $hidden = [
         'admin_password',
         'paystack_recipient_code',
+        'paystack_recipient_account',
         'account_number',
         'bank_code',
+    ];
+
+    /**
+     * H3 payout eligibility. Deliberately not fillable: only an operator command
+     * (approval) or a bank-account change (hold) writes these, via forceFill.
+     */
+    protected $casts = [
+        'payouts_approved_at' => 'datetime',
+        'payout_hold_until' => 'datetime',
     ];
 
     public function getRouteKeyName()
     {
         return 'slug';
+    }
+
+    /**
+     * Why money may not be transferred to this school right now, or null when it
+     * may (H3). Payments are collected either way; only the transfer waits.
+     */
+    public function payoutBlockReason(): ?string
+    {
+        if ($this->payouts_approved_at === null) {
+            return 'awaiting verification';
+        }
+
+        if ($this->payout_hold_until !== null && $this->payout_hold_until->isFuture()) {
+            return 'bank account changed; held until '.$this->payout_hold_until->toIso8601String();
+        }
+
+        return null;
+    }
+
+    public function canReceivePayouts(): bool
+    {
+        return $this->payoutBlockReason() === null;
+    }
+
+    /**
+     * M2: fingerprint of the payout account as it stands, stored next to a
+     * Paystack recipient code to record which account the code was created for.
+     */
+    public function recipientAccountKey(): string
+    {
+        return hash('sha256', $this->bank_code.'|'.$this->account_number);
     }
 
     /**

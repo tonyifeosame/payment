@@ -6,6 +6,7 @@ use App\Models\School;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class PaystackService
 {
@@ -254,19 +255,37 @@ class PaystackService
         ];
     }
 
+    /**
+     * The Paystack recipient for the school's CURRENT payout account, or null.
+     *
+     * M2: the school is re-read first, so a model loaded before a bank change is
+     * never trusted. A stored code is reused only when it was created for the
+     * account the school has now (paystack_recipient_account); a legacy code with
+     * no fingerprint is trusted as before. A new recipient is created from a
+     * snapshot of the account and saved only if the school STILL has that account
+     * — a conditional update, so a bank change that lands while Paystack is
+     * answering can never be overwritten by the old account's recipient. In that
+     * case null is returned and no transfer is made.
+     */
     public function ensureRecipientForSchool(School $school): ?string
     {
-        if ($school->paystack_recipient_code) {
+        $school->refresh();
+
+        $current = $school->recipientAccountKey();
+        if ($school->paystack_recipient_code
+            && ($school->paystack_recipient_account === null || hash_equals($school->paystack_recipient_account, $current))) {
             return $school->paystack_recipient_code;
         }
         if (! $school->bank_code || ! $school->account_number || ! $school->account_name) {
             return null; // cannot create recipient without bank details
         }
+
+        $snapshot = ['bank_code' => $school->bank_code, 'account_number' => $school->account_number];
         $payload = [
             'type' => 'nuban',
             'name' => $school->account_name,
-            'account_number' => $school->account_number,
-            'bank_code' => $school->bank_code,
+            'account_number' => $snapshot['account_number'],
+            'bank_code' => $snapshot['bank_code'],
             'currency' => 'NGN',
         ];
         $resp = $this->client()->post($this->baseUrl.'/transferrecipient', $payload);
@@ -275,10 +294,24 @@ class PaystackService
             return null;
         }
         $code = $json['data']['recipient_code'] ?? null;
-        if ($code) {
-            $school->paystack_recipient_code = $code;
-            $school->save();
+        if (! $code) {
+            return null;
         }
+
+        $saved = School::whereKey($school->getKey())
+            ->where('bank_code', $snapshot['bank_code'])
+            ->where('account_number', $snapshot['account_number'])
+            ->update(['paystack_recipient_code' => $code, 'paystack_recipient_account' => $current]);
+
+        if ($saved !== 1) {
+            Log::warning('Discarded a Paystack recipient: the school\'s payout account changed while it was being created', [
+                'school_id' => $school->id,
+            ]);
+
+            return null;
+        }
+
+        $school->forceFill(['paystack_recipient_code' => $code, 'paystack_recipient_account' => $current])->syncOriginal();
 
         return $code;
     }
@@ -312,7 +345,9 @@ class PaystackService
         // below is not reached — so the claim can be released immediately and the
         // payout is retryable by the existing operator tooling.
         try {
-            $recipient = $school->paystack_recipient_code ?: $this->ensureRecipientForSchool($school);
+            // Always through ensureRecipientForSchool (M2): it re-reads the school and
+            // refuses a code that was created for a different account.
+            $recipient = $this->ensureRecipientForSchool($school);
         } catch (\Throwable $e) {
             report($e);
 

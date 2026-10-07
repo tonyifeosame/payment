@@ -61,13 +61,21 @@ class SchoolBankDetailsService
         // The save and its audit row commit together (M7). Paystack's lookup above
         // and the notice below stay OUTSIDE: holding a transaction open across a
         // network call would put the ledger's locks behind someone else's latency.
-        DB::transaction(function () use ($school, $input, $resolve, $previous) {
+        // H3: every change of destination holds the school's payouts for a
+        // cooling-off period, so a change made from a hijacked session cannot move
+        // money before the school has read the notice emailed below.
+        $holdHours = max(0, (int) config('payouts.bank_change_hold_hours', 48));
+        $holdUntil = $holdHours > 0 ? now()->addHours($holdHours) : null;
+
+        DB::transaction(function () use ($school, $input, $resolve, $previous, $holdUntil) {
             $school->forceFill([
                 'bank' => $input['bank'],
                 'bank_code' => $input['bank_code'],
                 'account_number' => $resolve['account_number'] ?? $input['account_number'],
                 'account_name' => $resolve['account_name'],
                 'paystack_recipient_code' => null,
+                'paystack_recipient_account' => null,
+                'payout_hold_until' => $holdUntil ?? $school->payout_hold_until,
             ])->save();
 
             // Replaces the Log::warning this method used to write: same facts, in a
@@ -86,6 +94,7 @@ class SchoolBankDetailsService
                         'to' => $this->audit->lastFour($school->account_number),
                     ],
                     'account_name' => ['from' => $previous['account_name'], 'to' => $school->account_name],
+                    'payout_hold_until' => ['from' => null, 'to' => $holdUntil?->toIso8601String()],
                 ]
             );
         });

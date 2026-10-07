@@ -145,7 +145,7 @@ class RunPayouts extends Command
 
                 $created++;
 
-                if ($dispatch && $payout->status === Payout::PENDING) {
+                if ($dispatch && $payout->status === Payout::PENDING && $this->eligible($payout)) {
                     InitiateSchoolPayout::dispatch($payout->id);
                     $queued++;
                 }
@@ -260,6 +260,10 @@ class RunPayouts extends Command
         $queued = 0;
 
         foreach ($stranded as $payout) {
+            if (! $this->eligible($payout)) {
+                continue;
+            }
+
             // E4b: one school's dispatch problem must not stop the others.
             try {
                 InitiateSchoolPayout::dispatch($payout->id);
@@ -272,6 +276,24 @@ class RunPayouts extends Command
         }
 
         return $queued;
+    }
+
+    /**
+     * H3: may this payout's school be paid now? A held payout is reported, not
+     * queued; it stays `pending` and is queued by the first run after the school
+     * becomes eligible. (InitiateSchoolPayout enforces the same rule itself.)
+     */
+    private function eligible(Payout $payout): bool
+    {
+        $reason = $payout->school?->payoutBlockReason();
+
+        if ($reason !== null) {
+            $this->line("  held {$payout->reference} (school {$payout->school_id}): {$reason}");
+
+            return false;
+        }
+
+        return true;
     }
 
     /**

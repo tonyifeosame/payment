@@ -39,6 +39,7 @@ class PayoutReconciliationCronTest extends TestCase
             'bank' => 'GTB', 'bank_code' => '058', 'account_name' => 'Acct',
         ]);
         $this->school->paystack_recipient_code = 'RCP_g';
+        $this->school->payouts_approved_at = now(); // an established, verified school (H3)
         $this->school->save();
     }
 

@@ -553,7 +553,8 @@ class PaymentStudentContextTest extends TestCase
 
     public function test_student_lookup_is_rate_limited(): void
     {
-        for ($i = 0; $i < 60; $i++) {
+        // L1: ten lookups a minute per address (StudentSearchLimiter).
+        for ($i = 0; $i < \App\Support\StudentSearchLimiter::PER_MINUTE; $i++) {
             $this->lookup('Nobody '.$i, 'X/'.$i)->assertOk();
         }
 

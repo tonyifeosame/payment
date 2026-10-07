@@ -474,8 +474,9 @@ class CredentialThrottleTest extends TestCase
             'contact.send' => 'throttle:5,60,contact',
             'public.payment.initialize' => 'throttle:payment-initialize',
             'school.payment.initialize' => 'throttle:payment-initialize',
-            'public.payment.student-search' => 'throttle:60,1,student-search',
-            'school.payment.student-search' => 'throttle:60,1,student-search',
+            // L1: a named limiter (10/min, 60/hour per IP) replaced throttle:60,1.
+            'public.payment.student-search' => 'throttle:student-search',
+            'school.payment.student-search' => 'throttle:student-search',
         ];
         foreach ($expect as $name => $throttle) {
             $this->assertContains($throttle, Route::getRoutes()->getByName($name)->gatherMiddleware(), $name);

@@ -217,8 +217,8 @@ class PaymentInitializeThrottleTest extends TestCase
         $lookup = ['name' => 'Ada', 'admission_number' => 'A/1'];
         $this->postJson('/pay/alpha/student-search', $lookup)->assertOk();
 
-        // ...and exhausting the student lookup (60/min) leaves checkout untouched.
-        for ($i = 1; $i < 60; $i++) {
+        // ...and exhausting the student lookup (L1: 10/min) leaves checkout untouched.
+        for ($i = 1; $i < \App\Support\StudentSearchLimiter::PER_MINUTE; $i++) {
             $this->postJson('/s/alpha/payment/student-search', ['name' => 'zz'.$i, 'admission_number' => 'zz'.$i])->assertOk();
         }
         $this->postJson('/s/alpha/payment/student-search', $lookup)->assertStatus(429);

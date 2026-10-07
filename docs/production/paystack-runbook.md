@@ -144,6 +144,32 @@ with the school so the payout is expected. Then verify, in order:
 If any step fails, stop onboarding and use sections 5–6; do not "fix" it in the
 Paystack dashboard.
 
+## 4a. School payout verification (H3)
+
+Registration is open, so a new school can collect payments at once, but **no
+transfer is sent to it until an operator has verified it**. Its payouts stay
+`pending` (no attempt recorded, nothing failed) and are sent by the next hourly
+`payouts:run --dispatch` after approval. Every change of payout bank account
+also holds that school's payouts for `PAYOUT_BANK_CHANGE_HOLD_HOURS` (default 48).
+
+```bash
+php artisan schools:payout-status            # schools whose payouts are held, and how much is waiting
+php artisan schools:payout-status --all      # every school
+php artisan schools:approve-payouts <id|slug> --note="how the school was verified"
+php artisan schools:approve-payouts <id|slug> --note="..." --keep-hold   # verify, keep a bank-change hold
+php artisan schools:suspend-payouts <id|slug> --note="why"   # payments continue; transfers wait
+```
+
+Verify before approving: that the person who registered represents the school,
+and that the payout account (its resolved account name is shown) belongs to the
+school. `approve-payouts` also lifts an active bank-change hold early — use it
+only after confirming the change with the school by a channel other than the
+admin account. Each action writes a `school_audit_events` row (actor `artisan`).
+
+Schools that existed before this control was deployed were marked approved by
+the migration, so their payouts continue; review them with `--all` and suspend
+any that should not have been.
+
 ## 5. Payout recovery commands
 
 All are read-and-write on **our** ledger only; none creates a transfer itself.

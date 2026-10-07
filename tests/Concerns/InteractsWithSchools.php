@@ -19,9 +19,19 @@ use Illuminate\Support\Facades\Hash;
  */
 trait InteractsWithSchools
 {
+    /**
+     * An established school: verified for payouts (H3) unless the overrides say
+     * otherwise — pass ['payouts_approved_at' => null] for a newly registered one,
+     * or a 'payout_hold_until' for one inside a bank-change hold.
+     */
     protected function makeSchool(string $name, string $slug, array $overrides = []): School
     {
-        return School::create(array_merge([
+        $eligibility = array_intersect_key(
+            array_merge(['payouts_approved_at' => now()], $overrides),
+            array_flip(['payouts_approved_at', 'payout_hold_until'])
+        );
+
+        $school = School::create(array_merge([
             'name' => $name,
             'slug' => $slug,
             'email' => $slug.'@example.test',
@@ -31,6 +41,10 @@ trait InteractsWithSchools
             'bank' => 'GTB',
             'bank_code' => '058',
         ], $overrides));
+
+        $school->forceFill($eligibility)->save();
+
+        return $school;
     }
 
     /** A stored logo (H3): the school_logos row an upload would have produced. */

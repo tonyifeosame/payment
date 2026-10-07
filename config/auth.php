@@ -132,4 +132,23 @@ return [
         'lifetime_days' => (int) env('SCHOOL_REMEMBER_DAYS', 30),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | School Admin Password Rules (M5)
+    |--------------------------------------------------------------------------
+    |
+    | Applied wherever a school admin password is SET (registration, reset,
+    | change); existing passwords keep working. `min_length` is the floor.
+    | `breach_check` also refuses passwords found in known data breaches, via
+    | the Have I Been Pwned range API: only the first five characters of the
+    | password's SHA-1 leave the server (k-anonymity), and if the API cannot be
+    | reached the check passes rather than blocking the admin.
+    |
+    */
+
+    'school_passwords' => [
+        'min_length' => (int) env('SCHOOL_PASSWORD_MIN_LENGTH', 10),
+        'breach_check' => (bool) env('SCHOOL_PASSWORD_BREACH_CHECK', true),
+    ],
+
 ];

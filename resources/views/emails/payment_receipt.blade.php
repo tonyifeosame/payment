@@ -21,7 +21,10 @@
     // and a category repointed to another school would have printed that school's
     // name on this school's receipt.
     $school = $transaction->school;
-    $schoolName = $school?->name;
+    // L8: every untrusted value below is one line (MailText::line); a line break
+    // inside a value would end the raw-HTML block and expose Markdown.
+    $line = fn ($v) => \App\Support\MailText::line($v);
+    $schoolName = $school?->name !== null ? $line($school->name) : null;
 
     // Same source of truth as the web receipt and the PDF; nothing is recalculated.
     $receipt = $transaction->receiptBreakdown();
@@ -31,8 +34,9 @@
     $method = $transaction->payment_method
         ? ucfirst(str_replace('_', ' ', (string) $transaction->payment_method))
         : null;
-    $categoryName = $transaction->category_name ?? optional($transaction->category)->name;
-    $feeName = $transaction->subcategory_name ?? optional($transaction->subcategory)->name;
+    $categoryName = $line($transaction->category_name ?? optional($transaction->category)->name);
+    $feeName = $line($transaction->subcategory_name ?? optional($transaction->subcategory)->name);
+    $footerLines = collect(preg_split('/\R/', (string) $school?->receipt_footer))->map($line)->filter()->values();
 
     // Email-client-safe inline styles (Gmail strips <style> and ignores classes).
     // Blank lines are avoided inside the HTML below: this file is parsed as
@@ -63,7 +67,7 @@
 <tr>
 <td align="center" style="padding: 10px 0 0; font-size: 15px; line-height: 1.5; color: #6C6C89; text-align: center; {{ $font }}">
 @if($isSuccess)
-Thank you{{ $transaction->name ? ', '.$transaction->name : '' }}. Your payment of <strong style="color: #121217;">{{ $money($receipt['total']) }}</strong>{{ $schoolName ? ' to '.$schoolName : '' }} has been received.
+Thank you{{ $transaction->name ? ', '.$line($transaction->name) : '' }}. Your payment of <strong style="color: #121217;">{{ $money($receipt['total']) }}</strong>{{ $schoolName ? ' to '.$schoolName : '' }} has been received.
 @else
 This payment has not been confirmed as successful. The details recorded for it are below.
 @endif
@@ -95,10 +99,10 @@ This payment has not been confirmed as successful. The details recorded for it a
 <td valign="middle">
 <div style="font-size: 18px; line-height: 1.25; font-weight: 700; color: #121217; {{ $font }}">{{ $schoolName ?? 'Payment receipt' }}</div>
 @if($school?->address)
-<div style="margin-top: 2px; font-size: 13px; line-height: 1.4; color: #6C6C89; {{ $font }}">{{ $school->address }}</div>
+<div style="margin-top: 2px; font-size: 13px; line-height: 1.4; color: #6C6C89; {{ $font }}">{{ $line($school->address) }}</div>
 @endif
 @if($school?->phone || $school?->email)
-<div style="font-size: 13px; line-height: 1.4; color: #6C6C89; word-break: break-word; {{ $font }}">{{ $school->phone }}{{ $school->phone && $school->email ? ' · ' : '' }}{{ $school->email }}</div>
+<div style="font-size: 13px; line-height: 1.4; color: #6C6C89; word-break: break-word; {{ $font }}">{{ $line($school->phone) }}{{ $school->phone && $school->email ? ' · ' : '' }}{{ $line($school->email) }}</div>
 @endif
 </td>
 </tr>
@@ -113,7 +117,7 @@ This payment has not been confirmed as successful. The details recorded for it a
 </tr>
 <tr>
 <td style="{{ $label }}">Reference:</td>
-<td style="{{ $value }} font-family: Menlo, Consolas, 'Courier New', monospace; font-size: 13px; word-break: break-all;">{{ $transaction->reference ?? '—' }}</td>
+<td style="{{ $value }} font-family: Menlo, Consolas, 'Courier New', monospace; font-size: 13px; word-break: break-all;">{{ $transaction->reference ? $line($transaction->reference) : '—' }}</td>
 </tr>
 <tr>
 <td style="{{ $label }}">Date:</td>
@@ -132,13 +136,13 @@ This payment has not been confirmed as successful. The details recorded for it a
 @if($transaction->name)
 <tr>
 <td style="{{ $label }}">Paid By:</td>
-<td style="{{ $value }}">{{ $transaction->name }}</td>
+<td style="{{ $value }}">{{ $line($transaction->name) }}</td>
 </tr>
 @endif
 @if($transaction->email)
 <tr>
 <td style="{{ $label }}">Email:</td>
-<td style="{{ $value }} font-weight: 400; color: #6C6C89; word-break: break-all;">{{ $transaction->email }}</td>
+<td style="{{ $value }} font-weight: 400; color: #6C6C89; word-break: break-all;">{{ $line($transaction->email) }}</td>
 </tr>
 @endif
 </table>
@@ -154,25 +158,25 @@ This payment has not been confirmed as successful. The details recorded for it a
 @if($transaction->hasStudent())
 <tr>
 <td style="{{ $label }}">Student Name:</td>
-<td style="{{ $value }}">{{ $transaction->student_name ?? '—' }}</td>
+<td style="{{ $value }}">{{ $transaction->student_name !== null ? $line($transaction->student_name) : '—' }}</td>
 </tr>
 @if($transaction->student_class)
 <tr>
 <td style="{{ $label }}">Class:</td>
-<td style="{{ $value }}">{{ $transaction->student_class }}</td>
+<td style="{{ $value }}">{{ $line($transaction->student_class) }}</td>
 </tr>
 @endif
 @if($transaction->student_admission_number)
 <tr>
 <td style="{{ $label }}">Admission Number:</td>
-<td style="{{ $value }} font-family: Menlo, Consolas, 'Courier New', monospace; font-size: 13px;">{{ $transaction->student_admission_number }}</td>
+<td style="{{ $value }} font-family: Menlo, Consolas, 'Courier New', monospace; font-size: 13px;">{{ $line($transaction->student_admission_number) }}</td>
 </tr>
 @endif
 @endif
 @if($transaction->session_name || $transaction->term_name)
 <tr>
 <td style="{{ $label }}">Session / Term:</td>
-<td style="{{ $value }}">{{ $transaction->session_name ?? '—' }}@if($transaction->term_name), {{ $transaction->term_name }}@endif</td>
+<td style="{{ $value }}">{{ $transaction->session_name !== null ? $line($transaction->session_name) : '—' }}@if($transaction->term_name), {{ $line($transaction->term_name) }}@endif</td>
 </tr>
 @endif
 </table>
@@ -234,14 +238,14 @@ This payment has not been confirmed as successful. The details recorded for it a
 </tr>
 @if($school?->receipt_footer)
 <tr>
-<td style="padding: 10px 4px 0; font-size: 13px; line-height: 1.5; color: #121217; white-space: pre-line; {{ $font }}">{{ $school->receipt_footer }}</td>
+<td style="padding: 10px 4px 0; font-size: 13px; line-height: 1.5; color: #121217; white-space: pre-line; {{ $font }}">{!! $footerLines->map(fn ($l) => e($l))->implode('<br>') !!}</td>
 </tr>
 @endif
 </table>
 @slot('footer')
 @component('mail::footer')
 @if($schoolName)
-{{ implode(' · ', array_filter([$schoolName, $school->phone, $school->email])) }}
+{{ implode(' · ', array_filter([$schoolName, $line($school->phone), $line($school->email)])) }}
 
 @endif
 Receipts are issued by @include('marketing.partials.brand-name') on behalf of the school. Payments are processed securely by Paystack.

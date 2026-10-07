@@ -110,8 +110,10 @@
             <p>The payment page shows the fee amount, the service fee and the total before the payer continues to Paystack. The school’s payout for a payment is its fee amount; the service fee is kept by FEYRA.</p>
 
             <h2 id="payouts">8. Payouts to Schools</h2>
-            <p>When a payment is confirmed, FEYRA records the amount due to the school and starts a transfer of that amount to the school’s verified bank account through Paystack. Each confirmed payment is paid out separately.</p>
+            <p>When a payment is confirmed, FEYRA records the amount due to the school and, once the school is eligible for payouts, starts a transfer of that amount to the school’s verified bank account through Paystack. Each confirmed payment is paid out separately.</p>
             <ul>
+                <li><strong>School verification:</strong> a newly registered school receives payouts only after FEYRA has verified it. Parents can pay before then; those payments are recorded and paid out once verification is complete.</li>
+                <li><strong>Bank account changes:</strong> for the school’s protection, payouts are paused for {{ (int) config('payouts.bank_change_hold_hours', 48) }} hours after the payout bank account changes. Payments made during the pause are paid out after it ends.</li>
                 <li><strong>Verified bank account:</strong> a school’s payout account is checked with Paystack when it is added or changed. Changing it requires the administrator password, and FEYRA emails the school when it changes. The school is responsible for keeping its bank details correct.</li>
                 <li><strong>Timing:</strong> how long a transfer takes to reach the school’s account depends on Paystack and the banks involved. FEYRA cannot promise when a transfer will arrive.</li>
                 <li><strong>Review and intervention:</strong> some payouts need manual review or action by FEYRA before they can be sent or completed, for example if a transfer fails, if its outcome is unclear, or if the amount needs to be confirmed.</li>

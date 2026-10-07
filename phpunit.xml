@@ -30,6 +30,8 @@
         <env name="APP_URL" value="http://localhost"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
+        <!-- M5: no live calls to the breach API from the suite; tests that cover it fake it. -->
+        <env name="SCHOOL_PASSWORD_BREACH_CHECK" value="false"/>
         <env name="CACHE_STORE" value="array"/>
         <env name="DB_CONNECTION" value="sqlite"/>
         <env name="DB_DATABASE" value=":memory:"/>

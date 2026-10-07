@@ -7,6 +7,7 @@ use App\Services\PaymentSettlementService;
 use App\Services\PayoutService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\RateLimiter;
 
 /**
  * Paystack webhook receiver (G1).
@@ -21,6 +22,12 @@ use Illuminate\Support\Facades\Log;
  */
 class PaystackWebhookController extends Controller
 {
+    /** L3: far above any Paystack event payload (a few KB). */
+    public const MAX_BODY_BYTES = 256 * 1024;
+
+    /** L3: bad-signature requests one address may make per minute. */
+    public const MAX_INVALID_PER_MINUTE = 30;
+
     public function __invoke(Request $request, PaymentSettlementService $settlement, PayoutService $payouts)
     {
         $secret = (string) config('services.paystack.secret_key');
@@ -30,12 +37,28 @@ class PaystackWebhookController extends Controller
             return response()->json(['status' => 'misconfigured'], 500);
         }
 
+        // L3: cheap refusals before any hashing. Paystack's event payloads are a
+        // few kilobytes, so anything larger is not one of them; and an address
+        // that keeps sending bad signatures is cut off for a minute. Only INVALID
+        // signatures are counted, so genuine deliveries are never throttled.
+        $length = (int) $request->header('Content-Length', '0');
+        if ($length > self::MAX_BODY_BYTES || strlen($request->getContent()) > self::MAX_BODY_BYTES) {
+            return response()->json(['status' => 'payload too large'], 413);
+        }
+
+        $invalidKey = 'paystack-webhook-invalid:'.sha1((string) $request->ip());
+        if (RateLimiter::tooManyAttempts($invalidKey, self::MAX_INVALID_PER_MINUTE)) {
+            return response()->json(['status' => 'too many invalid requests'], 429, ['Retry-After' => RateLimiter::availableIn($invalidKey)]);
+        }
+
         // Signature is computed over the exact raw body, before any parsing.
         $rawBody = $request->getContent();
         $provided = (string) $request->header('x-paystack-signature', '');
         $expected = hash_hmac('sha512', $rawBody, $secret);
 
         if ($provided === '' || ! hash_equals($expected, $provided)) {
+            RateLimiter::hit($invalidKey, 60);
+
             Log::warning('Rejected Paystack webhook with an invalid signature.', [
                 'ip' => $request->ip(),
                 'has_signature' => $provided !== '',
