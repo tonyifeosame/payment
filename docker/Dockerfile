@@ -51,6 +51,11 @@ COPY docker/docker-entrypoint.sh /docker-entrypoint.sh
 RUN composer install --no-dev --no-interaction --optimize-autoloader --no-scripts --no-progress \
     && rm -rf /root/.composer/cache
 
+# No `php artisan optimize` / config:cache here: the build has none of Render's
+# environment, so a cache built now holds the defaults (APP_KEY null, APP_URL
+# http://localhost, sqlite, the log mailer) and Laravel would keep reading it in
+# production. docker-entrypoint.sh caches config, routes, events and views at
+# container start instead. The rm makes sure no such cache leaves the build.
 RUN mkdir -p \
         /app/storage/logs \
         /app/storage/framework/cache/data \
@@ -58,9 +63,9 @@ RUN mkdir -p \
         /app/storage/framework/views \
         /app/storage/app/public \
         /app/bootstrap/cache && \
-    php artisan optimize && \
     php artisan storage:link && \
-    echo "yes" | php artisan octane:install --server=frankenphp
+    echo "yes" | php artisan octane:install --server=frankenphp && \
+    rm -f /app/bootstrap/cache/config.php /app/bootstrap/cache/routes-v7.php /app/bootstrap/cache/events.php
 
 # L6: no world-writable directories. The application user owns the tree; only
 # storage/ and bootstrap/cache/ (logs, caches, compiled views, the cached config

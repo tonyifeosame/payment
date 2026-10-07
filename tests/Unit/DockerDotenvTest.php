@@ -89,7 +89,8 @@ class DockerDotenvTest extends TestCase
         $entrypoint = (string) file_get_contents($this->root.'/docker/docker-entrypoint.sh');
         $ignore = array_map('trim', file($this->root.'/.dockerignore'));
 
-        $this->assertStringContainsString('. /app/docker/write-dotenv.sh', $entrypoint);
+        $this->assertStringContainsString('. "$app_root/docker/write-dotenv.sh"', $entrypoint);
+        $this->assertMatchesRegularExpression('#^app_root=\$\{FEYRA_APP_ROOT:-/app\}$#m', $entrypoint);
         $this->assertStringContainsString('write_dotenv .env.example .env', $entrypoint);
         $this->assertStringNotContainsString('echo \${', $entrypoint, 'values must not be re-echoed into .env');
         foreach (['docker', 'docker/', 'docker/*', '/docker'] as $entry) {

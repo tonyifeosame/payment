@@ -41,11 +41,15 @@ services:
     dockerfilePath: ./docker/Dockerfile
     dockerContext: .
     plan: 0.5c-512mb
-    # Overrides the image's CMD (supervisord runs octane + a queue worker + a
-    # scheduler). On Render those extra processes would duplicate the dedicated
-    # worker and cron below and compete for 512 MB, so the web service runs the
-    # HTTP server only. --workers=1 keeps Octane inside the 512 MB plan.
-    dockerCommand: php artisan octane:start --server=frankenphp --host=0.0.0.0 --port=8000 --workers=1
+    # dockerCommand replaces the image's ENTRYPOINT as well as its CMD, so every
+    # service here starts through /docker-entrypoint.sh explicitly: it writes
+    # .env, caches config with this service's environment, migrates (web only)
+    # and then exec's the command. Without it Laravel reads no runtime config at
+    # all. The image's own CMD (supervisord runs octane + a queue worker + a
+    # scheduler) is not used: on Render those extra processes would duplicate the
+    # dedicated worker and cron below and compete for 512 MB, so the web service
+    # runs the HTTP server only. --workers=1 keeps Octane inside the 512 MB plan.
+    dockerCommand: /docker-entrypoint.sh php artisan octane:start --server=frankenphp --host=0.0.0.0 --port=8000 --workers=1
     healthCheckPath: /up
     envVars:
       # Pins the port Render probes to the one Octane binds. Render's default is
@@ -166,7 +170,8 @@ services:
     dockerfilePath: ./docker/Dockerfile
     dockerContext: .
     plan: 0.5c-512mb
-    dockerCommand: php artisan queue:work database --queue=default --sleep=3 --tries=3 --max-time=3600 --backoff=30
+    # Through the entrypoint, like the web service: see its dockerCommand note.
+    dockerCommand: /docker-entrypoint.sh php artisan queue:work database --queue=default --sleep=3 --tries=3 --max-time=3600 --backoff=30
     envVars:
       # Only the web service migrates. Three containers racing `migrate --force`
       # against one Postgres on first deploy could half-apply a migration to the
@@ -266,7 +271,8 @@ services:
     plan: 0.5c-512mb
     schedule: "0 * * * *"
     # `command:` is not a Blueprint field. A Docker-runtime service overrides the
-    # image CMD with dockerCommand (the entrypoint still runs first and exec's it).
+    # image's ENTRYPOINT and CMD with dockerCommand, so the command runs through
+    # /docker-entrypoint.sh explicitly, which caches this run's config first.
     #
     # Two read-then-reconcile passes per hour, each safe to repeat, then a
     # read-only health report:
@@ -290,7 +296,7 @@ services:
     #                             Blueprint one — see the runbook).
     # All three always run; the job's exit status is the first non-zero one, so a
     # failure in any pass is visible in Render without hiding the others.
-    dockerCommand: sh -c 'php artisan payouts:run --dispatch; a=$?; php artisan payments:expire-pending; b=$?; php artisan jobs:check; c=$?; if [ "$a" -ne 0 ]; then exit "$a"; fi; if [ "$b" -ne 0 ]; then exit "$b"; fi; exit "$c"'
+    dockerCommand: /docker-entrypoint.sh sh -c 'php artisan payouts:run --dispatch; a=$?; php artisan payments:expire-pending; b=$?; php artisan jobs:check; c=$?; if [ "$a" -ne 0 ]; then exit "$a"; fi; if [ "$b" -ne 0 ]; then exit "$b"; fi; exit "$c"'
     envVars:
       # See the worker's note: only the web service runs migrations.
       - key: SKIP_MIGRATIONS

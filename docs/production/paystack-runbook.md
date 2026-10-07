@@ -61,6 +61,13 @@ Values may contain spaces, quotes, `#`, `$` and backslashes (`MAIL_FROM_NAME`
 and never written to disk. A variable left blank falls back to its
 `.env.example` default.
 
+Every service starts through `/docker-entrypoint.sh` (its `dockerCommand` in
+`render.yaml`; Render's command replaces the image's ENTRYPOINT, so it would not
+run otherwise). It caches Laravel's config at container start from these values
+— the image never contains a config cache — and refuses to start a production
+container whose `APP_KEY` is empty or whose `APP_URL` is not `https://…`. Changed
+a value? Redeploy or restart the service so the cache is rebuilt.
+
 Transfers need nothing beyond `PAYSTACK_SECRET_KEY`: the platform fee is
 `config/fees.php` (`markup_percent`, 2.5 % by default), the school's share is
 read from each transaction's stored breakdown, and the Paystack transfer
