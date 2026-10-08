@@ -154,6 +154,43 @@ class DockerRuntimeStartupTest extends TestCase
         }
     }
 
+    /** @return array<string, array{array<string, string|false>, list<string>}> mail env, expected warnings */
+    public static function productionMailSettings(): array
+    {
+        $complete = ['MAIL_MAILER' => 'smtp', 'MAIL_HOST' => 'smtp.resend.com', 'MAIL_FROM_ADDRESS' => 'no-reply@feyra.site'];
+
+        return [
+            'complete' => [$complete, []],
+            'no host' => [['MAIL_HOST' => false] + $complete, ['MAIL_HOST is not set']],
+            'no sender' => [['MAIL_FROM_ADDRESS' => false] + $complete, ['MAIL_FROM_ADDRESS is not set to a real sender']],
+            'example sender' => [['MAIL_FROM_ADDRESS' => 'no-reply@example.com'] + $complete, ['MAIL_FROM_ADDRESS is not set to a real sender']],
+            'neither' => [['MAIL_HOST' => false, 'MAIL_FROM_ADDRESS' => false] + $complete, ['MAIL_HOST is not set', 'MAIL_FROM_ADDRESS is not set to a real sender']],
+            // Only an SMTP mailer is checked: log/array never connect anywhere.
+            'log mailer' => [['MAIL_MAILER' => 'log', 'MAIL_HOST' => false, 'MAIL_FROM_ADDRESS' => false], []],
+        ];
+    }
+
+    /**
+     * @param  array<string, string|false>  $mail
+     * @param  list<string>  $warnings
+     */
+    #[DataProvider('productionMailSettings')]
+    public function test_a_production_container_warns_about_incomplete_mail_settings_but_still_starts(array $mail, array $warnings): void
+    {
+        [$exit, $calls, $stderr] = $this->runEntrypoint('/docker-entrypoint.sh php artisan queue:work', $mail + [
+            'APP_ENV' => 'production', 'APP_KEY' => self::KEY, 'APP_URL' => 'https://feyra.site', 'SKIP_MIGRATIONS' => 'true',
+        ]);
+
+        // Never fatal: a mail misconfiguration must not stop payments settling.
+        $this->assertSame(0, $exit);
+        $this->assertSame('artisan queue:work', end($calls)['args']);
+
+        foreach ($warnings as $warning) {
+            $this->assertStringContainsString($warning, $stderr);
+        }
+        $this->assertSame(count($warnings), substr_count($stderr, 'WARNING'), $stderr);
+    }
+
     public function test_a_local_non_production_run_needs_neither(): void
     {
         [$exit, $calls] = $this->runEntrypoint('/docker-entrypoint.sh php artisan about', [

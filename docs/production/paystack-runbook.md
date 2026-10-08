@@ -44,8 +44,10 @@ every secret `sync: false` on purpose, so nothing secret is in the repo.
 | `QUEUE_CONNECTION` | `database` | payout transfers and receipt emails are queued jobs; the worker service drains them |
 | `CACHE_STORE` | `database` | `InitiateSchoolPayout` is a unique job; the lock must be shared by web, worker and cron. The per-IP rate limiters (section 7) count in this store too, so the limit holds across every web instance |
 | `SESSION_DRIVER` / `SESSION_SECURE_COOKIE` | `database` / `true` | admin sessions over HTTPS only |
-| `MAIL_MAILER`, `MAIL_HOST`, `MAIL_PORT`, `MAIL_SCHEME`, `MAIL_USERNAME`, `MAIL_PASSWORD` | your SMTP provider | receipts (worker), password resets and bank-change notices (web) |
-| `MAIL_FROM_ADDRESS` / `MAIL_FROM_NAME` | a real sender on your domain | receipts and password resets come from it; the contact form delivers to it |
+| `MAIL_MAILER`, `MAIL_HOST`, `MAIL_PORT`, `MAIL_SCHEME`, `MAIL_USERNAME`, `MAIL_PASSWORD` | Resend SMTP — see section 1b | receipts (worker), password resets and bank-change notices (web), operator alerts (cron) |
+| `MAIL_FROM_ADDRESS` / `MAIL_FROM_NAME` | a real sender on your domain | every email comes from it; the contact form and alerts fall back to it |
+| `CONTACT_EMAIL` | optional, web only; defaults to `MAIL_FROM_ADDRESS` | the monitored inbox the contact form delivers to |
+| `MAIL_TIMEOUT` | `10` (default) | seconds before an unresponsive SMTP server fails a send instead of holding the request |
 | `REPORTING_TIMEZONE` | `Africa/Lagos` (default) | the clock every reporting surface quotes — see "Timezones" below. Leave it unset unless the school base moves: the default is correct and `paystack:check` fails on an invalid identifier |
 | `PENDING_PAYMENT_EXPIRY_HOURS` | `24` (default) | how long a checkout may stay `pending` before the hourly cron verifies it with Paystack (section 5b); the answer, never the age, decides the outcome |
 | `LOG_CHANNEL` | `stderr` | Render keeps stderr; the container filesystem does not survive a deploy |
@@ -105,6 +107,71 @@ service's `onrender.com` host are aliases, never the address the app names.
    `APP_URL`; ask schools to share or print them only after step 2, or they
    will point at the `onrender.com` host.
 
+## 1b. Email: Resend over SMTP
+
+Production mail goes through **Resend's SMTP relay**. Only the `smtp` mailer is
+wired up (no Resend SDK is installed), so nothing but the variables below is
+needed. Gmail is not suitable: it cannot send as `@feyra.site` and fails DMARC.
+
+**What sends what**
+
+| Service | Mail it sends |
+|---|---|
+| `laravel-app` | school registration links, password reset, bank-account and sign-in-detail change notices, contact form — all inline in the request |
+| `laravel-queue-worker` | payment receipts (queued `PaymentReceiptMail`) |
+| `laravel-payout-reconciliation` | the `jobs:check` operator alert (section 6a) |
+
+**Setup**
+
+1. **Resend → Domains → Add domain:** `feyra.site`. Add every DNS record Resend
+   shows (DKIM `TXT` at `resend._domainkey`, plus the `MX` and SPF `TXT` on
+   the `send` subdomain) at the registrar, exactly as shown, and wait until the
+   domain reads *Verified*. Add a DMARC record if the domain has none — start
+   with `_dmarc.feyra.site TXT "v=DMARC1; p=none; rua=mailto:<a monitored inbox>"`
+   and tighten to `quarantine` once reports are clean.
+2. **Resend → API Keys → Create:** permission *Sending access*, restricted to
+   `feyra.site`. The key is the SMTP password; it is shown once.
+3. **Set on all three services** (Render dashboard; every key is already
+   declared `sync: false` in `render.yaml`), identical values:
+
+   | Variable | Value |
+   |---|---|
+   | `MAIL_MAILER` | `smtp` (set by the blueprint) |
+   | `MAIL_HOST` | `smtp.resend.com` |
+   | `MAIL_PORT` | `587` |
+   | `MAIL_SCHEME` | `smtp` (STARTTLS on 587; use `smtps` with port `465`) |
+   | `MAIL_USERNAME` | `resend` |
+   | `MAIL_PASSWORD` | the API key from step 2 |
+   | `MAIL_FROM_ADDRESS` | a sender on the verified domain, e.g. `no-reply@feyra.site` |
+   | `MAIL_FROM_NAME` | `FEYRA` |
+   | `APP_NAME` | `FEYRA` (alert subjects use it; blank falls back to `Laravel`) |
+
+   Plus `CONTACT_EMAIL` on `laravel-app` and `OPERATIONS_ALERT_EMAIL` on
+   `laravel-payout-reconciliation`: both are monitored inboxes. Unset, each
+   falls back to `MAIL_FROM_ADDRESS` — a no-reply address nobody reads.
+   `MAIL_TIMEOUT` (default `10` seconds) caps how long an unresponsive SMTP
+   server can hold a request; leave it unset.
+4. **Redeploy all three services.** In production the entrypoint prints a
+   `WARNING` to the logs at start if `MAIL_MAILER=smtp` with no `MAIL_HOST`, or
+   if `MAIL_FROM_ADDRESS` is unset or on `example.com`. It does not stop the
+   service: mail is never allowed to block settlement.
+5. **Test send** from the `laravel-app` shell (Render → Shell):
+
+   ```sh
+   php artisan tinker --execute="Mail::raw('FEYRA mail test', fn (\$m) => \$m->to('you@yourdomain')->subject('FEYRA mail test'));"
+   ```
+
+   Repeat from the worker's shell, then confirm the message arrived, is not in
+   spam, and that its headers show `dkim=pass` and `spf=pass` for `feyra.site`.
+   A failure is in that service's logs (`LOG_CHANNEL=stderr`).
+
+**Limits.** Check the Resend plan's daily and monthly quotas against expected
+volume — receipts peak at the start of a term. A receipt that cannot be sent
+retries three times, then lands in `failed_jobs`, which `jobs:check` reports.
+
+**Rotating the key.** Create the new key, update `MAIL_PASSWORD` on all three
+services, redeploy, run the test send, then revoke the old key in Resend.
+
 ## 2. Paystack dashboard setup
 
 Do these in the **Live** dashboard of the business whose live key is configured.
@@ -155,7 +222,8 @@ with the first production transaction (section 4).
 - [ ] the `charge.success` webhook is delivered and acknowledged (`200`, body `{"status":"settled"}` or `already_settled`)
 - [ ] the transaction shows `success` with `paid_at` in the school admin (Transactions)
 - [ ] the receipt page and PDF download open from the emailed signed link
-- [ ] the receipt email arrives from `MAIL_FROM_ADDRESS`
+- [ ] the receipt email arrives from `MAIL_FROM_ADDRESS`, not in spam, with `dkim=pass` for `feyra.site` (section 1b)
+- [ ] no service logs the entrypoint's mail `WARNING` at start
 
 **Payouts**
 - [ ] the school's bank account was verified (Settings → payout account resolves to the bank's account name)

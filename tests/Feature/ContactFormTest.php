@@ -8,8 +8,8 @@ use Tests\TestCase;
 /**
  * POST /contact is unauthenticated and it sends mail, so it needs a rate limit.
  *
- * The recipient is fixed to config('mail.from.address') and cannot be chosen by the
- * sender, so this is not an open relay — the exposure is flooding our own inbox and
+ * The recipient is fixed to config('mail.contact.address') — falling back to
+ * config('mail.from.address') — and cannot be chosen by the sender, so this is not an open relay — the exposure is flooding our own inbox and
  * burning the sending domain's reputation. Registration was already throttled;
  * this route was not, which is what these tests pin.
  *
@@ -32,6 +32,7 @@ class ContactFormTest extends TestCase
             'mail.default' => 'array',
             'mail.from.address' => self::INBOX,
             'mail.from.name' => 'School Fees Portal',
+            'mail.contact.address' => null,
         ]);
     }
 
@@ -123,5 +124,35 @@ class ContactFormTest extends TestCase
         // the form — it just never becomes the envelope recipient.
         $replyTo = array_map(fn ($address) => $address->getAddress(), $message->getReplyTo());
         $this->assertSame(['attacker@evil.test'], $replyTo);
+    }
+
+    /** @return list<string> */
+    private function recipientsOf(\Symfony\Component\Mime\Email $message): array
+    {
+        return array_map(fn ($address) => $address->getAddress(), $message->getTo());
+    }
+
+    public function test_it_delivers_to_the_contact_inbox_when_one_is_configured(): void
+    {
+        config(['mail.contact.address' => 'support@school.test']);
+
+        $this->post('/contact', $this->payload())->assertRedirect(route('contact.show'));
+
+        $message = $this->sentMessages()[0];
+        $this->assertSame(['support@school.test'], $this->recipientsOf($message));
+        // Only the recipient moves: the message is still sent from the sender address.
+        $this->assertSame(self::INBOX, $message->getFrom()[0]->getAddress());
+    }
+
+    public function test_it_falls_back_to_the_from_address_without_a_contact_inbox(): void
+    {
+        foreach ([null, ''] as $unset) {
+            config(['mail.contact.address' => $unset]);
+            app('mailer')->getSymfonyTransport()->flush();
+
+            $this->post('/contact', $this->payload())->assertRedirect(route('contact.show'));
+
+            $this->assertSame([self::INBOX], $this->recipientsOf($this->sentMessages()[0]), var_export($unset, true));
+        }
     }
 }

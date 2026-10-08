@@ -147,6 +147,10 @@ services:
         sync: false
       - key: MAIL_FROM_NAME
         sync: false
+      # Where the contact form delivers. Optional: unset, it falls back to
+      # MAIL_FROM_ADDRESS, which in production is usually a no-reply sender.
+      - key: CONTACT_EMAIL
+        sync: false
 
   # ---------------------------------------------------------------------------
   # Payouts and receipts are queued jobs, so without a worker a settled payment

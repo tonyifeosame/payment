@@ -45,7 +45,11 @@ return [
             'port' => env('MAIL_PORT', 2525),
             'username' => env('MAIL_USERNAME'),
             'password' => env('MAIL_PASSWORD'),
-            'timeout' => null,
+            // Seconds. Five of the seven mails are sent inline from a web request,
+            // and the web service runs a single Octane worker, so an SMTP server
+            // that stops answering would otherwise hold every request (the Paystack
+            // webhook included) for PHP's default_socket_timeout of 60s per send.
+            'timeout' => (float) env('MAIL_TIMEOUT', 10),
             'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
         ],
 
@@ -116,6 +120,21 @@ return [
         // an empty string, and Symfony rejects any message without a From header.
         'address' => env('MAIL_FROM_ADDRESS') ?: 'hello@example.com',
         'name' => env('MAIL_FROM_NAME') ?: 'Example',
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Contact Inbox
+    |--------------------------------------------------------------------------
+    |
+    | Where the public contact form delivers. The sender address is usually a
+    | no-reply mailbox nobody reads, so production should point this at a
+    | monitored inbox. Unset, it falls back to the from address as before.
+    |
+    */
+
+    'contact' => [
+        'address' => env('CONTACT_EMAIL') ?: null,
     ],
 
 ];

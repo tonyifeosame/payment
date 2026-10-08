@@ -99,7 +99,7 @@ Route::post('/contact', function (\Illuminate\Http\Request $request) {
         'message' => 'required|string|max:5000',
     ]);
 
-    $to = config('mail.from.address');
+    $to = config('mail.contact.address') ?: config('mail.from.address');
     try {
         Mail::raw(
             "From: {$data['name']} <{$data['email']}>\n\n".$data['message'],
@@ -117,8 +117,9 @@ Route::post('/contact', function (\Illuminate\Http\Request $request) {
     return redirect()->route('contact.show')->with('success', 'Your message has been sent. We will get back to you shortly.');
 })
     // Unauthenticated and it sends mail, so it is rate limited like registration.
-    // The recipient is fixed to config('mail.from.address') and cannot be chosen by
-    // the sender, so the risk is flooding our own inbox and burning our sending
+    // The recipient is fixed to config('mail.contact.address'), falling back to
+    // config('mail.from.address'), and cannot be chosen by the sender, so the
+    // risk is flooding our own inbox and burning our sending
     // reputation rather than relaying to third parties. Five an hour per IP is far
     // above real use and well below what makes a useful flood.
     ->middleware('throttle:5,60,contact')

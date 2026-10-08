@@ -46,6 +46,20 @@ if [ "${APP_ENV:-}" = "production" ]; then
       exit 1
       ;;
   esac
+
+  # Mail is checked but never fatal: a mail misconfiguration must not stop
+  # payments from settling. Without these the app boots, every send fails and
+  # is only report()ed, so say so loudly at start instead.
+  if [ "${MAIL_MAILER:-}" = "smtp" ]; then
+    if [ -z "${MAIL_HOST:-}" ]; then
+      echo "docker-entrypoint: WARNING: MAIL_MAILER=smtp but MAIL_HOST is not set; no email will be delivered." >&2
+    fi
+    case "${MAIL_FROM_ADDRESS:-}" in
+      ''|*@example.com)
+        echo "docker-entrypoint: WARNING: MAIL_FROM_ADDRESS is not set to a real sender on your domain; mail will be rejected or marked as spam." >&2
+        ;;
+    esac
+  fi
 fi
 
 php artisan config:clear
