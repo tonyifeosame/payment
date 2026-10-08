@@ -197,7 +197,7 @@ class ClassLevelFeeAssignmentTest extends TestCase
         // Fee | Class level | Term | Session | Amount
         $this->actingAsSchoolAdmin($this->alpha)->get('/admin/alpha/subcategories')->assertOk()
             ->assertSee('Applies to')
-            ->assertSeeInOrder(['Secondary - First Term', 'Main class fee', 'School Fees', 'JSS1', '₦80,000.00', '2026/2027', 'First Term'])
+            ->assertSeeInOrder(['Secondary - First Term', 'School fees · main class fee', 'School Fees', 'JSS1', '₦80,000.00', '2026/2027', 'First Term'])
             ->assertSeeInOrder(['Shirt', 'Uniform', 'All classes', '₦3,000.00']);
 
         // Unticking every class makes it a fee for all classes again.

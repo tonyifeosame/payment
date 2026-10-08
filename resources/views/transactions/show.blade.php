@@ -1,5 +1,9 @@
 @extends('layouts.admin')
 
+@section('subnav')
+    @include('admin._subnav', ['section' => 'payments'])
+@endsection
+
 @php
     $t = $transaction;
     $isPaid = $t->status === \App\Models\Transaction::STATUS_SUCCESS;
@@ -147,7 +151,7 @@
                     <dd class="text-right font-medium">{{ $t->student_class ?? '—' }}</dd>
                 </div>
                 <div class="flex items-baseline justify-between gap-4 py-2.5">
-                    <dt class="text-brand-slate">Session / term</dt>
+                    <dt class="text-brand-slate">Academic year / term</dt>
                     <dd class="text-right font-medium">{{ $t->term_name ? $t->term_name.', '.$t->session_name : ($t->session_name ?? '—') }}</dd>
                 </div>
             </dl>

@@ -68,7 +68,7 @@ class PayoutPageTest extends TestCase
     {
         $page = $this->list()->assertOk();
 
-        $page->assertSee('Payouts')->assertSee('Money movement')->assertSeeText('7 payouts');
+        $page->assertSee('Payouts')->assertSee('Payments')->assertSee('Payouts to your bank')->assertSeeText('7 payouts');
         foreach (['Pending', 'Initiating', 'Processing', 'Paid', 'Failed', 'Needs review', 'Reversed'] as $label) {
             $page->assertSee($label);
         }

@@ -1,5 +1,9 @@
 @extends('layouts.admin')
 
+@section('subnav')
+    @include('admin._subnav', ['section' => 'students'])
+@endsection
+
 @section('title', 'Edit student')
 @section('eyebrow', 'School · Students')
 @section('heading', 'Edit student')

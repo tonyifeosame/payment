@@ -44,6 +44,9 @@
 
         <main id="main" class="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-10 lg:py-10">
             <div class="mx-auto max-w-6xl">
+                {{-- The section's own pages (admin._subnav), above the page heading. --}}
+                @yield('subnav')
+
                 @hasSection('heading')
                     <div class="mb-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between lg:mb-8">
                         <div class="min-w-0">

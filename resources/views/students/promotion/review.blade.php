@@ -1,5 +1,9 @@
 @extends('layouts.admin')
 
+@section('subnav')
+    @include('admin._subnav', ['section' => 'students'])
+@endsection
+
 @section('title', 'Confirm promotion')
 @section('eyebrow', 'School · Students')
 @section('heading', 'Confirm promotion')
@@ -15,7 +19,7 @@
     <section class="card p-5 sm:p-6 lg:col-span-2" aria-labelledby="summary-heading">
         <h2 id="summary-heading" class="font-display text-lg font-bold tracking-tight">You are about to promote</h2>
         <p class="mt-2 font-display text-3xl font-extrabold tracking-tight">{{ $rows->count() }} {{ Str::plural('student', $rows->count()) }}</p>
-        <p class="mt-1 text-sm text-brand-slate">{{ $current?->name ?? 'Current session' }} → <span class="font-semibold text-brand-obsidian">{{ $to->name }}</span></p>
+        <p class="mt-1 text-sm text-brand-slate">{{ $currentYear === $to->name ? 'Into' : $currentYear.' →' }} <span class="font-semibold text-brand-obsidian">{{ $to->name }}</span></p>
 
         <div class="mt-5 overflow-hidden rounded-2xl border border-brand-ash/60">
             <table class="w-full text-sm">
@@ -50,13 +54,13 @@
               data-confirm-title="Promote {{ $rows->count() }} {{ Str::plural('student', $rows->count()) }} into {{ $to->name }}?"
               data-confirm-label="Confirm promotion">
             @csrf
-            <input type="hidden" name="to_session_id" value="{{ $to->id }}">
+            <input type="hidden" name="to_year" value="{{ $to->name }}">
             @foreach($rows as $row)
                 <input type="hidden" name="students[]" value="{{ $row['student']->id }}">
                 <input type="hidden" name="from[{{ $row['student']->id }}]" value="{{ $row['from']->id }}">
             @endforeach
             <div class="flex flex-col gap-3 sm:flex-row sm:justify-end">
-                <a href="{{ route('school.students.promotion.index', $s + ['to_session_id' => $to->id]) }}" class="btn-outline">Back to selection</a>
+                <a href="{{ route('school.students.promotion.index', $s + ['to_year' => $to->name]) }}" class="btn-outline">Back to selection</a>
                 <button type="submit" class="btn-obsidian">Confirm promotion</button>
             </div>
         </form>

@@ -1,5 +1,9 @@
 @extends('layouts.admin')
 
+@section('subnav')
+    @include('admin._subnav', ['section' => 'payments'])
+@endsection
+
 @section('title', 'Transactions')
 @section('eyebrow', 'Payments')
 @section('heading', 'Transactions')
@@ -34,7 +38,7 @@
         $activeFilters['category_id'] = ['Category', $category->name];
     }
     if ($session = $pick($sessions, $filters['session_id'])) {
-        $activeFilters['session_id'] = ['Session', $session->name];
+        $activeFilters['session_id'] = ['Academic year', $session->name];
     }
     if ($term = $pick($terms, $filters['term_id'])) {
         $activeFilters['term_id'] = ['Term', $term->name.', '.$term->session->name];
@@ -78,9 +82,9 @@
             </select>
         </div>
         <div class="lg:col-span-3">
-            <label for="session_id" class="label">Session</label>
+            <label for="session_id" class="label">Academic year</label>
             <select id="session_id" name="session_id" class="input">
-                <option value="">All sessions</option>
+                <option value="">All years</option>
                 @foreach($sessions as $s)
                     <option value="{{ $s->id }}" @selected((string) $filters['session_id'] === (string) $s->id)>{{ $s->name }}</option>
                 @endforeach

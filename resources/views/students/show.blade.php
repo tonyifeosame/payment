@@ -1,5 +1,9 @@
 @extends('layouts.admin')
 
+@section('subnav')
+    @include('admin._subnav', ['section' => 'students'])
+@endsection
+
 @section('title', $student->full_name)
 @section('eyebrow', 'School · Student')
 @section('heading', $student->full_name)
@@ -34,7 +38,7 @@
                     </dd>
                 </div>
                 <div class="flex items-baseline justify-between gap-4 py-2.5">
-                    <dt class="text-brand-slate">Session</dt>
+                    <dt class="text-brand-slate">Academic year</dt>
                     <dd class="text-right font-medium">{{ $student->session?->name ?? '—' }}</dd>
                 </div>
                 <div class="flex items-baseline justify-between gap-4 py-2.5">

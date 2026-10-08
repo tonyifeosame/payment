@@ -4,15 +4,22 @@ namespace Tests\Feature;
 
 use App\Models\AcademicSession;
 use App\Models\AcademicTerm;
+use App\Models\Category;
 use App\Models\School;
+use App\Models\SchoolAuditEvent;
+use App\Models\Subcategory;
+use App\Services\AcademicPeriodService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\InteractsWithSchools;
 use Tests\TestCase;
 
 /**
- * Phase 1 — academic sessions and terms: creation, validation, the current-term
- * pointer, and that a fee can only be tied to the school's own term.
+ * Academic years and terms without a Sessions page: a fee names its academic year
+ * and term and the session/term rows behind them are found or created on first
+ * use; the current term is chosen on the Fees page. The data model (one session
+ * per year, three terms, current-term pointer) is unchanged.
  */
 class AcademicSessionTest extends TestCase
 {
@@ -30,48 +37,63 @@ class AcademicSessionTest extends TestCase
         $this->beta = $this->makeSchool('Beta School', 'beta');
     }
 
-    public function test_creating_a_session_creates_its_three_terms_and_sets_the_current_term(): void
+    private function schoolFee(array $overrides = []): array
+    {
+        $level = $this->alpha->classLevels()->firstOrCreate(['name' => 'JSS1'], ['position' => 1]);
+
+        return array_merge([
+            'is_tuition' => '1', 'price' => 50000, 'academic_year' => '2026/2027', 'term' => 1,
+            'class_level_ids' => [$level->id],
+        ], $overrides);
+    }
+
+    public function test_creating_a_fee_creates_its_academic_year_with_three_terms_and_sets_the_current_term(): void
     {
         $this->actingAsSchoolAdmin($this->alpha)
-            ->post('/admin/alpha/sessions', ['name' => '2026/2027'])
-            ->assertRedirect('/admin/alpha/sessions');
+            ->post('/admin/alpha/subcategories', $this->schoolFee(['term' => 2]))
+            ->assertRedirect('/admin/alpha/subcategories')
+            ->assertSessionHasNoErrors();
 
-        $session = AcademicSession::where('school_id', $this->alpha->id)->where('name', '2026/2027')->firstOrFail();
-
-        $this->assertSame(
-            ['First Term', 'Second Term', 'Third Term'],
-            $session->terms()->pluck('name')->all()
-        );
+        $session = AcademicSession::where('school_id', $this->alpha->id)->where('name', '2026/2027')->sole();
+        $this->assertSame(['First Term', 'Second Term', 'Third Term'], $session->terms()->pluck('name')->all());
         $this->assertSame([1, 2, 3], $session->terms()->pluck('number')->all());
         $this->assertTrue($session->terms->every(fn ($t) => (int) $t->school_id === (int) $this->alpha->id));
 
-        // The first session's First Term becomes current automatically.
-        $this->assertSame($session->terms()->where('number', 1)->value('id'), $this->alpha->fresh()->current_academic_term_id);
+        // The fee is tied to the term the admin chose…
+        $second = $session->terms()->where('number', 2)->value('id');
+        $this->assertSame($second, Subcategory::sole()->academic_term_id);
+        // …and, as the school had none, that term became current.
+        $this->assertSame($second, $this->alpha->fresh()->current_academic_term_id);
     }
 
-    public function test_a_second_session_does_not_steal_the_current_term(): void
+    public function test_later_fees_reuse_the_year_and_never_move_the_current_term(): void
     {
-        $first = $this->makeSessionWithTerms($this->alpha, '2025/2026');
+        $this->actingAsSchoolAdmin($this->alpha)->post('/admin/alpha/subcategories', $this->schoolFee());
         $current = $this->alpha->fresh()->current_academic_term_id;
 
-        $this->actingAsSchoolAdmin($this->alpha)->post('/admin/alpha/sessions', ['name' => '2026/2027']);
+        $this->actingAsSchoolAdmin($this->alpha)->post('/admin/alpha/subcategories', $this->schoolFee(['term' => 3]))->assertSessionHasNoErrors();
+        $this->actingAsSchoolAdmin($this->alpha)->post('/admin/alpha/subcategories', $this->schoolFee(['academic_year' => '2027/2028']))
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('success', fn ($m) => str_contains($m, 'currently opens on First Term, 2026/2027'));
 
+        $this->assertSame(['2026/2027', '2027/2028'], AcademicSession::where('school_id', $this->alpha->id)->orderBy('name')->pluck('name')->all());
+        $this->assertSame(6, AcademicTerm::where('school_id', $this->alpha->id)->count());
         $this->assertSame($current, $this->alpha->fresh()->current_academic_term_id);
-        $this->assertSame($first->terms()->where('number', 1)->value('id'), $current);
     }
 
-    #[DataProvider('badSessionNames')]
-    public function test_session_name_must_be_two_consecutive_years(string $name): void
+    #[DataProvider('badAcademicYears')]
+    public function test_academic_year_must_be_two_consecutive_years(string $year): void
     {
         $this->actingAsSchoolAdmin($this->alpha)
-            ->from('/admin/alpha/sessions')
-            ->post('/admin/alpha/sessions', ['name' => $name])
-            ->assertSessionHasErrors('name');
+            ->from('/admin/alpha/subcategories/create')
+            ->post('/admin/alpha/subcategories', $this->schoolFee(['academic_year' => $year]))
+            ->assertSessionHasErrors('academic_year');
 
         $this->assertDatabaseCount('academic_sessions', 0);
+        $this->assertDatabaseCount('subcategories', 0);
     }
 
-    public static function badSessionNames(): array
+    public static function badAcademicYears(): array
     {
         return [
             'not years' => ['First Term'],
@@ -83,40 +105,91 @@ class AcademicSessionTest extends TestCase
         ];
     }
 
-    public function test_session_name_is_unique_per_school_but_not_globally(): void
+    public function test_term_must_be_one_of_the_three(): void
     {
-        $this->makeSessionWithTerms($this->beta, '2026/2027');
+        foreach ([0, 4, 'Fourth'] as $term) {
+            $this->actingAsSchoolAdmin($this->alpha)->from('/admin/alpha/subcategories/create')
+                ->post('/admin/alpha/subcategories', $this->schoolFee(['term' => $term]))
+                ->assertSessionHasErrors('term');
+        }
+        $this->assertDatabaseCount('academic_sessions', 0);
+    }
 
-        // Alpha may also have 2026/2027…
-        $this->actingAsSchoolAdmin($this->alpha)
-            ->post('/admin/alpha/sessions', ['name' => '2026/2027'])
-            ->assertSessionHasNoErrors();
+    public function test_a_year_is_unique_per_school_but_not_globally(): void
+    {
+        $periods = app(AcademicPeriodService::class);
+        $beta = $periods->termFor($this->beta, '2026/2027', 1);
+        $alpha = $periods->termFor($this->alpha, '2026/2027', 1);
 
-        // …but not twice.
-        $this->actingAsSchoolAdmin($this->alpha)
-            ->from('/admin/alpha/sessions')
-            ->post('/admin/alpha/sessions', ['name' => '2026/2027'])
-            ->assertSessionHasErrors('name');
-
+        $this->assertNotSame($beta->academic_session_id, $alpha->academic_session_id);
+        $this->assertSame($alpha->id, $periods->termFor($this->alpha, ' 2026/2027 ', 1)->id);
         $this->assertSame(1, AcademicSession::where('school_id', $this->alpha->id)->count());
     }
 
-    public function test_end_date_cannot_precede_start_date(): void
+    public function test_a_failed_fee_save_leaves_no_new_year_behind(): void
     {
-        $this->actingAsSchoolAdmin($this->alpha)
-            ->from('/admin/alpha/sessions')
-            ->post('/admin/alpha/sessions', ['name' => '2026/2027', 'starts_on' => '2026-09-14', 'ends_on' => '2026-09-01'])
-            ->assertSessionHasErrors('ends_on');
+        // A main fee needs a class: the save fails after the year was resolved, and
+        // the year is rolled back with it.
+        $this->actingAsSchoolAdmin($this->alpha)->from('/admin/alpha/subcategories/create')
+            ->post('/admin/alpha/subcategories', $this->schoolFee(['class_level_ids' => []]))
+            ->assertSessionHasErrors('class_level_ids');
+
+        $this->assertDatabaseCount('academic_sessions', 0);
+        $this->assertNull($this->alpha->fresh()->current_academic_term_id);
     }
 
-    public function test_admin_can_set_the_current_term(): void
+    public function test_the_sessions_page_is_gone_and_redirects_to_fees(): void
+    {
+        $this->makeSessionWithTerms($this->alpha, '2024/2025');
+
+        $this->actingAsSchoolAdmin($this->alpha)->get('/admin/alpha/sessions')->assertRedirect('/admin/alpha/subcategories');
+        $this->actingAsSchoolAdmin($this->alpha)->post('/admin/alpha/sessions', ['name' => '2030/2031'])->assertStatus(405);
+        $this->assertFalse(AcademicSession::where('name', '2030/2031')->exists());
+
+        $this->flushSession();
+        $this->get('/admin/alpha/sessions')->assertRedirect('/admin/login');
+    }
+
+    public function test_admin_sets_the_current_term_from_the_fees_page(): void
+    {
+        $this->makeSessionWithTerms($this->alpha, '2026/2027');
+
+        $this->actingAsSchoolAdmin($this->alpha)->get('/admin/alpha/subcategories')->assertOk()
+            ->assertSee('Current term')->assertSee('First Term, 2026/2027')
+            ->assertSee('action="http://localhost/admin/alpha/current-term"', false);
+
+        $this->actingAsSchoolAdmin($this->alpha)
+            ->put('/admin/alpha/current-term', ['current_academic_year' => '2026/2027', 'current_term' => 2])
+            ->assertRedirect('/admin/alpha/subcategories')
+            ->assertSessionHas('success', 'Second Term, 2026/2027 is now the current term. The payment page opens on it.');
+
+        $second = AcademicTerm::where('school_id', $this->alpha->id)->where('number', 2)->value('id');
+        $this->assertSame($second, $this->alpha->fresh()->current_academic_term_id);
+        $event = SchoolAuditEvent::where('action', SchoolAuditEvent::ACTION_TERM_CHANGED)->sole();
+        $this->assertSame($second, $event->changes['current_academic_term_id']['to']);
+
+        // A year that does not exist yet is created on the way.
+        $this->actingAsSchoolAdmin($this->alpha)
+            ->put('/admin/alpha/current-term', ['current_academic_year' => '2027/2028', 'current_term' => 1])
+            ->assertSessionHasNoErrors();
+        $this->assertSame('First Term, 2027/2028', $this->alpha->fresh()->currentTerm->label);
+
+        // Invalid input changes nothing.
+        $before = $this->alpha->fresh()->current_academic_term_id;
+        $this->actingAsSchoolAdmin($this->alpha)->from('/admin/alpha/subcategories')
+            ->put('/admin/alpha/current-term', ['current_academic_year' => '2027/2029', 'current_term' => 9])
+            ->assertSessionHasErrors(['current_academic_year', 'current_term']);
+        $this->assertSame($before, $this->alpha->fresh()->current_academic_term_id);
+    }
+
+    public function test_admin_can_set_the_current_term_by_id(): void
     {
         $session = $this->makeSessionWithTerms($this->alpha);
         $second = $session->terms()->where('number', 2)->firstOrFail();
 
         $this->actingAsSchoolAdmin($this->alpha)
             ->post("/admin/alpha/terms/{$second->id}/current")
-            ->assertRedirect('/admin/alpha/sessions');
+            ->assertRedirect('/admin/alpha/subcategories');
 
         $this->assertSame($second->id, $this->alpha->fresh()->current_academic_term_id);
     }
@@ -134,53 +207,57 @@ class AcademicSessionTest extends TestCase
         $this->actingAsSchoolAdmin($this->alpha)
             ->post("/admin/beta/terms/{$betaTerm->id}/current")
             ->assertNotFound();
+        $this->actingAsSchoolAdmin($this->alpha)
+            ->put('/admin/beta/current-term', ['current_academic_year' => '2026/2027', 'current_term' => 2])
+            ->assertNotFound();
 
         $this->assertSame($before, $this->alpha->fresh()->current_academic_term_id);
         $this->assertNotSame($betaTerm->id, $this->alpha->fresh()->current_academic_term_id);
-    }
-
-    public function test_sessions_page_lists_only_own_sessions(): void
-    {
-        $this->makeSessionWithTerms($this->alpha, '2024/2025');
-        $this->makeSessionWithTerms($this->beta, '2031/2032');
-
-        $this->actingAsSchoolAdmin($this->alpha)
-            ->get('/admin/alpha/sessions')
-            ->assertOk()
-            ->assertSee('2024/2025')
-            ->assertDontSee('2031/2032');
-
-        $this->flushSession();
-        $this->get('/admin/alpha/sessions')->assertRedirect('/admin/login');
+        $this->assertNotSame($betaTerm->id, $this->beta->fresh()->current_academic_term_id);
     }
 
     public function test_a_fee_can_be_tied_to_own_term_but_not_to_another_schools_term(): void
     {
         $alphaTerm = $this->makeSessionWithTerms($this->alpha)->terms()->first();
         $betaTerm = $this->makeSessionWithTerms($this->beta)->terms()->first();
-        $category = \App\Models\Category::create(['school_id' => $this->alpha->id, 'name' => 'School Fees']);
+        $category = Category::create(['school_id' => $this->alpha->id, 'name' => 'Levies']);
 
+        // Legacy forms posted a term id; it is still honoured, and still owner-checked.
         $this->actingAsSchoolAdmin($this->alpha)
             ->post('/admin/alpha/subcategories', [
-                'category_id' => $category->id, 'name' => 'Tuition', 'price' => 50000,
+                'is_tuition' => '0', 'category_id' => $category->id, 'name' => 'Development levy', 'price' => 50000,
                 'academic_term_id' => $alphaTerm->id,
             ])
             ->assertRedirect('/admin/alpha/subcategories');
-        $this->assertDatabaseHas('subcategories', ['name' => 'Tuition', 'academic_term_id' => $alphaTerm->id, 'school_id' => $this->alpha->id]);
+        $this->assertDatabaseHas('subcategories', ['name' => 'Development levy', 'academic_term_id' => $alphaTerm->id, 'school_id' => $this->alpha->id]);
 
         $this->actingAsSchoolAdmin($this->alpha)
             ->post('/admin/alpha/subcategories', [
-                'category_id' => $category->id, 'name' => 'Smuggled', 'price' => 1,
+                'is_tuition' => '0', 'category_id' => $category->id, 'name' => 'Smuggled', 'price' => 1,
                 'academic_term_id' => $betaTerm->id,
             ])
             ->assertNotFound();
         $this->assertDatabaseMissing('subcategories', ['name' => 'Smuggled']);
 
-        // Term is optional: a general fee has none.
+        // An additional fee may be payable in any term.
         $this->actingAsSchoolAdmin($this->alpha)
-            ->post('/admin/alpha/subcategories', ['category_id' => $category->id, 'name' => 'Uniform', 'price' => 3000])
+            ->post('/admin/alpha/subcategories', ['is_tuition' => '0', 'category_id' => $category->id, 'name' => 'Uniform', 'price' => 3000, 'academic_year' => '2026/2027', 'term' => ''])
             ->assertSessionHasNoErrors();
         $this->assertDatabaseHas('subcategories', ['name' => 'Uniform', 'academic_term_id' => null]);
+    }
+
+    public function test_the_current_year_follows_the_current_term_or_else_the_calendar(): void
+    {
+        $periods = app(AcademicPeriodService::class);
+
+        // No term yet: a Nigerian school year starts in September.
+        $this->assertSame('2026/2027', $periods->currentYear($this->alpha, Carbon::create(2026, 9, 1)));
+        $this->assertSame('2025/2026', $periods->currentYear($this->alpha, Carbon::create(2026, 8, 31)));
+        $this->assertSame('2027/2028', AcademicPeriodService::nextYear('2026/2027'));
+
+        $this->makeSessionWithTerms($this->alpha, '2030/2031');
+        $this->assertSame('2030/2031', $periods->currentYear($this->alpha->fresh()));
+        $this->assertSame(['2031/2032', '2030/2031', '2029/2030'], $periods->yearOptions($this->alpha->fresh()));
     }
 
     public function test_term_labels_are_not_hard_coded_in_the_controller(): void

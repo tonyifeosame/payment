@@ -4,7 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\AcademicSession;
 use App\Models\School;
-use App\Models\Student;
+use App\Services\AcademicPeriodService;
 use App\Services\StudentPromotionService;
 use DomainException;
 use Illuminate\Http\Request;
@@ -13,30 +13,35 @@ use Illuminate\Validation\Rule;
 /**
  * Bulk promotion, in three deliberate steps:
  *
- *   1. index  — pick the session being promoted INTO, see the per-class preview and
- *               untick anyone who is repeating, leaving or otherwise not moving.
+ *   1. index  — see the academic year being promoted into and the per-class
+ *               preview, and untick anyone who is repeating, leaving or otherwise
+ *               not moving.
  *   2. review — a server-rendered confirmation summary of exactly what will change.
  *   3. store  — apply, in one transaction, after re-validating everything.
  *
- * The browser only ever sends student ids and the class each was reviewed in;
- * the service re-resolves both against this school's live roster and rejects
- * anything else. Where each student goes is decided by the school's ladder alone.
+ * The admin names an academic year, never a session: the years on offer come from
+ * StudentPromotionService::allowedTargetYears and the year is created on apply.
+ * The browser only ever sends that year, student ids and the class each was
+ * reviewed in; the service re-resolves all of it against this school's live
+ * roster and rejects anything else. Where each student goes is decided by the
+ * school's class ladder alone.
  */
 class StudentPromotionController extends Controller
 {
-    public function index(Request $request, School $school, StudentPromotionService $promotions)
+    public function index(Request $request, School $school, StudentPromotionService $promotions, AcademicPeriodService $periods)
     {
-        $sessions = $school->academicSessions()->get();
-        $current = $school->currentTerm?->session;
-        $to = $this->targetSession($request, $school, $sessions);
+        $years = $promotions->allowedTargetYears($school);
+        $requested = (string) $request->query('to_year', '');
+        $to = $promotions->targetSession($school, in_array($requested, $years, true) ? $requested : $promotions->defaultTargetYear($school));
 
-        $preview = $to ? $promotions->preview($school, $to) : null;
+        $preview = $promotions->preview($school, $to);
         $recent = $school->studentPromotions()->with(['fromSession', 'toSession'])->orderByDesc('id')->limit(5)->get();
 
         return view('students.promotion.index', [
             'school' => $school,
-            'sessions' => $sessions,
-            'current' => $current,
+            'years' => $years,
+            'currentYear' => $periods->currentYear($school),
+            'currentTerm' => $school->currentTerm,
             'to' => $to,
             'preview' => $preview,
             'recent' => $recent,
@@ -45,9 +50,9 @@ class StudentPromotionController extends Controller
     }
 
     /** Step 2: summarise the selection. Nothing is written here. */
-    public function review(Request $request, School $school, StudentPromotionService $promotions)
+    public function review(Request $request, School $school, StudentPromotionService $promotions, AcademicPeriodService $periods)
     {
-        [$to, $expected] = $this->selection($request, $school);
+        [$to, $expected] = $this->selection($request, $school, $promotions);
 
         try {
             $rows = $promotions->resolveSelection($school, $to, $expected);
@@ -58,7 +63,7 @@ class StudentPromotionController extends Controller
         return view('students.promotion.review', [
             'school' => $school,
             'to' => $to,
-            'current' => $school->currentTerm?->session,
+            'currentYear' => $periods->currentYear($school),
             'rows' => $rows,
             'groups' => $this->groups($rows),
             'excluded' => $promotions->excludedCount($school, $to, $rows->count()),
@@ -68,7 +73,7 @@ class StudentPromotionController extends Controller
     /** Step 3: apply. Same validation as review, then one transaction. */
     public function store(Request $request, School $school, StudentPromotionService $promotions)
     {
-        [$to, $expected] = $this->selection($request, $school);
+        [$to, $expected] = $this->selection($request, $school, $promotions);
 
         try {
             $rows = $promotions->resolveSelection($school, $to, $expected);
@@ -92,10 +97,10 @@ class StudentPromotionController extends Controller
     /**
      * @return array{0: AcademicSession, 1: array<int,int>}
      */
-    private function selection(Request $request, School $school): array
+    private function selection(Request $request, School $school, StudentPromotionService $promotions): array
     {
         $data = $request->validate([
-            'to_session_id' => ['required', 'integer', Rule::exists('academic_sessions', 'id')->where(fn ($q) => $q->where('school_id', $school->id))],
+            'to_year' => ['required', 'string', Rule::in($promotions->allowedTargetYears($school))],
             'students' => ['required', 'array', 'min:1'],
             'students.*' => ['required', 'integer'],
             // Per-student "class as reviewed": student id => class level id.
@@ -103,10 +108,10 @@ class StudentPromotionController extends Controller
             'from.*' => ['required', 'integer'],
         ], [
             'students.required' => 'Select at least one student to promote.',
-            'to_session_id.exists' => 'Choose one of your own academic sessions.',
+            'to_year.in' => 'Students can only be promoted into the current academic year or, in the last term, the next one. Review the promotion again.',
         ]);
 
-        $to = AcademicSession::where('school_id', $school->id)->findOrFail((int) $data['to_session_id']);
+        $to = $promotions->targetSession($school, $data['to_year']);
 
         $expected = [];
         foreach ($data['students'] as $id) {
@@ -115,23 +120,6 @@ class StudentPromotionController extends Controller
         }
 
         return [$to, $expected];
-    }
-
-    private function targetSession(Request $request, School $school, $sessions): ?AcademicSession
-    {
-        $requested = $request->input('to_session_id');
-        if (ctype_digit((string) $requested)) {
-            return $sessions->firstWhere('id', (int) $requested);
-        }
-
-        // Default: the session after the current one (sessions are named YYYY/YYYY and
-        // listed newest first), if the school has created it.
-        $currentName = $school->currentTerm?->session?->name;
-        if ($currentName) {
-            return $sessions->filter(fn ($s) => $s->name > $currentName)->sortBy('name')->first();
-        }
-
-        return null;
     }
 
     private function groups($rows)
@@ -145,7 +133,7 @@ class StudentPromotionController extends Controller
 
     private function backToIndex(School $school, AcademicSession $to, string $error)
     {
-        return redirect()->route('school.students.promotion.index', ['school' => $school->slug, 'to_session_id' => $to->id])
+        return redirect()->route('school.students.promotion.index', ['school' => $school->slug, 'to_year' => $to->name])
             ->with('error', $error);
     }
 }

@@ -1,5 +1,9 @@
 @extends('layouts.admin')
 
+@section('subnav')
+    @include('admin._subnav', ['section' => 'settings'])
+@endsection
+
 @section('title', 'Settings')
 @section('eyebrow', 'School settings')
 @section('heading', 'Settings')

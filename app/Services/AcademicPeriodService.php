@@ -6,11 +6,20 @@ use App\Models\AcademicSession;
 use App\Models\AcademicTerm;
 use App\Models\School;
 use App\Models\SchoolAuditEvent;
+use App\Support\BusinessTime;
 use App\Support\RecordsSchoolAudit;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use InvalidArgumentException;
 
 /**
  * Creates and selects the periods a school collects fees for.
+ *
+ * Admins never manage sessions directly: they name an academic year and a term
+ * where it matters (creating a fee, promoting students) and termFor() finds or
+ * creates the session-and-terms rows behind it. The data model — one session per
+ * year, three terms each — is unchanged, so payments, reporting and the paid-once
+ * rule keep reading the same ids.
  */
 class AcademicPeriodService
 {
@@ -18,12 +27,13 @@ class AcademicPeriodService
 
     /**
      * Create a session and its three terms in one transaction. The first session a
-     * school creates also becomes its current term (First Term), so the dashboard
+     * school creates also provides its current term (term $currentTermNumber,
+     * First Term unless the caller asked for another), so the dashboard
      * and payment page have a context without a second click.
      */
-    public function createSession(School $school, string $name, ?string $startsOn = null, ?string $endsOn = null): AcademicSession
+    public function createSession(School $school, string $name, ?string $startsOn = null, ?string $endsOn = null, int $currentTermNumber = 1): AcademicSession
     {
-        return DB::transaction(function () use ($school, $name, $startsOn, $endsOn) {
+        return DB::transaction(function () use ($school, $name, $startsOn, $endsOn, $currentTermNumber) {
             $session = $school->academicSessions()->create([
                 'name' => trim($name),
                 'starts_on' => $startsOn ?: null,
@@ -40,12 +50,90 @@ class AcademicPeriodService
 
             if ($school->current_academic_term_id === null) {
                 $school->forceFill([
-                    'current_academic_term_id' => $session->terms()->where('number', 1)->value('id'),
+                    'current_academic_term_id' => $session->terms()->where('number', $currentTermNumber)->value('id'),
                 ])->save();
             }
 
             return $session->load('terms');
         });
+    }
+
+    /**
+     * The school's term for an academic year ("2026/2027") and term number (1–3),
+     * creating the year and its three terms on first use. A school that has no
+     * current term yet gets this one, so the payment page has a default.
+     *
+     * Runs in a transaction with the school row locked, so two concurrent requests
+     * for a new year cannot both create it.
+     */
+    public function termFor(School $school, string $year, int $number): AcademicTerm
+    {
+        $year = trim($year);
+        if (! AcademicSession::isValidName($year)) {
+            throw new InvalidArgumentException('An academic year is two consecutive years, e.g. 2026/2027.');
+        }
+        if (! isset(AcademicTerm::NAMES[$number])) {
+            throw new InvalidArgumentException('Unknown term.');
+        }
+
+        return DB::transaction(function () use ($school, $year, $number) {
+            School::whereKey($school->id)->lockForUpdate()->first();
+
+            $session = AcademicSession::where('school_id', $school->id)->where('name', $year)->first();
+            if (! $session) {
+                $session = $this->createSession($school, $year, currentTermNumber: $number);
+                $school->refresh();
+            }
+
+            return $session->terms()->where('number', $number)->with('session')->firstOrFail();
+        });
+    }
+
+    /** The academic year after "2026/2027": "2027/2028". */
+    public static function nextYear(string $year): string
+    {
+        if (! AcademicSession::isValidName($year)) {
+            throw new InvalidArgumentException('Not an academic year: '.$year);
+        }
+        $start = (int) substr($year, 0, 4) + 1;
+
+        return $start.'/'.($start + 1);
+    }
+
+    /**
+     * The academic year the school is in: its current term's year, otherwise the
+     * year the calendar suggests (a Nigerian school year starts in September).
+     */
+    public function currentYear(School $school, ?Carbon $today = null): string
+    {
+        $name = $school->currentTerm?->session?->name;
+        if ($name) {
+            return $name;
+        }
+
+        $today ??= Carbon::now(BusinessTime::zone());
+        $start = $today->month >= 9 ? $today->year : $today->year - 1;
+
+        return $start.'/'.($start + 1);
+    }
+
+    /**
+     * The academic years a form offers: the year before, the current year and the
+     * next one, plus every year the school already has — newest first.
+     *
+     * @return array<int, string>
+     */
+    public function yearOptions(School $school): array
+    {
+        $current = $this->currentYear($school);
+        $start = (int) substr($current, 0, 4);
+
+        return collect([($start - 1).'/'.$start, $current, self::nextYear($current)])
+            ->merge(AcademicSession::where('school_id', $school->id)->pluck('name'))
+            ->unique()
+            ->sortDesc()
+            ->values()
+            ->all();
     }
 
     /**

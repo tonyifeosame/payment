@@ -197,9 +197,13 @@ $schoolAdminRoutes = function () {
     Route::get('/students/{student}/edit', [StudentController::class, 'edit'])->whereNumber('student')->name('school.students.edit');
     Route::put('/students/{student}', [StudentController::class, 'update'])->whereNumber('student')->name('school.students.update');
 
-    // Academic sessions and terms. {academicTerm} is scope-bound through School::academicTerms().
+    // Academic years and terms are no longer managed on their own page: a fee names
+    // its academic year + term and the rows behind them are created on first use
+    // (AcademicPeriodService::termFor). /sessions survives only as a redirect to
+    // Fees for bookmarks. Choosing the current term now lives on the Fees page.
+    // {academicTerm} is scope-bound through School::academicTerms().
     Route::get('/sessions', [AcademicSessionController::class, 'index'])->name('school.sessions.index');
-    Route::post('/sessions', [AcademicSessionController::class, 'store'])->name('school.sessions.store');
+    Route::put('/current-term', [AcademicSessionController::class, 'updateCurrent'])->name('school.terms.current.update');
     Route::post('/terms/{academicTerm}/current', [AcademicSessionController::class, 'setCurrent'])->name('school.terms.current');
 
     // Money out: read-only ledger. {payout} is scope-bound through School::payouts().

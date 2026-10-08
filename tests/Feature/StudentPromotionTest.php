@@ -8,6 +8,7 @@ use App\Models\School;
 use App\Models\Student;
 use App\Models\StudentPromotion;
 use App\Models\StudentPromotionEntry;
+use App\Services\AcademicPeriodService;
 use App\Services\StudentPromotionService;
 use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -16,7 +17,8 @@ use Tests\TestCase;
 
 /**
  * Bulk promotion: follows the school's own ladder, applies only to the selected
- * students, in one transaction, once per session, and only within the school.
+ * students, in one transaction, once per academic year, and only within the
+ * school. The admin names an academic year, never a session.
  */
 class StudentPromotionTest extends TestCase
 {
@@ -43,10 +45,10 @@ class StudentPromotionTest extends TestCase
         $this->alpha = $this->makeSchool('Alpha School', 'alpha');
         $this->beta = $this->makeSchool('Beta School', 'beta');
 
-        // Alpha's current session is 2025/2026 (first created → its First Term is current).
+        // Alpha is in the last term of 2025/2026, so it may promote into 2026/2027.
         $this->s2025 = $this->makeSessionWithTerms($this->alpha, '2025/2026');
         $this->s2026 = $this->makeSessionWithTerms($this->alpha, '2026/2027');
-        $this->alpha->refresh();
+        $this->setCurrentTerm($this->alpha, '2025/2026', 3);
 
         // A ladder that is deliberately NOT in name order, to prove nothing is parsed.
         $this->l = [];
@@ -66,7 +68,7 @@ class StudentPromotionTest extends TestCase
 
     private function selection(array $students, array $extra = []): array
     {
-        $payload = ['to_session_id' => $this->s2026->id, 'students' => [], 'from' => []];
+        $payload = ['to_year' => '2026/2027', 'students' => [], 'from' => []];
         foreach ($students as $s) {
             $payload['students'][] = $s->id;
             $payload['from'][$s->id] = $s->class_level_id ?? 0;
@@ -79,8 +81,8 @@ class StudentPromotionTest extends TestCase
     {
         $page = $this->actingAsSchoolAdmin($this->alpha)->get('/admin/alpha/students/promotion')->assertOk();
 
-        // Defaults to the session after the current one.
-        $page->assertSee('2025/2026')->assertSee('2026/2027')
+        // In the last term it defaults to the year after the current one.
+        $page->assertSee('2025/2026')->assertSee('<option value="2026/2027" selected>2026/2027</option>', false)
             ->assertSeeInOrder(['Lower', '2', 'Middle'])
             ->assertSeeInOrder(['Middle', '1', 'Upper'])
             ->assertSeeInOrder(['Final', '1', 'Graduated'])
@@ -134,19 +136,19 @@ class StudentPromotionTest extends TestCase
 
         // A double click replays the exact same request: rejected, nothing moves.
         $this->actingAsSchoolAdmin($this->alpha)->post('/admin/alpha/students/promotion', $this->selection([$this->st['a']]))
-            ->assertRedirect('/admin/alpha/students/promotion?to_session_id='.$this->s2026->id)
+            ->assertRedirect('/admin/alpha/students/promotion?to_year=2026%2F2027')
             ->assertSessionHas('error');
         $this->assertSame($this->l['Middle']->id, $this->st['a']->fresh()->class_level_id);
 
-        // Even with the "reviewed in" class updated to the new one: still once per session.
+        // Even with the "reviewed in" class updated to the new one: still once per year.
         $fresh = $this->st['a']->fresh();
         $this->actingAsSchoolAdmin($this->alpha)->post('/admin/alpha/students/promotion', $this->selection([$fresh]))->assertSessionHas('error');
         $this->assertSame($this->l['Middle']->id, $fresh->fresh()->class_level_id);
         $this->assertDatabaseCount('student_promotions', 1);
 
-        // The preview no longer offers the student for this session, but b is still there.
-        $this->actingAsSchoolAdmin($this->alpha)->get('/admin/alpha/students/promotion?to_session_id='.$this->s2026->id)->assertOk()
-            ->assertDontSee('Ada Lower')->assertSee('Bola Lower')->assertSee('1 student already promoted into 2026/2027');
+        // The preview no longer offers the student for this year, but b is still there.
+        $this->actingAsSchoolAdmin($this->alpha)->get('/admin/alpha/students/promotion?to_year=2026/2027')->assertOk()
+            ->assertDontSee('Ada Lower')->assertSee('Bola Lower')->assertSee('1 student already promoted into 2026/2027 or a later year');
 
         // The database itself refuses a second entry for the same student and session.
         $this->expectException(\Illuminate\Database\QueryException::class);
@@ -156,7 +158,7 @@ class StudentPromotionTest extends TestCase
     public function test_stale_or_crafted_selections_are_rejected_wholesale(): void
     {
         $betaLevel = ClassLevel::create(['school_id' => $this->beta->id, 'name' => 'B1', 'position' => 1]);
-        $betaSession = $this->makeSessionWithTerms($this->beta, '2026/2027');
+        $this->makeSessionWithTerms($this->beta, '2026/2027');
         $betaStudent = $this->makeStudent($this->beta, 'B/1', 'Beta Kid', 'B1', ['class_level_id' => $betaLevel->id]);
 
         // Another school's student in the list: the whole batch is refused.
@@ -166,10 +168,13 @@ class StudentPromotionTest extends TestCase
         $this->assertSame($this->l['Lower']->id, $this->st['a']->fresh()->class_level_id);
         $this->assertSame($betaLevel->id, $betaStudent->fresh()->class_level_id);
 
-        // Another school's session.
-        $this->actingAsSchoolAdmin($this->alpha)->from('/admin/alpha/students/promotion')
-            ->post('/admin/alpha/students/promotion', $this->selection([$this->st['a']], ['to_session_id' => $betaSession->id]))
-            ->assertSessionHasErrors('to_session_id');
+        // A year the school may not promote into now: too far ahead, in the past, or malformed.
+        foreach (['2027/2028', '2024/2025', '2026', ''] as $year) {
+            $this->actingAsSchoolAdmin($this->alpha)->from('/admin/alpha/students/promotion')
+                ->post('/admin/alpha/students/promotion', $this->selection([$this->st['a']], ['to_year' => $year]))
+                ->assertSessionHasErrors('to_year');
+        }
+        $this->assertFalse(AcademicSession::where('school_id', $this->alpha->id)->where('name', '2027/2028')->exists());
 
         // Stale "from" class (roster changed since review).
         $payload = $this->selection([$this->st['a']]);
@@ -180,7 +185,7 @@ class StudentPromotionTest extends TestCase
         $this->actingAsSchoolAdmin($this->alpha)->post('/admin/alpha/students/promotion', $this->selection([$this->st['left']]))->assertSessionHas('error');
         $this->actingAsSchoolAdmin($this->alpha)->post('/admin/alpha/students/promotion', $this->selection([$this->st['legacy']]))->assertSessionHas('error');
         $this->actingAsSchoolAdmin($this->alpha)->from('/admin/alpha/students/promotion')
-            ->post('/admin/alpha/students/promotion', ['to_session_id' => $this->s2026->id])->assertSessionHasErrors('students');
+            ->post('/admin/alpha/students/promotion', ['to_year' => '2026/2027'])->assertSessionHasErrors('students');
 
         $this->assertDatabaseCount('student_promotions', 0);
         $this->assertDatabaseCount('student_promotion_entries', 0);
@@ -224,14 +229,14 @@ class StudentPromotionTest extends TestCase
         // Beta uses different names and a different order: "Basic 2" before "Basic 1".
         $b2 = ClassLevel::create(['school_id' => $this->beta->id, 'name' => 'Basic 2', 'position' => 1]);
         $b1 = ClassLevel::create(['school_id' => $this->beta->id, 'name' => 'Basic 1', 'position' => 2]);
-        $betaSession = $this->makeSessionWithTerms($this->beta, '2026/2027');
+        $this->makeSessionWithTerms($this->beta, '2026/2027'); // beta is in its First Term: promotes into its current year
         $betaStudent = $this->makeStudent($this->beta, 'B/1', 'Beta Kid', 'Basic 2', ['class_level_id' => $b2->id]);
 
         $this->actingAsSchoolAdmin($this->alpha)->post('/admin/alpha/students/promotion', $this->selection([$this->st['a']]))->assertSessionHas('success');
         $this->assertDatabaseHas('students', ['id' => $this->st['a']->id, 'class_level_id' => $this->l['Upper']->id, 'class_name' => 'Upper']);
 
         $this->actingAsSchoolAdmin($this->beta)->post('/admin/beta/students/promotion', [
-            'to_session_id' => $betaSession->id, 'students' => [$betaStudent->id], 'from' => [$betaStudent->id => $b2->id],
+            'to_year' => '2026/2027', 'students' => [$betaStudent->id], 'from' => [$betaStudent->id => $b2->id],
         ])->assertSessionHas('success');
         $this->assertDatabaseHas('students', ['id' => $betaStudent->id, 'class_level_id' => $b1->id, 'class_name' => 'Basic 1']);
     }
@@ -242,5 +247,137 @@ class StudentPromotionTest extends TestCase
             $this->actingAsSchoolAdmin($this->alpha)->{$method}('/admin/alpha/students/promotion')->assertStatus(405);
         }
         $this->actingAsSchoolAdmin($this->alpha)->get('/admin/alpha/students/promotion/review')->assertStatus(405);
+    }
+
+    private function setCurrentTerm(School $school, string $year, int $number): void
+    {
+        $periods = app(AcademicPeriodService::class);
+        $periods->setCurrentTerm($school->refresh(), $periods->termFor($school, $year, $number));
+        $school->refresh();
+    }
+
+    // ------------------------------------------------- academic year, not session
+
+    public function test_only_the_current_year_or_in_the_last_term_the_next_one_can_be_promoted_into(): void
+    {
+        $service = app(StudentPromotionService::class);
+
+        // Last term of 2025/2026: the current year (promote at the start of a year)
+        // or the next one (promote at the end of a year), defaulting to the next.
+        $this->assertSame(['2025/2026', '2026/2027'], $service->allowedTargetYears($this->alpha));
+        $this->assertSame('2026/2027', $service->defaultTargetYear($this->alpha));
+
+        // First and second term: only the current year.
+        $this->setCurrentTerm($this->alpha, '2026/2027', 1);
+        $this->assertSame(['2026/2027'], $service->allowedTargetYears($this->alpha));
+        $this->setCurrentTerm($this->alpha, '2026/2027', 2);
+        $this->assertSame(['2026/2027'], $service->allowedTargetYears($this->alpha));
+
+        $page = $this->actingAsSchoolAdmin($this->alpha)->get('/admin/alpha/students/promotion')->assertOk();
+        $page->assertSee('<option value="2026/2027" selected>2026/2027 (current year)</option>', false)
+            ->assertDontSee('2027/2028')
+            ->assertDontSee('name="to_session_id"', false);
+    }
+
+    public function test_promoting_into_a_year_that_does_not_exist_yet_creates_it_on_confirm_only(): void
+    {
+        $this->setCurrentTerm($this->alpha, '2026/2027', 3);
+        $this->assertFalse(AcademicSession::where('school_id', $this->alpha->id)->where('name', '2027/2028')->exists());
+
+        // Preview and review are read-only: still no 2027/2028.
+        $this->actingAsSchoolAdmin($this->alpha)->get('/admin/alpha/students/promotion')->assertOk()
+            ->assertSee('<option value="2027/2028" selected>2027/2028</option>', false)->assertSee('Ada Lower');
+        $this->actingAsSchoolAdmin($this->alpha)
+            ->post('/admin/alpha/students/promotion/review', $this->selection([$this->st['a']], ['to_year' => '2027/2028']))
+            ->assertOk()->assertSee('2027/2028');
+        $this->assertFalse(AcademicSession::where('school_id', $this->alpha->id)->where('name', '2027/2028')->exists());
+
+        $this->actingAsSchoolAdmin($this->alpha)
+            ->post('/admin/alpha/students/promotion', $this->selection([$this->st['a']], ['to_year' => '2027/2028']))
+            ->assertSessionHas('success', 'Promotion into 2027/2028 applied: 1 student promoted.');
+
+        $year = AcademicSession::where('school_id', $this->alpha->id)->where('name', '2027/2028')->sole();
+        $this->assertSame([1, 2, 3], $year->terms()->pluck('number')->all());
+        $run = StudentPromotion::sole();
+        $this->assertSame($year->id, $run->to_academic_session_id);
+        $this->assertSame($this->s2026->id, $run->from_academic_session_id);
+        // The current term is the admin's choice and is not moved by a promotion.
+        $this->assertSame('2026/2027', $this->alpha->fresh()->currentTerm->session->name);
+    }
+
+    public function test_a_year_promoted_into_early_cannot_be_promoted_again_when_it_starts(): void
+    {
+        // End of 2025/2026: promote into 2026/2027.
+        $this->actingAsSchoolAdmin($this->alpha)->post('/admin/alpha/students/promotion', $this->selection([$this->st['a'], $this->st['c']]))
+            ->assertSessionHas('success');
+        $this->assertSame($this->l['Middle']->id, $this->st['a']->fresh()->class_level_id);
+
+        // The new year starts and the school moves its current term. The page now
+        // offers only 2026/2027, which the students already have: nobody moves again.
+        $this->setCurrentTerm($this->alpha, '2026/2027', 1);
+        $this->actingAsSchoolAdmin($this->alpha)->get('/admin/alpha/students/promotion')->assertOk()
+            ->assertDontSee('Ada Lower')->assertSee('Bola Lower')->assertSee('2 students already promoted into 2026/2027 or a later year');
+        $this->actingAsSchoolAdmin($this->alpha)
+            ->post('/admin/alpha/students/promotion', $this->selection([$this->st['a']->fresh()]))
+            ->assertSessionHas('error');
+        $this->actingAsSchoolAdmin($this->alpha)->from('/admin/alpha/students/promotion')
+            ->post('/admin/alpha/students/promotion', $this->selection([$this->st['a']->fresh()], ['to_year' => '2027/2028']))
+            ->assertSessionHasErrors('to_year');
+
+        $this->assertSame($this->l['Middle']->id, $this->st['a']->fresh()->class_level_id);
+        $this->assertDatabaseCount('student_promotions', 1);
+    }
+
+    public function test_a_student_promoted_into_a_later_year_is_not_offered_for_an_earlier_one(): void
+    {
+        // Legacy data: Ada was promoted into 2027/2028 under the old session picker.
+        $later = $this->makeSessionWithTerms($this->alpha, '2027/2028');
+        $run = StudentPromotion::create(['school_id' => $this->alpha->id, 'to_academic_session_id' => $later->id, 'performed_by' => 'school_admin']);
+        StudentPromotionEntry::create(['student_promotion_id' => $run->id, 'school_id' => $this->alpha->id, 'student_id' => $this->st['a']->id, 'to_academic_session_id' => $later->id, 'action' => 'promoted']);
+
+        $this->actingAsSchoolAdmin($this->alpha)->get('/admin/alpha/students/promotion')->assertOk()
+            ->assertDontSee('Ada Lower')->assertSee('Bola Lower');
+        $this->actingAsSchoolAdmin($this->alpha)->post('/admin/alpha/students/promotion', $this->selection([$this->st['a']]))
+            ->assertSessionHas('error');
+        $this->assertSame($this->l['Lower']->id, $this->st['a']->fresh()->class_level_id);
+    }
+
+    public function test_a_realistic_ladder_moves_every_class_up_and_graduates_the_final_class(): void
+    {
+        $school = $this->makeSchool('Gamma College', 'gamma');
+        $this->makeSessionWithTerms($school, '2025/2026');
+        $this->setCurrentTerm($school, '2025/2026', 3);
+
+        $names = ['JSS1', 'JSS2', 'JSS3', 'SS1', 'SS2', 'SS3'];
+        $levels = [];
+        foreach ($names as $i => $name) {
+            $levels[$name] = ClassLevel::create(['school_id' => $school->id, 'name' => $name, 'position' => $i + 1]);
+        }
+        $students = [];
+        foreach ($names as $i => $name) {
+            $students[$name] = $this->makeStudent($school, 'G/'.$i, 'Pupil '.$name, $name, ['class_level_id' => $levels[$name]->id]);
+        }
+
+        // A school-fees payment already made by the SS3 student stays exactly as it was.
+        $paid = $this->makeSuccessfulTransaction($school, ['student_id' => $students['SS3']->id, 'reference' => 'gamma-ss3']);
+
+        $payload = ['to_year' => '2026/2027', 'students' => [], 'from' => []];
+        foreach ($students as $student) {
+            $payload['students'][] = $student->id;
+            $payload['from'][$student->id] = $student->class_level_id;
+        }
+
+        $this->actingAsSchoolAdmin($school)->get('/admin/gamma/students/promotion')->assertOk()
+            ->assertSeeInOrder(['JSS1', 'JSS2'])->assertSeeInOrder(['JSS3', 'SS1'])->assertSeeInOrder(['SS3', 'Graduated']);
+
+        $this->actingAsSchoolAdmin($school)->post('/admin/gamma/students/promotion', $payload)
+            ->assertSessionHas('success', 'Promotion into 2026/2027 applied: 5 students promoted, 1 graduated.');
+
+        foreach (['JSS1' => 'JSS2', 'JSS2' => 'JSS3', 'JSS3' => 'SS1', 'SS1' => 'SS2', 'SS2' => 'SS3'] as $from => $to) {
+            $this->assertDatabaseHas('students', ['id' => $students[$from]->id, 'class_level_id' => $levels[$to]->id, 'class_name' => $to, 'status' => 'active']);
+        }
+        // The final class has nowhere to go: graduated, kept on record in SS3.
+        $this->assertDatabaseHas('students', ['id' => $students['SS3']->id, 'class_level_id' => $levels['SS3']->id, 'status' => Student::STATUS_GRADUATED]);
+        $this->assertDatabaseHas('transactions', ['id' => $paid->id, 'student_id' => $students['SS3']->id, 'status' => 'success', 'reference' => 'gamma-ss3']);
     }
 }

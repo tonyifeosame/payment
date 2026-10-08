@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\AcademicSession;
+use App\Models\AcademicTerm;
 use App\Models\ClassLevel;
 use App\Models\School;
 use App\Models\Student;
@@ -13,24 +14,69 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Bulk promotion of a school's roster into a new academic session.
+ * Bulk promotion of a school's roster into a new academic year.
  *
  * Where a student goes is decided ONLY by the school's ordered class ladder
  * (ClassLevel::nextIn): the next active rung, or graduation after the last one.
  * Nothing is inferred from class names.
  *
+ * The admin never manages sessions: they promote "into 2027/2028", and the
+ * session row behind that year is created when the promotion is applied
+ * (AcademicPeriodService::termFor). Until then the target is an unsaved model.
+ *
  * Safety properties:
  *  - every read and write is scoped to the acting school; student ids from the
  *    browser are re-resolved inside that scope and anything else is rejected;
  *  - apply() runs in one database transaction — a failure leaves nothing changed;
- *  - a student can be promoted into a given session once. Eligibility excludes
- *    students who already have an entry for the target session, apply() re-checks
- *    it, and the unique index on student_promotion_entries enforces it even
- *    against two concurrent requests. Running the same transition twice therefore
- *    never moves anyone a second rung.
+ *  - a student is promoted at most once per academic year, and never "backwards":
+ *    a student with an entry into the target year OR ANY LATER YEAR is not
+ *    eligible. apply() re-checks it, and the unique index on
+ *    student_promotion_entries enforces the same-year case even against two
+ *    concurrent requests;
+ *  - only the current year, or — in the last term — the next one, can be a
+ *    target (allowedTargetYears), so a promotion run twice in the same year can
+ *    never move anyone a second rung.
  */
 class StudentPromotionService
 {
+    public function __construct(private AcademicPeriodService $periods) {}
+
+    /**
+     * The academic years the school may promote into right now: the current year
+     * (for a school that promotes when the new year starts) and, in the last term
+     * of the year or when no term is set, the next year (for a school that
+     * promotes at the end of the year). Never further ahead.
+     *
+     * @return array<int, string>
+     */
+    public function allowedTargetYears(School $school): array
+    {
+        $current = $this->periods->currentYear($school);
+        $term = $school->currentTerm;
+
+        $years = [$current];
+        if ($term === null || (int) $term->number === max(array_keys(AcademicTerm::NAMES))) {
+            $years[] = AcademicPeriodService::nextYear($current);
+        }
+
+        return $years;
+    }
+
+    /** The year the promotion page offers first: the latest allowed one. */
+    public function defaultTargetYear(School $school): string
+    {
+        $years = $this->allowedTargetYears($school);
+
+        return end($years);
+    }
+
+    /** The school's session for $year, or an unsaved one apply() will create. */
+    public function targetSession(School $school, string $year): AcademicSession
+    {
+        return AcademicSession::where('school_id', $school->id)->where('name', $year)->first()
+            ?? new AcademicSession(['school_id' => $school->id, 'name' => $year]);
+    }
+
     /**
      * Everything the review screen needs for a target session.
      *
@@ -110,7 +156,7 @@ class StudentPromotionService
 
         $already = $this->alreadyPromotedIds($school, $to, $ids);
         if ($already !== []) {
-            throw new DomainException(count($already).' of the selected students have already been promoted into '.$to->name.'. Review the promotion again.');
+            throw new DomainException(count($already).' of the selected students have already been promoted into '.$to->name.' or a later year. Review the promotion again.');
         }
 
         return collect($ids)->map(function (int $id) use ($students, $expectedFrom, $ladder) {
@@ -137,6 +183,11 @@ class StudentPromotionService
         $this->assertOwnSession($school, $to);
 
         return DB::transaction(function () use ($school, $to, $rows, $excludedCount) {
+            if (! $to->exists) {
+                // First use of this academic year: create it and its three terms.
+                $to = $this->periods->termFor($school, $to->name, 1)->session;
+            }
+
             $promotion = $school->studentPromotions()->create([
                 'from_academic_session_id' => $school->currentTerm?->academic_session_id,
                 'to_academic_session_id' => $to->id,
@@ -197,13 +248,13 @@ class StudentPromotionService
     public function excludedCount(School $school, AcademicSession $to, int $selected): int
     {
         $eligible = Student::forSchool($school)->active()->whereNotNull('class_level_id')
-            ->whereDoesntHave('promotionEntries', fn ($q) => $q->where('to_academic_session_id', $to->id))
+            ->whereDoesntHave('promotionEntries', fn ($q) => $q->whereIn('to_academic_session_id', $this->sessionsFrom($school, $to)))
             ->count();
 
         return max(0, $eligible - $selected);
     }
 
-    /** @return array<int, true> student ids that already have an entry for $to */
+    /** @return array<int, true> student ids already promoted into $to or a later year */
     private function alreadyPromotedIds(School $school, AcademicSession $to, array $ids): array
     {
         if ($ids === []) {
@@ -211,11 +262,20 @@ class StudentPromotionService
         }
 
         return StudentPromotionEntry::where('school_id', $school->id)
-            ->where('to_academic_session_id', $to->id)
+            ->whereIn('to_academic_session_id', $this->sessionsFrom($school, $to))
             ->whereIn('student_id', $ids)
             ->pluck('student_id')
             ->mapWithKeys(fn ($id) => [(int) $id => true])
             ->all();
+    }
+
+    /**
+     * The school's sessions for $to's year and every later one. Session names are
+     * "YYYY/YYYY", so string order is year order.
+     */
+    private function sessionsFrom(School $school, AcademicSession $to)
+    {
+        return AcademicSession::where('school_id', $school->id)->where('name', '>=', $to->name)->select('id');
     }
 
     private function assertOwnSession(School $school, AcademicSession $to): void

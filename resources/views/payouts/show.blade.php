@@ -1,5 +1,9 @@
 @extends('layouts.admin')
 
+@section('subnav')
+    @include('admin._subnav', ['section' => 'payments'])
+@endsection
+
 @php
     $s = ['school' => $school->slug];
     $money = fn ($v) => '₦'.number_format((float) $v, 2);
@@ -16,7 +20,7 @@
 @endphp
 
 @section('title', 'Payout '.($payout->reference ?? $payout->id))
-@section('eyebrow', 'Money movement · Payout')
+@section('eyebrow', 'Payments · Payout')
 @section('heading', $underReview && (float) $payout->amount === 0.0 ? 'Payout under review' : $money($payout->amount))
 @section('subheading', ($t ? 'Your share of '.($t->subcategory_name ?? $t->category_name ?? 'a payment').($t->student_name ? ' for '.$t->student_name : '').' · ' : '').'Ref '.($payout->reference ?? '—'))
 @section('actions')

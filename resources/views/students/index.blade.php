@@ -1,5 +1,9 @@
 @extends('layouts.admin')
 
+@section('subnav')
+    @include('admin._subnav', ['section' => 'students'])
+@endsection
+
 @section('title', 'Students')
 @section('eyebrow', 'School')
 @section('heading', 'Students')
@@ -100,7 +104,7 @@
         <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-violet text-white" aria-hidden="true">
             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 8h.01M12 11v5"/></svg>
         </span>
-        <p class="pt-0.5"><span class="font-semibold">Set up your class ladder</span> to filter by class and promote students at the end of the session. <a href="{{ route('school.students.classes.index', ['school' => $school->slug]) }}" class="font-semibold text-brand-violet underline underline-offset-2">Manage classes</a></p>
+        <p class="pt-0.5"><span class="font-semibold">Set up your class ladder</span> to filter by class and promote students at the end of the year. <a href="{{ route('school.students.classes.index', ['school' => $school->slug]) }}" class="font-semibold text-brand-violet underline underline-offset-2">Manage classes</a></p>
     </div>
 @endif
 

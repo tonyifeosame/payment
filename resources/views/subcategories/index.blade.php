@@ -1,14 +1,17 @@
 @extends('layouts.admin')
 
-@section('title', 'Fee types')
-@section('eyebrow', 'Fee setup')
-@section('heading', 'Fee types')
-@section('subheading', 'Set the fees students can pay for each academic term.')
+@section('subnav')
+    @include('admin._subnav', ['section' => 'fees'])
+@endsection
+
+@section('title', 'Fees')
+@section('eyebrow', 'Fees')
+@section('heading', 'Fees')
+@section('subheading', 'School fees and additional fees parents can pay, by academic year and term.')
 @section('actions')
-    <a href="{{ route('school.categories.index', ['school' => $school->slug]) }}" class="btn-outline">Categories</a>
     <a href="{{ route('school.subcategories.create', ['school' => $school->slug]) }}" class="btn-obsidian">
         <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-        Add fee type
+        Add fee
     </a>
 @endsection
 
@@ -18,23 +21,25 @@
     $money = fn ($v) => '₦'.number_format((float) $v, 2);
 @endphp
 
+@include('subcategories._current_term')
+
 <div class="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-1">
-    <p class="text-sm text-brand-slate"><span class="font-display text-lg font-bold text-brand-obsidian">{{ $subcategories->count() }}</span> {{ Str::plural('fee type', $subcategories->count()) }} across {{ $categories->count() }} {{ Str::plural('category', $categories->count()) }}</p>
-    <p class="text-sm text-brand-slate">A term fee can only be paid for that term, and a fee assigned to classes only by students in those classes.</p>
+    <p class="text-sm text-brand-slate"><span class="font-display text-lg font-bold text-brand-obsidian">{{ $subcategories->count() }}</span> {{ Str::plural('fee', $subcategories->count()) }} across {{ $categories->count() }} {{ Str::plural('category', $categories->count()) }}</p>
+    <p class="text-sm text-brand-slate">A term fee can only be paid for that term, and a fee assigned to classes only by students in those classes. School fees are paid once per student each term.</p>
 </div>
 
 <x-admin.table
-    :columns="$subcategories->isEmpty() ? [] : [['Fee type', 'left', 'xl:w-[22%]'], ['Category', 'left', 'xl:w-[12%]'], ['Applies to', 'left', 'xl:w-[15%]'], ['Amount', 'right', 'xl:w-[12%]'], ['Session', 'left', 'xl:w-[10%]'], ['Term', 'left', 'xl:w-[11%]'], ['Actions', 'actions', 'xl:w-[18%]']]"
-    caption="Fee types of {{ $school->name }}, grouped by category"
+    :columns="$subcategories->isEmpty() ? [] : [['Fee', 'left', 'xl:w-[22%]'], ['Category', 'left', 'xl:w-[12%]'], ['Applies to', 'left', 'xl:w-[15%]'], ['Amount', 'right', 'xl:w-[12%]'], ['Academic year', 'left', 'xl:w-[10%]'], ['Term', 'left', 'xl:w-[11%]'], ['Actions', 'actions', 'xl:w-[18%]']]"
+    caption="Fees of {{ $school->name }}, school fees first"
     class="xl:[&_table]:w-full xl:[&_table]:table-fixed md:[&_.th]:px-3 md:[&_.td]:px-3"
     stacked>
     @forelse($subcategories as $sub)
         <tr>
-            <td class="td" data-label="Fee type">
+            <td class="td" data-label="Fee">
                 <div class="min-w-0">
                     <span class="font-semibold">{{ $sub->name }}</span>
                     @if($sub->is_tuition)
-                        <span class="block text-xs text-brand-slate">Main class fee</span>
+                        <span class="block text-xs text-brand-slate">School fees · main class fee</span>
                     @endif
                 </div>
             </td>
@@ -62,7 +67,7 @@
                     @endif
                 </div>
             </td>
-            <td class="td" data-label="Session">
+            <td class="td" data-label="Academic year">
                 <div class="min-w-0">{{ $sub->academicTerm?->session?->name ?? '—' }}</div>
             </td>
             <td class="td" data-label="Term">
@@ -70,8 +75,7 @@
                     @if($sub->academicTerm)
                         <span class="font-medium">{{ $sub->academicTerm->name }}</span>
                     @else
-                        <span class="font-medium">General</span>
-                        <span class="block text-xs text-brand-slate">Payable in any term</span>
+                        <span class="font-medium">Any term</span>
                     @endif
                 </div>
             </td>
@@ -81,7 +85,7 @@
                     <form method="POST" action="{{ route('school.subcategories.destroy', $s + ['subcategory' => $sub->id]) }}" class="flex flex-1 md:flex-none"
                           data-confirm="Parents will no longer be able to pay for it. Past payments keep their records. This cannot be undone."
                           data-confirm-title="Delete “{{ $sub->name }}”?"
-                          data-confirm-label="Delete fee type"
+                          data-confirm-label="Delete fee"
                           data-confirm-tone="danger">
                         @csrf
                         @method('DELETE')
@@ -92,15 +96,9 @@
         </tr>
     @empty
         <x-slot:empty>
-            @if($categories->isEmpty())
-                <x-admin.empty title="No fee types yet" description="Fee types need a category to live in. Create your first category, then add the fees parents can pay under it." icon="M12 4v16m4-12H10a2.5 2.5 0 000 5h4a2.5 2.5 0 010 5H8">
-                    <a class="btn-obsidian" href="{{ route('school.categories.index', $s) }}">Add a category first</a>
-                </x-admin.empty>
-            @else
-                <x-admin.empty title="No fee types yet" description="Add the fees parents can pay — each one belongs to a category, has an amount, and can be tied to an academic term." icon="M12 4v16m4-12H10a2.5 2.5 0 000 5h4a2.5 2.5 0 010 5H8">
-                    <a class="btn-obsidian" href="{{ route('school.subcategories.create', $s) }}">Add fee type</a>
-                </x-admin.empty>
-            @endif
+            <x-admin.empty title="No fees yet" description="Start with your school fees: choose the academic year and term, the amount, and the classes they are for. Add uniforms, books and other additional fees the same way." icon="M12 4v16m4-12H10a2.5 2.5 0 000 5h4a2.5 2.5 0 010 5H8">
+                <a class="btn-obsidian" href="{{ route('school.subcategories.create', $s) }}">Add school fees</a>
+            </x-admin.empty>
         </x-slot:empty>
     @endforelse
 </x-admin.table>

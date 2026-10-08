@@ -8,6 +8,7 @@ use App\Models\SchoolAuditEvent;
 use App\Support\RecordsSchoolAudit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class CategoryController extends Controller
 {
@@ -27,11 +28,56 @@ class CategoryController extends Controller
     }
 
     /**
+     * The school's category with this name in any spelling — case, spacing,
+     * punctuation and plurals ignored (Category::normalizeName) — or null.
+     */
+    public static function findByName(School $school, string $name, ?int $ignoreId = null): ?Category
+    {
+        $wanted = Category::normalizeName($name);
+
+        return Category::where('school_id', $school->id)
+            ->when($ignoreId !== null, fn ($q) => $q->whereKeyNot($ignoreId))
+            ->orderBy('id')
+            ->get()
+            ->first(fn (Category $c) => Category::normalizeName($c->name) === $wanted);
+    }
+
+    /**
+     * Name rules shared by create and rename: required, not a spelling of the
+     * built-in "School Fees", and not a near duplicate of another category.
+     */
+    private function validatedName(Request $request, School $school, ?Category $ignore = null): string
+    {
+        $request->validate([
+            'name' => 'required|string|max:255',
+        ]);
+        $name = trim((string) $request->input('name'));
+
+        if (Category::isSchoolFeesName($name)) {
+            throw ValidationException::withMessages([
+                'name' => '“School Fees” is built in. Choose “School fees” when you add a fee, or give this category another name.',
+            ]);
+        }
+
+        if ($clash = self::findByName($school, $name, $ignore?->id)) {
+            throw ValidationException::withMessages([
+                'name' => 'You already have a category called “'.$clash->name.'”.',
+            ]);
+        }
+
+        return $name;
+    }
+
+    /**
      * Tenant-aware listing for a given school.
      */
     public function indexSchool(School $school)
     {
-        $categories = Category::where('school_id', $school->id)->withCount('subcategories')->get();
+        Category::schoolFeesFor($school);
+
+        // The built-in School Fees category first, then the school's own.
+        $categories = Category::where('school_id', $school->id)->withCount('subcategories')
+            ->orderByRaw('CASE WHEN system_key IS NULL THEN 1 ELSE 0 END')->orderBy('id')->get();
 
         return view('categories.index', compact('categories', 'school'));
     }
@@ -41,12 +87,10 @@ class CategoryController extends Controller
      */
     public function storeSchool(Request $request, School $school)
     {
-        $request->validate([
-            'name' => 'required|string|max:255',
-        ]);
+        $name = $this->validatedName($request, $school);
 
         Category::create([
-            'name' => $request->name,
+            'name' => $name,
             'school_id' => $school->id,
         ]);
 
@@ -58,6 +102,10 @@ class CategoryController extends Controller
     {
         $this->assertBelongsToSchool($school, $category);
 
+        if ($category->isSystem()) {
+            return $this->builtIn($school);
+        }
+
         return view('categories.edit', compact('school', 'category'));
     }
 
@@ -65,12 +113,12 @@ class CategoryController extends Controller
     {
         $this->assertBelongsToSchool($school, $category);
 
-        $request->validate([
-            'name' => 'required|string|max:255',
-        ]);
+        if ($category->isSystem()) {
+            return $this->builtIn($school);
+        }
 
         $category->update([
-            'name' => $request->name,
+            'name' => $this->validatedName($request, $school, $category),
         ]);
 
         return redirect()->route('school.categories.index', ['school' => $school->slug])
@@ -80,6 +128,10 @@ class CategoryController extends Controller
     public function destroySchool(Request $request, School $school, Category $category, RecordsSchoolAudit $audit)
     {
         $this->assertBelongsToSchool($school, $category);
+
+        if ($category->isSystem()) {
+            return $this->builtIn($school);
+        }
 
         // Destructive and irreversible, so the audit event is the only remaining
         // record of what was removed (M7, Tier 2).
@@ -95,5 +147,12 @@ class CategoryController extends Controller
 
         return redirect()->route('school.categories.index', ['school' => $school->slug])
             ->with('success', 'Category deleted successfully.');
+    }
+
+    /** The built-in School Fees category cannot be renamed or deleted. */
+    private function builtIn(School $school)
+    {
+        return redirect()->route('school.categories.index', ['school' => $school->slug])
+            ->with('error', '“School Fees” is built in and cannot be renamed or deleted. Its fees can be edited or deleted on the Fees page.');
     }
 }

@@ -1,7 +1,11 @@
 @extends('layouts.admin')
 
+@section('subnav')
+    @include('admin._subnav', ['section' => 'payments'])
+@endsection
+
 @section('title', 'Payouts')
-@section('eyebrow', 'Money movement')
+@section('eyebrow', 'Payments')
 @section('heading', 'Payouts')
 @section('subheading', 'Track money moving from student payments to your school.')
 

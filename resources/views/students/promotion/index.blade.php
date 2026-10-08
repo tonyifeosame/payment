@@ -1,9 +1,13 @@
 @extends('layouts.admin')
 
+@section('subnav')
+    @include('admin._subnav', ['section' => 'students'])
+@endsection
+
 @section('title', 'Promote students')
 @section('eyebrow', 'School · Students')
 @section('heading', 'Promote students')
-@section('subheading', 'Move the roster into the next academic session, one class up your ladder. Nothing changes until you confirm.')
+@section('subheading', 'Move every student up to the next class for the new academic year. Students in your last class graduate. Nothing changes until you confirm.')
 @section('actions')
     <a href="{{ route('school.students.index', ['school' => $school->slug]) }}" class="btn-outline">
         <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
@@ -14,44 +18,48 @@
 @section('content')
 @php $s = ['school' => $school->slug]; @endphp
 
-{{-- Step 1: which session --}}
-<form method="GET" action="{{ route('school.students.promotion.index', $s) }}" class="card p-5 sm:p-6" aria-labelledby="session-heading">
-    <h2 id="session-heading" class="font-display text-lg font-bold tracking-tight">1. Academic session</h2>
+{{-- Step 1: which academic year. The years on offer are computed server-side
+     (StudentPromotionService::allowedTargetYears); the year is created on confirm. --}}
+<form method="GET" action="{{ route('school.students.promotion.index', $s) }}" class="card p-5 sm:p-6" aria-labelledby="year-heading">
+    <h2 id="year-heading" class="font-display text-lg font-bold tracking-tight">1. Academic year</h2>
     <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <div class="rounded-2xl bg-brand-fog p-4">
-            <p class="text-xs font-semibold uppercase tracking-[0.08em] text-brand-slate">Current session</p>
-            <p class="mt-1 font-display text-xl font-bold">{{ $current?->name ?? 'Not set' }}</p>
-            @unless($current)<p class="mt-1 text-xs text-brand-slate">Set a current term on the Sessions page.</p>@endunless
+            <p class="text-xs font-semibold uppercase tracking-[0.08em] text-brand-slate">Current academic year</p>
+            <p class="mt-1 font-display text-xl font-bold">{{ $currentYear }}</p>
+            <p class="mt-1 text-xs text-brand-slate">
+                @if($currentTerm){{ $currentTerm->name }} is the current term.@else Based on today's date — set the current term on the <a href="{{ route('school.subcategories.index', $s) }}" class="font-semibold text-brand-violet underline underline-offset-2">Fees</a> page.@endif
+            </p>
         </div>
         <div>
-            <label for="to_session_id" class="field-label !mt-0">Promoting into</label>
-            <select id="to_session_id" name="to_session_id" class="field-input" required>
-                <option value="">Choose a session</option>
-                @foreach($sessions as $session)
-                    <option value="{{ $session->id }}" @selected($to && $to->id === $session->id)>{{ $session->name }}@if($current && $current->id === $session->id) (current)@endif</option>
+            <label for="to_year" class="field-label !mt-0">Promoting into</label>
+            <select id="to_year" name="to_year" class="field-input" required>
+                @foreach($years as $year)
+                    <option value="{{ $year }}" @selected($to->name === $year)>{{ $year }}@if($year === $currentYear) (current year)@endif</option>
                 @endforeach
             </select>
         </div>
-        <div class="flex items-end">
-            <button type="submit" class="btn-outline w-full sm:w-auto">Show preview</button>
-        </div>
+        @if(count($years) > 1)
+            <div class="flex items-end">
+                <button type="submit" class="btn-outline w-full sm:w-auto">Show preview</button>
+            </div>
+        @endif
     </div>
-    @if($sessions->count() < 2)
-        <p class="mt-4 text-sm text-brand-slate">Create the session you are promoting into first — <a href="{{ route('school.sessions.index', $s) }}" class="font-semibold text-brand-violet underline underline-offset-2">Sessions</a>.</p>
-    @endif
+    <p class="mt-4 text-sm text-brand-slate">
+        Promote at the end of the year (in the last term) into the next academic year, or at the start of a new year into the current one. Each student is promoted once per year.
+    </p>
     @unless($hasLadder)
-        <p class="mt-4 text-sm text-brand-slate">Promotion follows your class ladder, which is empty. <a href="{{ route('school.students.classes.index', $s) }}" class="font-semibold text-brand-violet underline underline-offset-2">Set up classes</a> first.</p>
+        <p class="mt-4 text-sm text-brand-slate">Promotion follows your class order, which is empty. <a href="{{ route('school.students.classes.index', $s) }}" class="font-semibold text-brand-violet underline underline-offset-2">Set up classes</a> first.</p>
     @endunless
 </form>
 
-@if($to && $preview)
+@if($preview)
     @php $rows = $preview['rows']; $groups = $preview['groups']; @endphp
 
     {{-- Step 2: preview by class --}}
     <section class="card mt-6 p-5 sm:p-6" aria-labelledby="preview-heading">
         <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
             <h2 id="preview-heading" class="font-display text-lg font-bold tracking-tight">2. What will happen</h2>
-            <p class="text-sm text-brand-slate">{{ $current?->name ?? 'Current' }} → <span class="font-semibold text-brand-obsidian">{{ $to->name }}</span></p>
+            <p class="text-sm text-brand-slate">{{ $currentYear === $to->name ? 'Into' : $currentYear.' →' }} <span class="font-semibold text-brand-obsidian">{{ $to->name }}</span></p>
         </div>
         @if($groups->isEmpty())
             <p class="mt-3 text-sm text-brand-slate">No active students are waiting to be promoted into {{ $to->name }}.</p>
@@ -71,7 +79,7 @@
                                 <td class="td text-right tabular-nums">{{ $g['count'] }}</td>
                                 <td class="td">
                                     <span class="sr-only">moves to </span>
-                                    @if($g['to']){{ $g['to']->name }}@else<span class="font-semibold">Graduated</span> <span class="text-xs text-brand-slate">(last class in your ladder)</span>@endif
+                                    @if($g['to']){{ $g['to']->name }}@else<span class="font-semibold">Graduated</span> <span class="text-xs text-brand-slate">(last class in your class order)</span>@endif
                                 </td>
                             </tr>
                         @endforeach
@@ -80,7 +88,7 @@
             </div>
         @endif
         @if($preview['already'] > 0)
-            <p class="mt-3 text-sm text-brand-slate">{{ $preview['already'] }} {{ Str::plural('student', $preview['already']) }} already promoted into {{ $to->name }} {{ $preview['already'] === 1 ? 'is' : 'are' }} not listed — a student is promoted into a session once.</p>
+            <p class="mt-3 text-sm text-brand-slate">{{ $preview['already'] }} {{ Str::plural('student', $preview['already']) }} already promoted into {{ $to->name }} or a later year {{ $preview['already'] === 1 ? 'is' : 'are' }} not listed — a student is promoted once per academic year.</p>
         @endif
         @if($preview['unassigned'] > 0)
             <p class="mt-3 text-sm text-brand-slate">{{ $preview['unassigned'] }} active {{ Str::plural('student', $preview['unassigned']) }} without a class on your ladder cannot be promoted — <a href="{{ route('school.students.classes.index', $s) }}" class="font-semibold text-brand-violet underline underline-offset-2">assign their class</a> first.</p>
@@ -91,7 +99,7 @@
     @if($rows->isNotEmpty())
         <form method="POST" action="{{ route('school.students.promotion.review', $s) }}" class="card mt-6 p-5 sm:p-6" aria-labelledby="select-heading" id="promotionForm">
             @csrf
-            <input type="hidden" name="to_session_id" value="{{ $to->id }}">
+            <input type="hidden" name="to_year" value="{{ $to->name }}">
             <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                 <h2 id="select-heading" class="font-display text-lg font-bold tracking-tight">3. Who moves</h2>
                 <p class="text-sm text-brand-slate"><span id="selectedCount" class="font-semibold text-brand-obsidian">{{ $rows->count() }}</span> of {{ $rows->count() }} selected</p>

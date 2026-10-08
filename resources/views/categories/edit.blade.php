@@ -1,7 +1,11 @@
 @extends('layouts.admin')
 
+@section('subnav')
+    @include('admin._subnav', ['section' => 'fees'])
+@endsection
+
 @section('title', 'Edit category')
-@section('eyebrow', 'Fee setup · Categories')
+@section('eyebrow', 'Fees · Categories')
 @section('heading', 'Edit category')
 @section('subheading', $category->name)
 @section('inline-errors', '1')

@@ -1,6 +1,11 @@
 @extends('layouts.admin')
 
+@section('subnav')
+    @include('admin._subnav', ['section' => 'settings'])
+@endsection
+
 @section('title', 'Share payment link')
+@section('eyebrow', 'Settings')
 @section('heading', 'Share your payment page')
 @section('subheading', 'Tell parents: "Use this link to pay your school fees." They will need the student\'s admission number.')
 

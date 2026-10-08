@@ -42,7 +42,7 @@ class AdminNamespaceTest extends TestCase
         $expected = [
             'dashboard', 'students', 'students/create', 'students/{student}', 'students/{student}/edit',
             'students/classes', 'students/classes/{classLevel}', 'students/classes/{classLevel}/move', 'students/classes/assign',
-            'students/promotion', 'students/promotion/review', 'sessions', 'terms/{academicTerm}/current',
+            'students/promotion', 'students/promotion/review', 'sessions', 'current-term', 'terms/{academicTerm}/current',
             'payouts', 'payouts/{payout}', 'settings', 'settings/bank', 'settings/password', 'share', 'share/qr.svg',
             'categories', 'categories/{category}', 'categories/{category}/edit',
             'subcategories', 'subcategories/create', 'subcategories/{subcategory}', 'subcategories/{subcategory}/edit',
@@ -106,7 +106,7 @@ class AdminNamespaceTest extends TestCase
 
         foreach ([
             '/s/alpha/dashboard', '/s/alpha/students', "/s/alpha/students/{$student->id}", "/s/alpha/students/{$student->id}/edit",
-            '/s/alpha/students/create', '/s/alpha/students/classes', '/s/alpha/students/promotion', '/s/alpha/sessions',
+            '/s/alpha/students/create', '/s/alpha/students/classes', '/s/alpha/students/promotion',
             '/s/alpha/categories', '/s/alpha/subcategories', '/s/alpha/subcategories/create', '/s/alpha/transactions',
             '/s/alpha/payouts', '/s/alpha/settings', '/s/alpha/share', '/s/alpha/share/qr.svg',
         ] as $legacy) {
@@ -114,6 +114,11 @@ class AdminNamespaceTest extends TestCase
             $this->actingAsSchoolAdmin($this->alpha)->get($legacy)->assertStatus(301)->assertRedirect($canonical);
             $this->actingAsSchoolAdmin($this->alpha)->get($canonical)->assertOk();
         }
+
+        // The retired Sessions page: the legacy URL still reaches the canonical one,
+        // which now sends the admin on to Fees.
+        $this->actingAsSchoolAdmin($this->alpha)->get('/s/alpha/sessions')->assertStatus(301)->assertRedirect('/admin/alpha/sessions');
+        $this->actingAsSchoolAdmin($this->alpha)->get('/admin/alpha/sessions')->assertRedirect('/admin/alpha/subcategories');
 
         // The query string travels with the redirect (filters, pages, exports).
         // (Laravel normalises the query string to key order.)

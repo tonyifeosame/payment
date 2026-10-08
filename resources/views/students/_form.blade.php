@@ -38,7 +38,7 @@
         @endif
     </div>
     <div>
-        <label for="academic_session_id" class="field-label">Academic session <span class="font-normal text-brand-slate">(optional)</span></label>
+        <label for="academic_session_id" class="field-label">Academic year <span class="font-normal text-brand-slate">(optional)</span></label>
         <select id="academic_session_id" name="academic_session_id" class="field-input {{ $errors->has('academic_session_id') ? 'field-input-error' : '' }}" @if($errors->has('academic_session_id')) aria-invalid="true" aria-describedby="academic_session_id-error" @endif>
             <option value="">Not set</option>
             @foreach($sessions as $s)

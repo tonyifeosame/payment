@@ -7,46 +7,55 @@ use App\Models\AcademicTerm;
 use App\Models\School;
 use App\Services\AcademicPeriodService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 /**
- * Academic sessions and terms, tenant-scoped.
+ * What remains of academic-session management in the admin.
+ *
+ * Schools no longer create sessions by hand: a fee is created for an academic year
+ * and term, and AcademicPeriodService::termFor() finds or creates the session and
+ * its three terms behind it. The only admin choice left is which term is current,
+ * made from the Fees page.
  */
 class AcademicSessionController extends Controller
 {
+    /** The retired Sessions page: bookmarks land on Fees, where terms now live. */
     public function index(School $school)
     {
-        $sessions = $school->academicSessions()->with('terms')->get();
-
-        return view('sessions.index', [
-            'school' => $school,
-            'sessions' => $sessions,
-            'currentTermId' => $school->current_academic_term_id,
-        ]);
+        return redirect()->route('school.subcategories.index', ['school' => $school->slug]);
     }
 
-    public function store(Request $request, School $school, AcademicPeriodService $periods)
+    /**
+     * The Fees page's "current term" control: academic year + term, found or
+     * created like a fee's. Only the pointer change is audited (setCurrentTerm).
+     */
+    public function updateCurrent(Request $request, School $school, AcademicPeriodService $periods)
     {
         $data = $request->validate([
-            'name' => [
+            'current_academic_year' => [
                 'required', 'string', 'max:20',
                 function ($attribute, $value, $fail) {
-                    if (! AcademicSession::isValidName((string) $value)) {
-                        $fail('Enter the session as two consecutive years, e.g. 2026/2027.');
+                    if (! AcademicSession::isValidName(trim((string) $value))) {
+                        $fail('Enter the academic year as two consecutive years, e.g. 2026/2027.');
                     }
                 },
-                Rule::unique('academic_sessions', 'name')->where(fn ($q) => $q->where('school_id', $school->id)),
             ],
-            'starts_on' => ['nullable', 'date'],
-            'ends_on' => ['nullable', 'date', 'after_or_equal:starts_on'],
+            'current_term' => ['required', 'integer', Rule::in(array_keys(AcademicTerm::NAMES))],
         ], [
-            'name.unique' => 'This session already exists for your school.',
+            'current_term.required' => 'Choose the term.',
+            'current_term.in' => 'Choose First, Second or Third Term.',
         ]);
 
-        $periods->createSession($school, $data['name'], $data['starts_on'] ?? null, $data['ends_on'] ?? null);
+        $term = DB::transaction(function () use ($school, $periods, $data) {
+            $term = $periods->termFor($school, $data['current_academic_year'], (int) $data['current_term']);
+            $periods->setCurrentTerm($school->refresh(), $term);
 
-        return redirect()->route('school.sessions.index', ['school' => $school->slug])
-            ->with('success', 'Session '.$data['name'].' created with First, Second and Third Term.');
+            return $term;
+        });
+
+        return redirect()->route('school.subcategories.index', ['school' => $school->slug])
+            ->with('success', $term->label.' is now the current term. The payment page opens on it.');
     }
 
     /**
@@ -57,7 +66,7 @@ class AcademicSessionController extends Controller
     {
         $periods->setCurrentTerm($school, $academicTerm);
 
-        return redirect()->route('school.sessions.index', ['school' => $school->slug])
-            ->with('success', $academicTerm->name.' is now the current term.');
+        return redirect()->route('school.subcategories.index', ['school' => $school->slug])
+            ->with('success', $academicTerm->label.' is now the current term. The payment page opens on it.');
     }
 }

@@ -38,14 +38,18 @@ class DashboardPageTest extends TestCase
     {
         $page = $this->page()->assertOk();
         $page->assertSee('Overview')->assertSee('Dashboard')->assertSee("Alpha School's payment overview", false)
-            ->assertSee('Finish setting up')->assertSee('Create the session and its terms')->assertSee('Add the fees parents can pay')->assertSee('Add your first student')
-            ->assertSee('/admin/alpha/sessions')->assertSee('/admin/alpha/subcategories')->assertSee('/admin/alpha/students')
+            ->assertSee('Finish setting up')->assertSee('Set up your classes, in order')->assertSee('Add your school fees for the term')->assertSee('Add your first student')
+            ->assertSee('/admin/alpha/students/classes')->assertSee('/admin/alpha/subcategories')->assertSee('/admin/alpha/students')
             ->assertSee('No payments yet')->assertSee('Nothing collected yet')
             ->assertSee('/admin/alpha/students/create')->assertSee('/admin/alpha/subcategories/create')->assertSee('/admin/alpha/share')
-            ->assertSee('Create academic session');
+            ->assertSee('/admin/alpha/students/promotion')
+            ->assertSee('Add school fees')
+            // No academic-session management anywhere on the dashboard.
+            ->assertDontSee('/admin/alpha/sessions')->assertDontSee('Create academic session');
         $this->assertSame(1, substr_count($page->getContent(), '<h1'));
 
         // Setup card disappears once the school is set up.
+        \App\Models\ClassLevel::create(['school_id' => $this->alpha->id, 'name' => 'JSS1', 'position' => 1]);
         $this->makeSessionWithTerms($this->alpha, '2026/2027');
         $this->makeFee($this->alpha, 'Tuition', 'Tuition', 1000);
         $this->makeStudent($this->alpha, 'A/1', 'Ada');
@@ -79,7 +83,7 @@ class DashboardPageTest extends TestCase
         // Recent payments (successful only), category breakdown, pending/failed kept secondary.
         // The status badge must read the transaction's own status, not a leaked loop variable.
         $this->assertSame(2, substr_count($page->getContent(), '</span>Success</span>'));
-        $page->assertSee('Ada Okonkwo')->assertSee('First Term Tuition')->assertSee("/admin/alpha/transactions/")
+        $page->assertSee('Ada Okonkwo')->assertSee('First Term Tuition')->assertSee('/admin/alpha/transactions/')
             ->assertSee('Collections by category')->assertSeeInOrder(['Tuition', '1', '₦50,000.00'])->assertSeeInOrder(['Uniform', '1', '₦3,000.00'])
             ->assertSee('1 pending payment')->assertSee('status=pending')->assertSee('1 payment not completed')->assertSee('status=failed')
             ->assertDontSee('ref-pending')->assertDontSee('ref-failed')

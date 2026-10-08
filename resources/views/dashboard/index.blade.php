@@ -8,7 +8,7 @@
     @if($selectedTerm)
         · {{ $selectedTerm->name }}, {{ $selectedTerm->session->name }}
     @else
-        · all-time figures until you create an academic session
+        · all-time figures until you add your first term fee
     @endif
 @endsection
 
@@ -27,7 +27,7 @@
             <button type="submit" class="btn-outline">Show</button>
         </form>
     @else
-        <a href="{{ route('school.sessions.index', ['school' => $school->slug]) }}" class="btn-obsidian">Create academic session</a>
+        <a href="{{ route('school.subcategories.create', ['school' => $school->slug]) }}" class="btn-obsidian">Add school fees</a>
     @endif
 @endsection
 
@@ -39,10 +39,10 @@
     $tz = \App\Services\SchoolDashboardService::reportingTimezone();
     $pendingCount = (int) ($stats['status_counts']['pending'] ?? 0);
     $failedCount = (int) (($stats['status_counts']['failed'] ?? 0) + ($stats['status_counts']['mismatch'] ?? 0));
-    $hasSessions = $terms->isNotEmpty();
+    $hasClasses = $school->classLevels()->exists();
     $hasFees = $school->subcategories()->exists();
     $hasStudents = $school->students()->exists();
-    $setupDone = $hasSessions && $hasFees && $hasStudents;
+    $setupDone = $hasClasses && $hasFees && $hasStudents;
     $by = $stats['payouts']['by_status'];
     $sum = function (array $statuses) use ($by) {
         $amount = 0.0; $count = 0;
@@ -68,11 +68,11 @@
 @unless($setupDone)
     <section class="card mb-6 p-5 sm:p-6" aria-labelledby="setup-heading">
         <h2 id="setup-heading" class="font-display text-lg font-bold tracking-tight">Finish setting up</h2>
-        <p class="mt-1 text-sm text-brand-slate">Parents can pay once your school has a session, at least one fee type and its students.</p>
+        <p class="mt-1 text-sm text-brand-slate">Parents can pay once your school has its classes, its fees and its students.</p>
         <ol class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
             @foreach([
-                [$hasSessions, 'Academic session', 'Create the session and its terms', route('school.sessions.index', $s)],
-                [$hasFees, 'Fee types', 'Add the fees parents can pay', route('school.subcategories.index', $s)],
+                [$hasClasses, 'Classes', 'Set up your classes, in order', route('school.students.classes.index', $s)],
+                [$hasFees, 'Fees', 'Add your school fees for the term', route('school.subcategories.index', $s)],
                 [$hasStudents, 'Students', 'Add your first student', route('school.students.index', $s)],
             ] as $i => [$done, $stepLabel, $stepHint, $href])
                 <li>
@@ -216,8 +216,8 @@
             <ul class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-1">
                 @foreach([
                     ['Add student', route('school.students.create', $s)],
-                    ['Add fee type', route('school.subcategories.create', $s)],
-                    ['Sessions & terms', route('school.sessions.index', $s)],
+                    ['Add a fee', route('school.subcategories.create', $s)],
+                    ['Promote students', route('school.students.promotion.index', $s)],
                     ['Share payment page', route('school.share.index', $s)],
                 ] as [$actionLabel, $href])
                     <li><a href="{{ $href }}" class="btn-outline w-full justify-between">{{ $actionLabel }}<svg class="h-4 w-4 text-brand-slate" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a></li>

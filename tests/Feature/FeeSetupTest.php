@@ -13,9 +13,10 @@ use Tests\Concerns\InteractsWithSchools;
 use Tests\TestCase;
 
 /**
- * The redesigned Categories + Fee types area: rendering, CRUD, validation, the
- * (unchanged) deletion semantics, tenant isolation, and that the public payment
- * page still receives exactly the same fee structure.
+ * The Fees area (fees + categories): rendering, CRUD, validation, the (unchanged)
+ * deletion semantics, tenant isolation, and that the public payment page still
+ * receives exactly the same fee structure. The built-in School Fees category and
+ * the school-fees form are covered by SchoolFeesCategoryTest.
  */
 class FeeSetupTest extends TestCase
 {
@@ -66,8 +67,9 @@ class FeeSetupTest extends TestCase
     {
         $page = $this->alpha()->get('/admin/alpha/categories')->assertOk();
 
-        $page->assertSee('Fee setup')->assertSee('Organize the fees your school collects.')->assertSeeText('3 categories')
-            ->assertSeeInOrder(['Tuition', '1 fee type'])
+        // The built-in School Fees category is listed first, then the school's own.
+        $page->assertSee('Fees')->assertSee('Organize the fees your school collects.')->assertSeeText('4 categories')
+            ->assertSeeInOrder(['School Fees', 'Built in · for school fees', '0 fee types', 'Tuition', '1 fee type'])
             ->assertSeeInOrder(['Uniform', '1 fee type'])
             ->assertSeeInOrder(['Empty Category', '0 fee types', 'Parents cannot pay into an empty category'])
             ->assertSee("/admin/alpha/categories/{$this->tuition->id}/edit")
@@ -93,8 +95,8 @@ class FeeSetupTest extends TestCase
             ->get('/admin/alpha/categories')->assertOk()->assertSee('aria-describedby="name-help name-error"', false)->assertSee('The name field is required.');
 
         $this->alpha()->get("/admin/alpha/categories/{$this->tuition->id}/edit")->assertOk()->assertSee('Edit category')->assertSee('value="Tuition"', false)->assertSee('Save changes');
-        $this->alpha()->put("/admin/alpha/categories/{$this->tuition->id}", ['name' => 'School Fees'])->assertRedirect('/admin/alpha/categories')->assertSessionHas('success');
-        $this->assertDatabaseHas('categories', ['id' => $this->tuition->id, 'name' => 'School Fees']);
+        $this->alpha()->put("/admin/alpha/categories/{$this->tuition->id}", ['name' => 'Tuition & Levies'])->assertRedirect('/admin/alpha/categories')->assertSessionHas('success');
+        $this->assertDatabaseHas('categories', ['id' => $this->tuition->id, 'name' => 'Tuition & Levies']);
         // Fee types stay attached; transaction snapshots are untouched by a rename.
         $this->assertDatabaseHas('subcategories', ['id' => $this->termFee->id, 'category_id' => $this->tuition->id]);
 
@@ -143,13 +145,14 @@ class FeeSetupTest extends TestCase
 
     // -------------------------------------------------------------- fee types
 
-    public function test_fee_types_list_renders_with_category_amount_session_and_term(): void
+    public function test_fees_list_renders_with_category_amount_academic_year_and_term(): void
     {
         $page = $this->alpha()->get('/admin/alpha/subcategories')->assertOk();
 
-        $page->assertSee('Fee setup')->assertSee('Set the fees students can pay for each academic term.')->assertSeeText('2 fee types')
+        $page->assertSee('School fees and additional fees parents can pay, by academic year and term.')->assertSeeText('2 fees')
+            ->assertSee('Academic year')->assertDontSee('>Session<', false)
             ->assertSee('First Term Tuition')->assertSee('₦50,000.00')->assertSee('2026/2027')->assertSee('First Term')
-            ->assertSee('Shirt')->assertSee('₦3,000.00')->assertSee('General')->assertSee('Payable in any term')
+            ->assertSee('Shirt')->assertSee('₦3,000.00')->assertSee('Any term')
             ->assertSee("/admin/alpha/subcategories/{$this->termFee->id}/edit")
             ->assertSee('data-confirm-title="Delete “Shirt”?"', false)
             ->assertDontSee('Beta Fee')->assertDontSee('window.confirm');
@@ -162,11 +165,11 @@ class FeeSetupTest extends TestCase
         $this->alpha()->get('/admin/alpha/subcategories')->assertOk()->assertSeeInOrder(['Unpriced', 'Not set']);
     }
 
-    public function test_fee_type_create_edit_validation_and_relationships(): void
+    public function test_fee_create_edit_validation_and_relationships(): void
     {
         $page = $this->alpha()->get('/admin/alpha/subcategories/create')->assertOk();
-        $page->assertSee('New fee type')->assertSee('Create fee type')
-            ->assertSee('<optgroup label="2026/2027">', false)->assertSee('Second Term, 2026/2027')->assertSee('General — payable in any term')
+        $page->assertSee('Add a fee')->assertSee('Create fee')
+            ->assertSee('<option value="2026/2027" selected>2026/2027</option>', false)->assertSee('Second Term')->assertSee('Any term')
             ->assertSee('Tuition')->assertSee('Uniform')->assertDontSee('Beta Category');
 
         $this->alpha()->post('/admin/alpha/subcategories', ['category_id' => $this->tuition->id, 'name' => 'Second Term Tuition', 'price' => '52000.50', 'academic_term_id' => $this->first->id])
@@ -183,14 +186,14 @@ class FeeSetupTest extends TestCase
 
         // Edit: pre-filled, term shown, saves.
         $edit = $this->alpha()->get("/admin/alpha/subcategories/{$this->termFee->id}/edit")->assertOk();
-        $edit->assertSee('Edit fee type')->assertSee('value="First Term Tuition"', false)->assertSee('value="50000', false)
-            ->assertSee('<option value="'.$this->first->id.'" selected', false)->assertSee('Save changes')->assertSee('editing an existing fee');
+        $edit->assertSee('Edit fee')->assertSee('value="First Term Tuition"', false)->assertSee('value="50000', false)
+            ->assertSee('<option value="1" selected>First Term</option>', false)->assertSee('Save changes')->assertSee('editing an existing fee');
         $this->alpha()->put("/admin/alpha/subcategories/{$this->termFee->id}", ['category_id' => $this->generalFee->category_id, 'name' => 'Moved Fee', 'price' => '100', 'academic_term_id' => ''])
             ->assertRedirect('/admin/alpha/subcategories')->assertSessionHas('success');
         $this->assertDatabaseHas('subcategories', ['id' => $this->termFee->id, 'category_id' => $this->generalFee->category_id, 'name' => 'Moved Fee', 'price' => 100, 'academic_term_id' => null]);
     }
 
-    public function test_fee_type_delete_keeps_payment_history(): void
+    public function test_fee_delete_keeps_payment_history(): void
     {
         $paid = $this->makeSuccessfulTransaction($this->alpha, ['reference' => 'ref-shirt', 'category_id' => $this->generalFee->category_id, 'subcategory_id' => $this->generalFee->id, 'subcategory_name' => 'Shirt']);
 
@@ -200,7 +203,7 @@ class FeeSetupTest extends TestCase
         $this->assertDatabaseHas('transactions', ['id' => $paid->id, 'subcategory_id' => null, 'subcategory_name' => 'Shirt']);
     }
 
-    public function test_fee_type_tenant_isolation_and_guest_protection(): void
+    public function test_fee_tenant_isolation_and_guest_protection(): void
     {
         $id = $this->betaFee->id;
         $this->alpha()->get('/admin/alpha/subcategories')->assertOk()->assertDontSee('Beta Fee');
@@ -228,11 +231,11 @@ class FeeSetupTest extends TestCase
     public function test_empty_states(): void
     {
         $fresh = $this->makeSchool('Gamma School', 'gamma');
-        $this->actingAsSchoolAdmin($fresh)->get('/admin/gamma/categories')->assertOk()->assertSee('No fee categories yet')->assertSee('Categories organize your fee types');
-        $this->actingAsSchoolAdmin($fresh)->get('/admin/gamma/subcategories')->assertOk()->assertSee('No fee types yet')->assertSee('Add a category first');
-
-        Category::create(['school_id' => $fresh->id, 'name' => 'Only Category']);
-        $this->actingAsSchoolAdmin($fresh)->get('/admin/gamma/subcategories')->assertOk()->assertSee('No fee types yet')->assertSee('Add fee type')->assertDontSee('Add a category first');
+        // A new school is never asked to create a category first: School Fees is built in.
+        $this->actingAsSchoolAdmin($fresh)->get('/admin/gamma/subcategories')->assertOk()
+            ->assertSee('No fees yet')->assertSee('Add school fees')->assertDontSee('Add a category first')
+            ->assertSee('Not set yet. It is set for you when you add your first term fee.');
+        $this->actingAsSchoolAdmin($fresh)->get('/admin/gamma/categories')->assertOk()->assertSee('School Fees')->assertSeeText('1 category');
     }
 
     // ---------------------------------------------------------- compatibility
