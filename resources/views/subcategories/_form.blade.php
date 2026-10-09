@@ -6,6 +6,12 @@
     $old = session()->hasOldInput();
     // New fees default to School fees, the main fee most schools set up first.
     $isTuition = $old ? (bool) old('is_tuition') : (bool) ($subcategory?->is_tuition ?? true);
+    // A fee with payment records keeps its type (SubcategoryController::assertTypeUnchangedOnceUsed):
+    // only its own type can be chosen, whatever a failed submit carried.
+    $typeLocked = $subcategory && ($typeLocked ?? false);
+    if ($typeLocked) {
+        $isTuition = (bool) $subcategory->is_tuition;
+    }
     $inSchoolFees = $subcategory && (int) $subcategory->category_id === (int) $schoolFees->id;
     $selectedCategory = (string) old('category_id', $subcategory && ! $inSchoolFees ? $subcategory->category_id : '');
     // An additional fee already filed under School Fees (from before it was built in) keeps that choice.
@@ -17,7 +23,12 @@
         $selectedCategory = (string) $schoolFees->id;
     }
     $selectedYear = (string) old('academic_year', $subcategory?->academicTerm?->session?->name ?? $defaultYear);
-    $selectedTerm = (string) old('term', $subcategory ? ($subcategory->academicTerm?->number ?? '') : ($defaultTerm ?? 1));
+    // A fee without a term (an additional fee) starts on the current term should the
+    // admin switch it to school fees, which always have one.
+    $selectedTerm = (string) old('term', $subcategory?->academicTerm?->number ?? $defaultTerm ?? 1);
+    // The term a saved fee is limited to, e.g. "First Term, 2026/2027"; saved as an
+    // additional fee it becomes payable in any term (SubcategoryController::resolveFee).
+    $termLimit = $subcategory?->academicTerm?->label;
     if ($selectedYear !== '' && ! in_array($selectedYear, $years, true)) {
         $years[] = $selectedYear;
         rsort($years);
@@ -32,24 +43,27 @@
 @endphp
 <div class="space-y-5" id="feeForm">
     {{-- 1. What kind of fee --}}
-    <fieldset aria-describedby="is_tuition-help{{ $errors->has('is_tuition') ? ' is_tuition-error' : '' }}">
+    <fieldset aria-describedby="is_tuition-help{{ $typeLocked ? ' is_tuition-locked' : '' }}{{ $errors->has('is_tuition') ? ' is_tuition-error' : '' }}">
         <legend class="field-label">Type of fee</legend>
         <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label class="flex min-h-[64px] cursor-pointer items-start gap-3 rounded-2xl border border-brand-ash/60 p-3 has-[:checked]:border-brand-violet has-[:checked]:bg-brand-violet/5">
-                <input type="radio" name="is_tuition" value="1" class="mt-0.5 h-5 w-5 border-brand-ash text-brand-violet focus:ring-4 focus:ring-brand-violet/30" data-fee-kind @checked($isTuition)>
+                <input type="radio" name="is_tuition" value="1" class="mt-0.5 h-5 w-5 border-brand-ash text-brand-violet focus:ring-4 focus:ring-brand-violet/30" data-fee-kind @checked($isTuition) @disabled($typeLocked && ! $isTuition)>
                 <span class="min-w-0">
                     <span class="block font-semibold">School fees</span>
                     <span class="block text-xs text-brand-slate">The main fee for a class and term</span>
                 </span>
             </label>
             <label class="flex min-h-[64px] cursor-pointer items-start gap-3 rounded-2xl border border-brand-ash/60 p-3 has-[:checked]:border-brand-violet has-[:checked]:bg-brand-violet/5">
-                <input type="radio" name="is_tuition" value="0" class="mt-0.5 h-5 w-5 border-brand-ash text-brand-violet focus:ring-4 focus:ring-brand-violet/30" data-fee-kind @checked(! $isTuition)>
+                <input type="radio" name="is_tuition" value="0" class="mt-0.5 h-5 w-5 border-brand-ash text-brand-violet focus:ring-4 focus:ring-brand-violet/30" data-fee-kind @checked(! $isTuition) @disabled($typeLocked && $isTuition)>
                 <span class="min-w-0">
                     <span class="block font-semibold">Additional fee</span>
                     <span class="block text-xs text-brand-slate">Uniforms, books, transport, exams …</span>
                 </span>
             </label>
         </div>
+        @if($typeLocked)
+            <p id="is_tuition-locked" class="mt-3 rounded-2xl bg-brand-fog px-4 py-3 text-sm text-brand-slate"><span class="font-semibold text-brand-obsidian">The type of this fee can’t be changed</span> because it already has payment records. To charge it as {{ $isTuition ? 'an additional fee' : 'school fees' }}, create a new fee instead. You can still change its other details.</p>
+        @endif
         <p id="is_tuition-help" class="field-help">New school fees are filed under <span class="font-semibold">School Fees</span> automatically, can be paid once per student each term, and are picked for the parent on the payment page. Additional fees stay payable on their own.</p>
         @error('is_tuition')<p id="is_tuition-error" class="field-error">{{ $message }}</p>@enderror
     </fieldset>
@@ -94,12 +108,14 @@
         </div>
     </div>
 
-    {{-- 3. When --}}
-    <div>
+    {{-- 3. When: school fees only. An additional fee is payable in any term; the server
+         ignores any year or term posted with one, and the script disables these fields
+         so a hidden value is never submitted. --}}
+    <div data-tuition-only>
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
                 <label for="academic_year" class="field-label">Academic year</label>
-                <select name="academic_year" id="academic_year" class="field-input {{ $errors->has('academic_year') ? 'field-input-error' : '' }}" @if($errors->has('academic_year')) aria-invalid="true" aria-describedby="academic_year-error" @endif>
+                <select name="academic_year" id="academic_year" data-tuition-field class="field-input {{ $errors->has('academic_year') ? 'field-input-error' : '' }}" @if($errors->has('academic_year')) aria-invalid="true" aria-describedby="academic_year-error" @endif>
                     @foreach($years as $year)
                         <option value="{{ $year }}" @selected($selectedYear === $year)>{{ $year }}</option>
                     @endforeach
@@ -108,17 +124,26 @@
             </div>
             <div>
                 <label for="term" class="field-label">Term</label>
-                <select name="term" id="term" class="field-input {{ $errors->has('term') ? 'field-input-error' : '' }}" aria-describedby="term-help{{ $errors->has('term') ? ' term-error' : '' }}" {!! $invalid('term') !!}>
+                <select name="term" id="term" data-tuition-field class="field-input {{ $errors->has('term') ? 'field-input-error' : '' }}" aria-describedby="term-help{{ $errors->has('term') ? ' term-error' : '' }}" {!! $invalid('term') !!}>
                     @foreach(\App\Models\AcademicTerm::NAMES as $number => $termName)
                         <option value="{{ $number }}" @selected($selectedTerm === (string) $number)>{{ $termName }}</option>
                     @endforeach
-                    <option value="" data-additional-only @selected($selectedTerm === '')>Any term</option>
                 </select>
                 @error('term')<p id="term-error" class="field-error">{{ $message }}</p>@enderror
             </div>
         </div>
-        <p id="term-help" class="field-help">A term fee can only be paid for that term. Additional fees can also be “Any term”, for things like uniforms or books.</p>
+        <p id="term-help" class="field-help">School fees can only be paid for this term. Additional fees, such as uniforms or books, are payable in any term.</p>
     </div>
+
+    @if($termLimit)
+        {{-- A saved fee with a term: as an additional fee it is saved payable in any term.
+             Shown while "Additional fee" is chosen — at once for an additional fee from
+             before this rule, and on switching for a school fee. --}}
+        <div data-additional-only role="status" class="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <p class="font-semibold">Saving will remove this fee’s term</p>
+            <p class="mt-1">It is currently limited to {{ $termLimit }}. Additional fees are payable in any term, so once you save it parents can pay it in any term. Payments already made and their receipts are not changed, and the change is recorded in the audit log.</p>
+        </div>
+    @endif
 
     {{-- 4. Name --}}
     <div>
@@ -180,16 +205,15 @@
     var form = document.getElementById('feeForm');
     if (!form) return;
     var radios = form.querySelectorAll('input[data-fee-kind]');
-    var term = document.getElementById('term');
     function refresh(event) {
         var checked = form.querySelector('input[data-fee-kind]:checked');
         var tuition = !checked || checked.value === '1';
-        form.querySelectorAll('[data-additional-only]').forEach(function (el) {
-            if (el.tagName === 'OPTION') { el.hidden = tuition; el.disabled = tuition; } else { el.hidden = tuition; }
-        });
+        form.querySelectorAll('[data-additional-only]').forEach(function (el) { el.hidden = tuition; });
         form.querySelectorAll('[data-tuition-only]').forEach(function (el) { el.hidden = !tuition; });
-        // Switching to School fees picks a term; a saved fee is never changed on page load.
-        if (tuition && event && term.value === '') term.value = '1';
+        // A disabled field is not submitted, so an additional fee never posts the year
+        // and term it cannot have. Switching back re-enables them with the values they
+        // held — the fee's saved term, or the school's current one for a new fee.
+        form.querySelectorAll('[data-tuition-field]').forEach(function (el) { el.disabled = !tuition; });
         if (tuition && event) { var qty = document.getElementById('allows_quantity'); if (qty) qty.checked = false; }
     }
     radios.forEach(function (r) { r.addEventListener('change', refresh); });

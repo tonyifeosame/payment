@@ -71,7 +71,7 @@ class TransactionController extends Controller
             'payout' => $transaction->payout,
             'payoutLabels' => PayoutController::STATUS_LABELS,
             'timeline' => $timeline->forTransaction($transaction),
-            'payoutState' => $timeline->payoutState($transaction->payout, $transaction->status === Transaction::STATUS_SUCCESS),
+            'payoutState' => $timeline->payoutStateFor($transaction),
             // The same signed, non-expiring link the receipt page and email hand out.
             'downloadUrl' => $transaction->status === Transaction::STATUS_SUCCESS
                 ? URL::signedRoute('payment.receipt.download', ['transaction' => $transaction->id])
@@ -109,6 +109,9 @@ class TransactionController extends Controller
                 'Payer Name', 'Payer Email', 'Payment Method',
                 'Fee Amount (NGN)',
                 'Payout Status', 'Payout Reference',
+                // Paystack: collected online through FEYRA. Cash: received by the school
+                // directly and recorded here — never a FEYRA collection or a payout.
+                'Source', 'Receipt No.',
             ]);
 
             $query->chunk(500, function ($rows) use ($out) {
@@ -135,6 +138,8 @@ class TransactionController extends Controller
                         number_format($breakdown['fee_subtotal'], 2, '.', ''),
                         $t->payout?->status,
                         $t->payout?->reference,
+                        $t->isManual() ? 'Cash' : 'Paystack',
+                        $t->manual_receipt_number,
                     ]));
                 }
             });
@@ -155,6 +160,8 @@ class TransactionController extends Controller
             'q' => trim((string) $request->input('q', '')),
             // Default to the collections view. 'all' lifts the status filter.
             'status' => (string) $request->input('status', Transaction::STATUS_SUCCESS),
+            // 'online' (paid through FEYRA) or 'cash' (recorded by the school); anything else is both.
+            'source' => (string) $request->input('source', ''),
             'category_id' => $request->input('category_id'),
             'session_id' => $request->input('session_id'),
             'term_id' => $request->input('term_id'),

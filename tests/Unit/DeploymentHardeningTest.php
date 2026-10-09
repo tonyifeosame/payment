@@ -45,8 +45,9 @@ class DeploymentHardeningTest extends TestCase
         $ini = parse_ini_string($this->file('docker/php.ini'));
 
         $this->assertSame('256M', $ini['memory_limit']);
-        $this->assertSame('8M', $ini['post_max_size']);
-        $this->assertSame('6M', $ini['upload_max_filesize']);
+        // Sized for the 10 MB student CSV import (StudentImportService::MAX_KILOBYTES).
+        $this->assertSame('12M', $ini['post_max_size']);
+        $this->assertSame('11M', $ini['upload_max_filesize']);
         $this->assertSame('', $ini['expose_php']); // Off
     }
 

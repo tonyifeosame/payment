@@ -12,8 +12,39 @@ class Transaction extends Model
     /** The only status that counts as money collected. */
     public const STATUS_SUCCESS = 'success';
 
+    /**
+     * A cash payment the school recorded and later withdrew. Never money: it leaves
+     * every total, and no longer settles the school fee it was recorded for.
+     */
+    public const STATUS_VOIDED = 'voided';
+
     /** Every status a transaction can hold, for filters and validation. */
-    public const STATUSES = ['success', 'pending', 'failed', 'mismatch'];
+    public const STATUSES = ['success', 'pending', 'failed', 'mismatch', self::STATUS_VOIDED];
+
+    /** Paid through FEYRA's Paystack checkout: a FEYRA collection. */
+    public const SOURCE_PAYSTACK = 'paystack';
+
+    /**
+     * Cash the school received directly and recorded here. It settles the school fee
+     * for the student, but FEYRA collected nothing: no service fee, no Paystack
+     * charge, never a payout.
+     */
+    public const SOURCE_MANUAL = 'manual';
+
+    public const METHOD_CASH = 'cash';
+
+    /** How each recorded payment method reads after "Paid with". */
+    private const METHOD_NAMES = [
+        'cash' => 'Cash',
+        'card' => 'Card',
+        'bank' => 'Bank',
+        'bank_transfer' => 'Bank Transfer',
+        'ussd' => 'USSD',
+        'mobile_money' => 'Mobile Money',
+        'qr' => 'QR',
+        'eft' => 'EFT',
+        'apple_pay' => 'Apple Pay',
+    ];
 
     protected $fillable = [
         'reference',
@@ -41,12 +72,45 @@ class Transaction extends Model
         'meta_data',
         'school_id',
         'obligation_key',
+        'source',
+        'manual_receipt_number',
+        'received_by',
+        'notes',
     ];
 
     protected $casts = [
         'meta_data' => 'array',
         'paid_at' => 'datetime',
+        'voided_at' => 'datetime',
     ];
+
+    /** Cash recorded by the school, as opposed to a payment collected through Paystack. */
+    public function isManual(): bool
+    {
+        return $this->source === self::SOURCE_MANUAL;
+    }
+
+    /**
+     * "Paid with Card", "Paid with Bank Transfer", "Paid with Cash" … for a successful
+     * payment; null for anything that is not (or is no longer) paid. Rows settled
+     * before Paystack reported a channel only know they were paid online.
+     */
+    public function methodLabel(): ?string
+    {
+        if ($this->status !== self::STATUS_SUCCESS) {
+            return null;
+        }
+        if ($this->isManual()) {
+            return 'Paid with Cash';
+        }
+
+        $method = strtolower((string) $this->payment_method);
+        if ($method === '' || $method === 'paystack') {
+            return 'Paid online';
+        }
+
+        return 'Paid with '.(self::METHOD_NAMES[$method] ?? ucwords(str_replace('_', ' ', $method)));
+    }
 
     /**
      * The figures a receipt must show, derived from one authoritative source.
@@ -190,6 +254,23 @@ class Transaction extends Model
     }
 
     /**
+     * Payments FEYRA collected through Paystack. Every collection, revenue and
+     * service-fee total — and anything that could lead to a payout — must start
+     * here: cash recorded by the school is the school's own money, never FEYRA's.
+     * "Is this fee paid?" questions use successful() alone, across both sources.
+     */
+    public function scopeOnline(Builder $query): Builder
+    {
+        return $query->where('transactions.source', self::SOURCE_PAYSTACK);
+    }
+
+    /** Cash payments the school recorded itself. */
+    public function scopeManual(Builder $query): Builder
+    {
+        return $query->where('transactions.source', self::SOURCE_MANUAL);
+    }
+
+    /**
      * The identity of a main (tuition) school-fee obligation: one student, one
      * academic session, one term — "student:session:term". ANY main fee settles it,
      * so a student moved to another class mid-term (whose class has a different main
@@ -294,6 +375,14 @@ class Transaction extends Model
         $status = $filters['status'] ?? null;
         if (is_string($status) && in_array($status, self::STATUSES, true)) {
             $query->where('transactions.status', $status);
+        }
+
+        // Payment method: paid online through FEYRA, or cash recorded by the school.
+        $source = $filters['source'] ?? null;
+        if ($source === 'online') {
+            $query->online();
+        } elseif ($source === 'cash') {
+            $query->manual();
         }
 
         foreach (['category_id' => 'category_id', 'session_id' => 'academic_session_id', 'term_id' => 'academic_term_id'] as $filter => $column) {

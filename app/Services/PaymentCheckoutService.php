@@ -18,7 +18,8 @@ use Illuminate\Validation\ValidationException;
  * bound school, never as fact:
  *
  *   - category / fee ids must belong to this school, and to each other;
- *   - the term must belong to this school, and the fee must be payable in it;
+ *   - the term is the school's current term, read from the school row — a term
+ *     or session in the request is ignored — and the fee must be payable in it;
  *   - a fee assigned to class levels is payable only for a student in one of
  *     them (Subcategory::isPayableForStudent);
  *   - the student id is looked up WITHIN this school, so a hidden field pointing
@@ -35,8 +36,11 @@ use Illuminate\Validation\ValidationException;
  */
 class PaymentCheckoutService
 {
+    /** Shown instead of the form, and on a submit, while the school has no current term. */
+    public const MESSAGE_UNAVAILABLE = 'Payments are temporarily unavailable because the school has not set the current term. Please contact the school.';
+
     /**
-     * @param  array{email:string, name?:string|null, category_id:int|string, subcategory_id:int|string, quantity:int|string, student_id?:int|string|null, academic_term_id?:int|string|null, academic_session_id?:int|string|null}  $input
+     * @param  array{email:string, name?:string|null, category_id:int|string, subcategory_id:int|string, quantity:int|string, student_id?:int|string|null}  $input
      */
     public function createPendingTransaction(School $school, array $input): Transaction
     {
@@ -50,7 +54,7 @@ class PaymentCheckoutService
             throw ValidationException::withMessages(['subcategory_id' => 'Selected fee type does not belong to the chosen category.']);
         }
 
-        $term = $this->resolveTerm($school, $input);
+        $term = $this->resolveTerm($school);
         if (! $subcategory->isPayableForTerm($term)) {
             throw ValidationException::withMessages(['subcategory_id' => 'The selected fee is not payable for the selected term.']);
         }
@@ -148,36 +152,38 @@ class PaymentCheckoutService
     }
 
     /**
-     * The term the parent is paying for. Required once the school has set up any
-     * session; schools with no sessions keep the pre-period behaviour.
+     * The term the parent is paying for: always the school's current term, as the
+     * admin set it, read from the school row here. The parent never chooses it, so
+     * any term or session in the request is ignored — however the request was built.
+     * Schools that have never set up a session keep the pre-period behaviour (null).
      */
-    private function resolveTerm(School $school, array $input): ?AcademicTerm
+    public function currentTerm(School $school): ?AcademicTerm
     {
-        $termId = $input['academic_term_id'] ?? null;
-        $hasTerms = $school->academicTerms()->exists();
-
-        if ($termId === null || $termId === '') {
-            if ($hasTerms) {
-                throw ValidationException::withMessages(['academic_term_id' => 'Please select the term you are paying for.']);
-            }
-
+        if ($school->current_academic_term_id === null) {
             return null;
         }
 
-        $term = AcademicTerm::with('session')
+        return AcademicTerm::with('session')
             ->where('school_id', $school->id)
-            ->find($termId);
+            ->find($school->current_academic_term_id);
+    }
 
-        if (! $term) {
-            abort(404);
+    /**
+     * Can this school take payments at all? Not while it has academic terms but no
+     * current one: there would be no term to record the payment against.
+     */
+    public function paymentsUnavailable(School $school): bool
+    {
+        return $this->currentTerm($school) === null && $school->academicTerms()->exists();
+    }
+
+    private function resolveTerm(School $school): ?AcademicTerm
+    {
+        if ($this->paymentsUnavailable($school)) {
+            throw ValidationException::withMessages(['academic_term_id' => self::MESSAGE_UNAVAILABLE]);
         }
 
-        $sessionId = $input['academic_session_id'] ?? null;
-        if ($sessionId !== null && $sessionId !== '' && (int) $sessionId !== (int) $term->academic_session_id) {
-            throw ValidationException::withMessages(['academic_term_id' => 'The selected term does not belong to the selected session.']);
-        }
-
-        return $term;
+        return $this->currentTerm($school);
     }
 
     /**

@@ -87,12 +87,15 @@ class StudentController extends Controller
         // student (already proven to be this school's) and by the school itself.
         // Successful and pending payments are the history; failed/mismatched
         // attempts are kept out unless asked for, so they never look like money.
+        // A voided cash payment stays in the history (clearly marked), so a correction
+        // is visible rather than silently gone.
         $history = Transaction::forSchool($school)->where('student_id', $student->id);
         $showAttempts = $request->boolean('attempts');
-        $otherAttempts = (clone $history)->whereNotIn('status', [Transaction::STATUS_SUCCESS, 'pending'])->count();
+        $shown = [Transaction::STATUS_SUCCESS, 'pending', Transaction::STATUS_VOIDED];
+        $otherAttempts = (clone $history)->whereNotIn('status', $shown)->count();
 
         $transactions = (clone $history)
-            ->when(! $showAttempts, fn ($q) => $q->whereIn('status', [Transaction::STATUS_SUCCESS, 'pending']))
+            ->when(! $showAttempts, fn ($q) => $q->whereIn('status', $shown))
             ->with(['category', 'academicTerm.session'])
             // Same order as the transactions list; the id tiebreak keeps pages stable.
             ->orderByDesc(DB::raw(Transaction::paidAtExpression()))
@@ -104,12 +107,16 @@ class StudentController extends Controller
         // fee_amount, this total sat directly above a list of the very payments it
         // totals — each of which shows receiptBreakdown()'s figure — and a legacy
         // row contributed nothing to the total while showing its full amount below.
-        $totalPaid = (float) Transaction::forSchool($school)
+        // Fees paid, by how: online through FEYRA, or cash the school recorded. Both
+        // are fees paid; only the online part is money FEYRA collected.
+        $paid = fn () => Transaction::forSchool($school)
             ->successful()
-            ->where('student_id', $student->id)
-            ->sum(DB::raw(Transaction::netAmountExpression()));
+            ->where('student_id', $student->id);
+        $paidOnline = (float) $paid()->online()->sum(DB::raw(Transaction::netAmountExpression()));
+        $paidCash = (float) $paid()->manual()->sum(DB::raw(Transaction::netAmountExpression()));
+        $totalPaid = $paidOnline + $paidCash;
 
-        return view('students.show', compact('school', 'student', 'transactions', 'totalPaid', 'showAttempts', 'otherAttempts'));
+        return view('students.show', compact('school', 'student', 'transactions', 'totalPaid', 'paidOnline', 'paidCash', 'showAttempts', 'otherAttempts'));
     }
 
     public function edit(School $school, Student $student)

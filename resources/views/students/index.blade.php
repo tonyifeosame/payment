@@ -11,6 +11,7 @@
 @section('actions')
     <a href="{{ route('school.students.classes.index', ['school' => $school->slug]) }}" class="btn-outline">Classes</a>
     <a href="{{ route('school.students.promotion.index', ['school' => $school->slug]) }}" class="btn-outline">Promote students</a>
+    <a href="{{ route('school.students.import.create', ['school' => $school->slug]) }}" class="btn-outline">Import CSV</a>
     <a href="{{ route('school.students.create', ['school' => $school->slug]) }}" class="btn-obsidian">
         <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
         Add student

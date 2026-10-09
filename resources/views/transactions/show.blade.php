@@ -22,8 +22,13 @@
         All transactions
     </a>
     @if($isPaid)
+        @if($t->isManual())
+            <a href="{{ route('school.transactions.void.create', ['school' => $school->slug, 'transaction' => $t->id]) }}" class="btn-outline">Void cash payment</a>
+        @endif
         <a href="{{ $downloadUrl }}" class="btn-outline">Download PDF</a>
         <a href="{{ route('payment.receipt', $t->id) }}" class="btn-obsidian">View receipt</a>
+    @elseif($t->status === \App\Models\Transaction::STATUS_VOIDED)
+        <a href="{{ route('payment.receipt', $t->id) }}" class="btn-outline">View voided receipt</a>
     @endif
 @endsection
 
@@ -46,7 +51,7 @@
                     @endif
                 </p>
             </div>
-            @include('admin._badge', ['status' => $t->status])
+            <div class="text-right">@include('admin._payment_status', ['transaction' => $t])</div>
         </div>
 
         {{-- Only the school's own money is shown: the platform's service charge is
@@ -73,7 +78,37 @@
                     <dd class="break-all font-mono text-[13px] font-medium">{{ $t->paystack_reference }}</dd>
                 </div>
             @endif
-            @if($t->payment_method)
+            @if($t->isManual())
+                <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-3">
+                    <dt class="text-brand-slate">Payment method</dt>
+                    <dd class="font-medium">Cash (recorded by the school)</dd>
+                </div>
+                <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-3">
+                    <dt class="text-brand-slate">Received by</dt>
+                    <dd class="font-medium">{{ $t->received_by ?? '—' }}</dd>
+                </div>
+                <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-3">
+                    <dt class="text-brand-slate">Receipt no.</dt>
+                    <dd class="break-all font-mono text-[13px] font-medium">{{ $t->manual_receipt_number ?? '—' }}</dd>
+                </div>
+                @if($t->notes)
+                    <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-3">
+                        <dt class="text-brand-slate">Notes</dt>
+                        <dd class="break-words font-medium">{{ $t->notes }}</dd>
+                    </div>
+                @endif
+                @if($t->status === \App\Models\Transaction::STATUS_VOIDED)
+                    @php $voidedAt = \App\Support\BusinessTime::display($t->voided_at); @endphp
+                    <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-3">
+                        <dt class="text-brand-slate">Voided</dt>
+                        <dd class="font-medium"><time datetime="{{ $voidedAt?->toIso8601String() }}">{{ $voidedAt?->format('d M Y \a\t H:i') }}</time></dd>
+                    </div>
+                    <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-3">
+                        <dt class="text-brand-slate">Void reason</dt>
+                        <dd class="break-words font-medium">{{ $t->void_reason }}</dd>
+                    </div>
+                @endif
+            @elseif($t->payment_method)
                 <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-3">
                     <dt class="text-brand-slate">Payment method</dt>
                     <dd class="font-medium">{{ ucfirst(str_replace('_', ' ', $t->payment_method)) }}</dd>
@@ -99,7 +134,7 @@
         <p class="mt-3 font-display text-xl font-bold tracking-tight {{ $payoutGroup === 'attention' ? 'text-red-700' : ($payoutGroup === 'paid' ? 'text-green-800' : '') }}">{{ $payoutHeadline }}</p>
         <p class="mt-1 text-sm text-brand-slate">{{ $payoutNote }}</p>
 
-        @if($isPaid)
+        @if($isPaid && ! $t->isManual())
             <dl class="mt-5 divide-y divide-brand-fog border-t border-brand-fog text-sm">
                 <div class="flex items-baseline justify-between gap-4 py-3">
                     <dt class="text-brand-slate">School amount</dt>

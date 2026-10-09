@@ -89,6 +89,43 @@ class AcademicPeriodService
         });
     }
 
+    /**
+     * The school's EXISTING term for an academic year and term number, or null.
+     * Unlike termFor() this never creates anything: it is for flows (cash payments)
+     * that may only act on periods the school has already set up.
+     */
+    public function existingTerm(School $school, ?string $year, mixed $number): ?AcademicTerm
+    {
+        $year = trim((string) $year);
+        if ($year === '' || ! is_numeric($number) || ! isset(AcademicTerm::NAMES[(int) $number])) {
+            return null;
+        }
+
+        return AcademicTerm::query()
+            ->where('academic_terms.school_id', $school->id)
+            ->where('academic_terms.number', (int) $number)
+            ->whereHas('session', fn ($q) => $q->where('school_id', $school->id)->where('name', $year))
+            ->with('session')
+            ->first();
+    }
+
+    /**
+     * Is this term open for recording a cash school-fee payment?
+     *
+     * The school's current term is the one period FEYRA treats as "now": the admin
+     * chooses it on the Fees page (audited), the payment page opens on it and the
+     * dashboard reports on it. Cash may only be recorded for it, so a payment can
+     * not be back-dated into a term the school has moved on from. Callers re-check
+     * this against a freshly read (and, when saving, locked) school row.
+     */
+    public function isOpenForCashPayment(School $school, ?AcademicTerm $term): bool
+    {
+        return $term !== null
+            && (int) $term->school_id === (int) $school->id
+            && $school->current_academic_term_id !== null
+            && (int) $school->current_academic_term_id === (int) $term->id;
+    }
+
     /** The academic year after "2026/2027": "2027/2028". */
     public static function nextYear(string $year): string
     {

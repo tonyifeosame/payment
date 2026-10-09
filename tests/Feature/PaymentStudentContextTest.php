@@ -7,6 +7,8 @@ use App\Models\School;
 use App\Models\Student;
 use App\Models\Subcategory;
 use App\Models\Transaction;
+use App\Services\AcademicPeriodService;
+use App\Services\PaymentCheckoutService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Tests\Concerns\InteractsWithSchools;
@@ -81,12 +83,16 @@ class PaymentStudentContextTest extends TestCase
             // the parent typed. Checkout ignores them; a failed submit re-verifies them.
             'student_name' => 'Adaeze Okonkwo',
             'student_admission_number' => 'A/2026/001',
-            'academic_session_id' => $this->alphaFirstTerm->academic_session_id,
-            'academic_term_id' => $this->alphaFirstTerm->id,
         ], $overrides));
     }
 
-    public function test_payment_page_shows_student_and_term_fields_and_branding(): void
+    /** The admin moves the school on to another term (the Fees page's current term). */
+    private function setCurrentTerm(School $school, AcademicTerm $term): void
+    {
+        app(AcademicPeriodService::class)->setCurrentTerm($school, $term);
+    }
+
+    public function test_payment_page_shows_student_fields_the_current_term_and_branding(): void
     {
         $this->alpha->forceFill(['phone' => '0801 234 5678', 'address' => '1 Alpha Road'])->save();
 
@@ -98,12 +104,15 @@ class PaymentStudentContextTest extends TestCase
             ->assertSee('Find student')
             ->assertSee('student-search', false)
             ->assertDontSee('name="admission_number"', false)
-            ->assertSee('academic_term_id', false)
+            // No session or term to choose: the page shows the school's current term.
+            ->assertDontSee('name="academic_term_id"', false)
+            ->assertDontSee('name="academic_session_id"', false)
+            ->assertDontSee('const sessions', false)
+            ->assertSee('id="currentTermLabel" class="font-semibold text-brand-obsidian">First Term, 2026/2027</span>', false)
+            ->assertSee('id="summaryTerm" class="text-right font-semibold">First Term, 2026/2027</dd>', false)
             ->assertSee('Alpha School')
             ->assertSee('0801 234 5678')
             ->assertSee('1 Alpha Road')
-            // Sessions reach the page as JSON for the term dropdown.
-            ->assertSee('"name":"2026\/2027"', false)
             ->assertDontSee('Beta Tuition')
             ->assertDontSee('B/001')
             // The roster is not embedded in the page; a student is only reachable by
@@ -118,7 +127,7 @@ class PaymentStudentContextTest extends TestCase
         // admission number; the page re-verifies them and re-hydrates from the
         // database, within this school only.
         $this->from('/s/alpha/payment')
-            ->pay(['academic_term_id' => $this->alphaSecondTerm->id]) // term fee in the wrong term -> validation error
+            ->pay(['quantity' => 2]) // a single-charge fee bought twice -> validation error
             ->assertRedirect('/s/alpha/payment');
 
         $this->get('/s/alpha/payment')
@@ -129,7 +138,7 @@ class PaymentStudentContextTest extends TestCase
         // A foreign id in old input is simply not echoed back — even with that
         // student's own correct name and number.
         $this->from('/s/alpha/payment')
-            ->pay(['student_id' => $this->betaStudent->id, 'student_name' => 'Beta Student', 'student_admission_number' => 'B/001', 'academic_term_id' => $this->alphaSecondTerm->id]);
+            ->pay(['student_id' => $this->betaStudent->id, 'student_name' => 'Beta Student', 'student_admission_number' => 'B/001', 'quantity' => 2]);
 
         // (The typed text is refilled into the inputs as the parent's own input; what
         // matters is that no student is re-selected from the database.)
@@ -153,8 +162,6 @@ class PaymentStudentContextTest extends TestCase
                 'name' => 'Parent Okonkwo',
                 'email' => 'parent@example.test',
                 'student_id' => (string) $this->alphaStudent->id,
-                'academic_session_id' => (string) $this->alphaFirstTerm->academic_session_id,
-                'academic_term_id' => (string) $this->alphaFirstTerm->id,
                 'category_id' => (string) $this->alphaTermFee->category_id,
                 'subcategory_id' => (string) $this->alphaTermFee->id,
                 'quantity' => '1',
@@ -162,8 +169,6 @@ class PaymentStudentContextTest extends TestCase
             ->assertRedirect('/s/alpha/payment')
             ->assertSessionHas('error', 'Unable to initialize payment.')
             ->assertSessionHasInput('student_id', (string) $this->alphaStudent->id)
-            ->assertSessionHasInput('academic_session_id', (string) $this->alphaFirstTerm->academic_session_id)
-            ->assertSessionHasInput('academic_term_id', (string) $this->alphaFirstTerm->id)
             ->assertSessionHasInput('category_id', (string) $this->alphaTermFee->category_id)
             ->assertSessionHasInput('subcategory_id', (string) $this->alphaTermFee->id)
             ->assertSessionHasInput('email', 'parent@example.test')
@@ -182,7 +187,8 @@ class PaymentStudentContextTest extends TestCase
             ->assertSee('Adaeze Okonkwo')
             ->assertSee('value="parent@example.test"', false)
             ->assertSee('value="Parent Okonkwo"', false)
-            ->assertSee('const oldTermId = "'.$this->alphaFirstTerm->id.'"', false)
+            ->assertDontSee('oldTermId', false)
+            ->assertSee('First Term, 2026/2027')
             ->assertSee('const oldSubcategoryId = "'.$this->alphaTermFee->id.'"', false)
             ->assertDontSee('sk_test_secret');
     }
@@ -266,10 +272,11 @@ class PaymentStudentContextTest extends TestCase
 
     public function test_a_general_fee_is_payable_in_any_term(): void
     {
+        $this->setCurrentTerm($this->alpha, $this->alphaSecondTerm);
+
         $this->pay([
             'category_id' => $this->alphaGeneralFee->category_id,
             'subcategory_id' => $this->alphaGeneralFee->id,
-            'academic_term_id' => $this->alphaSecondTerm->id,
             'quantity' => 2,
         ])->assertRedirect('https://checkout.paystack.com/abc123');
 
@@ -279,10 +286,57 @@ class PaymentStudentContextTest extends TestCase
         $this->assertEquals(6150.00, (float) $t->amount);
     }
 
-    public function test_a_term_fee_cannot_be_paid_for_a_different_term(): void
+    public function test_the_payment_is_always_for_the_schools_current_term(): void
     {
+        $this->pay()->assertRedirect('https://checkout.paystack.com/abc123');
+
+        $t = Transaction::firstOrFail();
+        $this->assertSame($this->alphaFirstTerm->id, (int) $t->academic_term_id);
+        $this->assertSame($this->alphaFirstTerm->academic_session_id, (int) $t->academic_session_id);
+        $this->assertSame('First Term', $t->term_name);
+        $this->assertSame('2026/2027', $t->session_name);
+    }
+
+    public function test_a_parent_cannot_override_the_current_term_through_form_data_or_the_query_string(): void
+    {
+        $other = $this->makeSessionWithTerms($this->alpha, '2027/2028');
+        $otherTerm = $other->terms()->where('number', 3)->firstOrFail();
+
+        // Posted term and session ids (this school's other terms, another session's,
+        // another school's) and the same in the query string are all ignored.
+        foreach ([$this->alphaSecondTerm, $otherTerm, $this->betaTerm] as $tampered) {
+            $this->post('/s/alpha/payment/initialize?academic_term_id='.$tampered->id.'&academic_session_id='.$tampered->academic_session_id, [
+                'email' => 'parent@example.test',
+                'category_id' => $this->alphaGeneralFee->category_id,
+                'subcategory_id' => $this->alphaGeneralFee->id,
+                'quantity' => 1,
+                'student_id' => $this->alphaStudent->id,
+                'academic_session_id' => $tampered->academic_session_id,
+                'academic_term_id' => $tampered->id,
+                'term' => $tampered->number,
+            ])->assertRedirect('https://checkout.paystack.com/abc123');
+        }
+
+        $this->assertSame(3, Transaction::count());
+        $this->assertSame([$this->alphaFirstTerm->id], Transaction::pluck('academic_term_id')->map(fn ($id) => (int) $id)->unique()->values()->all());
+        $this->assertSame([$this->alphaFirstTerm->academic_session_id], Transaction::pluck('academic_session_id')->map(fn ($id) => (int) $id)->unique()->values()->all());
+
+        // The page, too, shows the current term whatever the URL says.
+        $this->get('/s/alpha/payment?academic_term_id='.$this->alphaSecondTerm->id.'&academic_session_id='.$other->id)
+            ->assertOk()
+            ->assertSee('const currentTermId = '.$this->alphaFirstTerm->id.';', false)
+            ->assertSee('First Term, 2026/2027')
+            ->assertDontSee('Second Term, 2026/2027');
+    }
+
+    public function test_a_term_fee_cannot_be_paid_once_the_school_has_moved_to_another_term(): void
+    {
+        // The admin moved on to Second Term; the First Term fee is no longer payable,
+        // even with First Term posted by a stale or modified form.
+        $this->setCurrentTerm($this->alpha, $this->alphaSecondTerm);
+
         $this->from('/s/alpha/payment')
-            ->pay(['academic_term_id' => $this->alphaSecondTerm->id])
+            ->pay(['academic_term_id' => $this->alphaFirstTerm->id, 'academic_session_id' => $this->alphaFirstTerm->academic_session_id])
             ->assertRedirect('/s/alpha/payment')
             ->assertSessionHasErrors('subcategory_id');
 
@@ -290,24 +344,25 @@ class PaymentStudentContextTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_term_is_required_once_the_school_has_sessions(): void
+    public function test_a_school_with_terms_but_no_current_term_cannot_take_payments(): void
     {
+        $this->alpha->forceFill(['current_academic_term_id' => null])->save();
+
+        $this->get('/s/alpha/payment')
+            ->assertOk()
+            ->assertSee('Payments are temporarily unavailable')
+            ->assertSee('Please contact the school')
+            ->assertDontSee('id="paymentForm"', false)
+            ->assertDontSee('name="student_name"', false);
+
+        // A submit, even naming a real term of this school, is refused with the same message.
         $this->from('/s/alpha/payment')
-            ->pay(['academic_term_id' => '', 'academic_session_id' => ''])
-            ->assertSessionHasErrors('academic_term_id');
+            ->pay(['academic_term_id' => $this->alphaFirstTerm->id, 'academic_session_id' => $this->alphaFirstTerm->academic_session_id])
+            ->assertRedirect('/s/alpha/payment')
+            ->assertSessionHasErrors(['academic_term_id' => PaymentCheckoutService::MESSAGE_UNAVAILABLE]);
 
         $this->assertDatabaseCount('transactions', 0);
-    }
-
-    public function test_a_term_from_the_wrong_session_is_rejected(): void
-    {
-        $other = $this->makeSessionWithTerms($this->alpha, '2027/2028');
-
-        $this->from('/s/alpha/payment')
-            ->pay(['academic_session_id' => $other->id, 'academic_term_id' => $this->alphaFirstTerm->id])
-            ->assertSessionHasErrors('academic_term_id');
-
-        $this->assertDatabaseCount('transactions', 0);
+        Http::assertNothingSent();
     }
 
     public function test_a_nonexistent_student_id_cannot_initialize_a_payment(): void
@@ -384,16 +439,6 @@ class PaymentStudentContextTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_another_schools_term_cannot_be_selected(): void
-    {
-        $this->pay([
-            'academic_session_id' => $this->betaTerm->academic_session_id,
-            'academic_term_id' => $this->betaTerm->id,
-        ])->assertNotFound();
-
-        $this->assertDatabaseCount('transactions', 0);
-    }
-
     public function test_a_school_without_students_or_sessions_still_accepts_payments(): void
     {
         // The pre-Phase-1 flow: no roster, no sessions. Gamma keeps working.
@@ -413,8 +458,9 @@ class PaymentStudentContextTest extends TestCase
         $this->assertNull($t->academic_term_id);
         $this->assertEquals(20500.00, (float) $t->amount);
 
-        // And its page does not demand a student or term.
-        $this->get('/s/gamma/payment')->assertOk()->assertDontSee('name="student_id"', false);
+        // And its page does not demand a student or term, nor call payments unavailable.
+        $this->get('/s/gamma/payment')->assertOk()->assertDontSee('name="student_id"', false)
+            ->assertSee('id="paymentForm"', false)->assertDontSee('Payments are temporarily unavailable');
     }
 
     // ------------------------------------------------------------ student lookup
@@ -466,7 +512,7 @@ class PaymentStudentContextTest extends TestCase
 
         // The page's re-hydration after a failed submit is masked the same way.
         $this->from('/s/alpha/payment')
-            ->pay(['academic_term_id' => $this->alphaSecondTerm->id])
+            ->pay(['quantity' => 2])
             ->assertRedirect('/s/alpha/payment');
         $this->get('/s/alpha/payment')
             ->assertOk()

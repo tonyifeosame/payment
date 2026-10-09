@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AcademicSessionController;
+use App\Http\Controllers\CashPaymentController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\ClassLevelController;
 use App\Http\Controllers\DashboardController;
@@ -13,6 +14,7 @@ use App\Http\Controllers\SchoolSettingsController;
 use App\Http\Controllers\ShareController;
 use App\Http\Controllers\SitemapController;
 use App\Http\Controllers\StudentController;
+use App\Http\Controllers\StudentImportController;
 use App\Http\Controllers\StudentPromotionController;
 use App\Http\Controllers\SubcategoryController;
 use App\Http\Controllers\TransactionController;
@@ -179,6 +181,11 @@ $schoolAdminRoutes = function () {
     Route::get('/students/create', [StudentController::class, 'create'])->name('school.students.create');
     Route::post('/students', [StudentController::class, 'store'])->name('school.students.store');
 
+    // Bulk add from a CSV file. Literal paths, registered before /students/{student}.
+    Route::get('/students/import', [StudentImportController::class, 'create'])->name('school.students.import.create');
+    Route::get('/students/import/template', [StudentImportController::class, 'template'])->name('school.students.import.template');
+    Route::post('/students/import', [StudentImportController::class, 'store'])->name('school.students.import.store');
+
     // The school's class ladder. {classLevel} is scope-bound through School::classLevels().
     // Literal /students/classes and /students/promotion are registered before
     // /students/{student}, and {student} is numeric-only, so they never collide.
@@ -196,6 +203,12 @@ $schoolAdminRoutes = function () {
     Route::get('/students/{student}', [StudentController::class, 'show'])->whereNumber('student')->name('school.students.show');
     Route::get('/students/{student}/edit', [StudentController::class, 'edit'])->whereNumber('student')->name('school.students.edit');
     Route::put('/students/{student}', [StudentController::class, 'update'])->whereNumber('student')->name('school.students.update');
+
+    // Cash school-fee payment, recorded from the student's profile: details → review →
+    // record. The student is the scope-bound {student}; nothing else identifies it.
+    Route::get('/students/{student}/cash-payment', [CashPaymentController::class, 'create'])->whereNumber('student')->name('school.students.cash-payment.create');
+    Route::post('/students/{student}/cash-payment/review', [CashPaymentController::class, 'review'])->whereNumber('student')->name('school.students.cash-payment.review');
+    Route::post('/students/{student}/cash-payment', [CashPaymentController::class, 'store'])->whereNumber('student')->name('school.students.cash-payment.store');
 
     // Academic years and terms are no longer managed on their own page: a fee names
     // its academic year + term and the rows behind them are created on first use
@@ -229,11 +242,15 @@ $schoolAdminRoutes = function () {
     Route::post('/categories', [CategoryController::class, 'storeSchool'])->name('school.categories.store');
 
     Route::get('/subcategories', [SubcategoryController::class, 'indexSchool'])->name('school.subcategories.index');
+    Route::get('/subcategories/export', [SubcategoryController::class, 'exportSchool'])->name('school.subcategories.export');
     Route::get('/subcategories/create', [SubcategoryController::class, 'createSchool'])->name('school.subcategories.create');
     Route::post('/subcategories', [SubcategoryController::class, 'storeSchool'])->name('school.subcategories.store');
 
     Route::get('/transactions', [TransactionController::class, 'indexSchool'])->name('school.transactions.index');
     Route::get('/transactions/export', [TransactionController::class, 'exportSchool'])->name('school.transactions.export');
+    // Voiding a cash payment the school recorded (never a Paystack payment).
+    Route::get('/transactions/{transaction}/void', [CashPaymentController::class, 'voidForm'])->whereNumber('transaction')->name('school.transactions.void.create');
+    Route::post('/transactions/{transaction}/void', [CashPaymentController::class, 'void'])->whereNumber('transaction')->name('school.transactions.void');
     // Read-only detail. {transaction} is scope-bound through School::transactions(), so
     // another school's id 404s before the controller runs; whereNumber keeps the
     // literal /transactions/export above from ever being read as an id.

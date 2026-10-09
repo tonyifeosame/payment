@@ -90,6 +90,14 @@ class PaymentSettlementService
             return $this->result(self::NOT_FOUND, null, 'Unknown payment reference.');
         }
 
+        // Cash recorded by the school never went through Paystack, so there is nothing
+        // to verify or settle: answer without calling Paystack or touching the row.
+        if ($transaction->isManual()) {
+            return $transaction->status === 'success'
+                ? $this->result(self::ALREADY_SETTLED, $transaction)
+                : $this->result(self::NOT_FOUND, null, 'Not a Paystack payment.');
+        }
+
         // G2 fast path: already settled, so do no work and fire no side effects.
         // This is only an optimisation — the authoritative check happens under the
         // row lock below, because this read can be stale by the time we write.
@@ -121,6 +129,9 @@ class PaymentSettlementService
 
         if ($transaction->status === 'success') {
             return $this->result(self::ALREADY_SETTLED, $transaction);
+        }
+        if ($transaction->isManual()) {
+            return $this->result(self::NOT_SUCCESSFUL, $transaction, 'not a Paystack payment');
         }
         if ($transaction->status !== 'pending') {
             return $this->result($transaction->status === 'failed' ? self::ALREADY_FAILED : self::NOT_SUCCESSFUL, $transaction, 'transaction is '.$transaction->status);
@@ -205,6 +216,15 @@ class PaymentSettlementService
 
                 if ($locked->status === 'success') {
                     return [self::ALREADY_SETTLED, $locked];
+                }
+
+                // A charge already held for a refund as a duplicate school-fee payment
+                // stays held, even if the payment it duplicated was later withdrawn
+                // (a voided cash entry): turning it into a success is a decision for
+                // a person, never a side effect of a replayed confirmation.
+                if ($locked->status === 'mismatch'
+                    && ($locked->decodedMetaData()['verification_error']['kind'] ?? null) === self::DUPLICATE_OBLIGATION) {
+                    return [self::DUPLICATE_OBLIGATION, $locked];
                 }
 
                 // A main school fee is paid once per student, fee and term. Two

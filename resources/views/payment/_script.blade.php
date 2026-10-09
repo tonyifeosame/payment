@@ -35,14 +35,11 @@
 
     // Pre-sanitized structure from controller for reliability
     const categories = {!! json_encode($categoriesForJs) !!} || [];
-    const sessions = {!! json_encode($sessionsForJs) !!} || [];
+    // The school's current term, set by the admin. The parent does not choose a
+    // term, and nothing here is submitted: checkout uses the current term from the
+    // school row. It only decides which fees to show and what was already paid.
     const currentTermId = {!! json_encode($currentTerm?->id) !!};
-    const currentSessionId = {!! json_encode($currentTerm?->academic_session_id) !!};
-    const oldSessionId = {!! json_encode(old('academic_session_id')) !!};
-    const oldTermId = {!! json_encode(old('academic_term_id')) !!};
-    const sessionSelect = document.getElementById('academic_session_id');
-    const termSelect = document.getElementById('academic_term_id');
-    const sTerm = document.getElementById('summaryTerm');
+    const currentTermLabel = {!! json_encode($currentTerm?->label) !!};
     const sStudent = document.getElementById('summaryStudent');
     const studentSearchUrl = {!! json_encode(route(request()->routeIs('public.payment') ? 'public.payment.student-search' : 'school.payment.student-search', ['school' => $school->slug])) !!};
     const maxQuantity = {{ \App\Http\Controllers\PaymentController::MAX_QUANTITY }};
@@ -73,9 +70,9 @@
     let paidFees = [];
     let onFeeChange = null;
 
-    function selectedTermId() { return termSelect && termSelect.value ? Number(termSelect.value) : null; }
+    function selectedTermId() { return currentTermId === null ? null : Number(currentTermId); }
 
-    /** Has a main school fee been paid for the selected term? One per term, whichever fee. */
+    /** Has a main school fee been paid for the current term? One per term, whichever fee. */
     function schoolFeesPaidThisTerm() {
         const termId = selectedTermId();
         return termId !== null && paidFees.some(p => Number(p.term_id) === termId);
@@ -85,7 +82,7 @@
         return !!sub.is_tuition && schoolFeesPaidThisTerm();
     }
 
-    /** Fees payable for the selected term and, with a roster, by the verified student. */
+    /** Fees payable for the current term and, with a roster, by the verified student. */
     function applicableFees(cat, includePaid) {
         const termId = selectedTermId();
         return ((cat && cat.subcategories) ? cat.subcategories : [])
@@ -94,7 +91,7 @@
             .filter(s => includePaid || !isPaidThisTerm(s));
     }
 
-    /** This student's main fees already paid for the selected term. */
+    /** This student's main fees already paid for the current term. */
     function paidFeesThisTerm() {
         const termId = selectedTermId();
         if (termId === null) return [];
@@ -140,7 +137,7 @@
     function refreshFees() {
         // After a failed submit of a fee other than the class fee, keep that choice —
         // decided once the term is known, since the class fee depends on it.
-        if (restoreOldFee && (!termSelect || termSelect.options.length > 0)) {
+        if (restoreOldFee) {
             const a = autoFeeCandidate();
             preferOtherFee = !!(a && String(oldSubcategoryId) !== String(a.sub.id));
             restoreOldFee = false;
@@ -170,9 +167,7 @@
         if (paidFeeBox) {
             paidFeeBox.hidden = paid.length === 0;
             if (paid.length) {
-                const termOpt = termSelect ? termSelect.options[termSelect.selectedIndex] : null;
-                const sessOpt = sessionSelect ? sessionSelect.options[sessionSelect.selectedIndex] : null;
-                const period = termOpt ? termOpt.textContent + (sessOpt ? ', ' + sessOpt.textContent : '') : 'this term';
+                const period = currentTermLabel || 'this term';
                 paidFeeText.textContent = paid.map(s => s.price === null ? s.name : `${s.name} (${toCurrency(s.price)})`).join(', ') +
                     ` has already been paid for ${period}.` + (catSelect.disabled ? '' : ' You can still pay other fees below.');
             }
@@ -187,42 +182,6 @@
 
     if (autoFeeOther) autoFeeOther.addEventListener('click', function () { preferOtherFee = true; refreshFees(); catSelect.focus(); });
     if (autoFeeBack) autoFeeBack.addEventListener('click', function () { preferOtherFee = false; refreshFees(); });
-
-    function populateSessions() {
-        if (!sessionSelect) return;
-        sessionSelect.innerHTML = '';
-        sessions.forEach(sess => {
-            const o = document.createElement('option');
-            o.value = sess.id; o.textContent = sess.name;
-            sessionSelect.appendChild(o);
-        });
-        const want = oldSessionId || currentSessionId;
-        if (want && sessions.some(x => String(x.id) === String(want))) sessionSelect.value = String(want);
-        populateTerms();
-    }
-
-    function populateTerms() {
-        if (!termSelect) return;
-        termSelect.innerHTML = '';
-        const sess = sessions.find(x => String(x.id) === String(sessionSelect.value));
-        (sess ? sess.terms : []).forEach(t => {
-            const o = document.createElement('option');
-            o.value = t.id; o.textContent = t.name;
-            termSelect.appendChild(o);
-        });
-        const want = oldTermId || currentTermId;
-        if (want && sess && sess.terms.some(t => String(t.id) === String(want))) termSelect.value = String(want);
-        if (sTerm) { const o = termSelect.options[termSelect.selectedIndex]; sTerm.textContent = o && sess ? `${o.textContent}, ${sess.name}` : '—'; }
-        refreshFees();
-    }
-
-    if (sessionSelect) sessionSelect.addEventListener('change', populateTerms);
-    if (termSelect) termSelect.addEventListener('change', function () {
-        const sess = sessions.find(x => String(x.id) === String(sessionSelect.value));
-        const o = termSelect.options[termSelect.selectedIndex];
-        if (sTerm) sTerm.textContent = o && sess ? `${o.textContent}, ${sess.name}` : '—';
-        refreshFees();
-    });
 
     // Student lookup (L8). The parent types the student's full name AND complete
     // admission number and presses "Find student"; the server answers with the
@@ -454,10 +413,10 @@
         if (!catId) { subSelect.disabled = true; unitPriceP.textContent = 'Unit Price: ₦0'; return; }
 
         const cat = (categories || []).find(c => Number(c.id) === catId);
-        // Only fees payable in the selected term (general fees or that term's) and,
+        // Only fees payable in the current term (general fees or that term's) and,
         // with a roster, by the verified student's class; see offeredFees().
         const subs = offeredFees(cat);
-        if (subs.length === 0) { subSelect.disabled = true; unitPriceP.textContent = 'Unit Price: ₦0'; subError.textContent = 'No fees in this category for the selected term.'; return; }
+        if (subs.length === 0) { subSelect.disabled = true; unitPriceP.textContent = 'Unit Price: ₦0'; subError.textContent = 'No fees in this category for this term.'; return; }
 
         subs.forEach(sub => {
             const opt = document.createElement('option');
@@ -503,10 +462,8 @@
 
     // Initialize on load
     try {
-        // populateSessions -> populateTerms -> refreshFees fills the category and fee
-        // dropdowns (and the class fee) for the selected term.
-        populateSessions();
-        if (!sessionSelect) refreshFees();
+        // Fills the category and fee dropdowns (and the class fee) for the current term.
+        refreshFees();
         updateTotal();
     } catch (e) {
         console.error('Initialization error:', e);

@@ -15,9 +15,13 @@
         $money = fn ($n) => '₦'.number_format((float) $n, 2);
         // Paystack channels arrive as snake_case ("bank_transfer"); the pre-settlement
         // placeholder is the provider name itself.
-        $method = $transaction->payment_method
-            ? ucfirst(str_replace('_', ' ', (string) $transaction->payment_method))
-            : null;
+        $isCash = $transaction->isManual();
+        $isVoided = $transaction->status === \App\Models\Transaction::STATUS_VOIDED;
+        $method = $isCash
+            ? 'Cash (recorded by the school)'
+            : ($transaction->payment_method
+                ? ucfirst(str_replace('_', ' ', (string) $transaction->payment_method))
+                : null);
         $backUrl = $school?->slug
             ? route('public.payment', ['school' => $school->slug])
             : route('payment.index');
@@ -58,12 +62,22 @@
                     <span class="font-semibold text-brand-obsidian">{{ $money($receipt['total']) }}</span>{{ $school ? ' to '.$school->name : '' }}
                     has been received and your receipt is ready.
                 </p>
+                @if($isCash)
+                    <p class="mx-auto mt-2 max-w-sm text-sm text-brand-slate">Paid in cash at the school and recorded by {{ $school?->name ?? 'the school' }}.</p>
+                @endif
             @else
                 <span class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-brand-ash text-brand-obsidian" aria-hidden="true">
                     <svg class="h-8 w-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
                 </span>
                 <h1 id="receipt-heading" class="mt-5 font-display text-3xl font-extrabold leading-tight tracking-tight sm:text-4xl">Payment {{ strtolower($transaction->status) }}</h1>
-                <p class="mx-auto mt-3 max-w-sm text-base text-brand-slate">This payment has not been confirmed as successful. The details recorded for it are below.</p>
+                @if($isVoided)
+                    <p class="mx-auto mt-3 max-w-sm rounded-2xl border border-red-200 bg-red-50 p-4 text-base font-semibold text-red-900" role="alert" data-voided-banner>
+                        VOIDED — not proof of payment.
+                        <span class="mt-1 block text-sm font-normal">This cash payment was voided by the school{{ $transaction->voided_at ? ' on '.\App\Support\BusinessTime::display($transaction->voided_at)->format('d M Y') : '' }}: {{ $transaction->void_reason }}</span>
+                    </p>
+                @else
+                    <p class="mx-auto mt-3 max-w-sm text-base text-brand-slate">This payment has not been confirmed as successful. The details recorded for it are below.</p>
+                @endif
             @endif
         </section>
 
@@ -111,6 +125,18 @@
                             <dt>Payment method</dt>
                             <dd>{{ $method }}</dd>
                         </div>
+                    @endif
+                    @if($isCash)
+                        <div class="receipt-row">
+                            <dt>Received by</dt>
+                            <dd>{{ $transaction->received_by ?? '—' }}</dd>
+                        </div>
+                        @if($transaction->manual_receipt_number)
+                            <div class="receipt-row">
+                                <dt>Cash receipt no.</dt>
+                                <dd class="font-mono text-[13px] break-all">{{ $transaction->manual_receipt_number }}</dd>
+                            </div>
+                        @endif
                     @endif
                     <div class="receipt-row">
                         <dt>Status</dt>
@@ -231,8 +257,12 @@
         <footer class="mt-10 space-y-3 text-center text-xs text-brand-slate">
             {{-- L3: only a settled payment is proof of one. A pending or failed
                  receipt is a record of an attempt, and says so instead. --}}
-            @if($isSuccess)
+            @if($isSuccess && $isCash)
+                <p>This receipt is official proof of a cash payment received and recorded by the school. Keep it for your records and quote the reference in any enquiry to the school.</p>
+            @elseif($isSuccess)
                 <p>This receipt is official proof of payment. Keep it for your records and quote the reference in any enquiry to the school.</p>
+            @elseif($isVoided)
+                <p>This cash payment was voided by the school. This is not proof of payment.</p>
             @else
                 <p>This is a record of a payment attempt, not proof of payment. Quote the reference in any enquiry to the school.</p>
             @endif

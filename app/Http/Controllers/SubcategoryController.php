@@ -10,14 +10,19 @@ use App\Models\School;
 use App\Models\SchoolAuditEvent;
 use App\Models\Subcategory;
 use App\Services\AcademicPeriodService;
+use App\Support\BusinessTime;
+use App\Support\CsvCell;
 use App\Support\RecordsSchoolAudit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class SubcategoryController extends Controller
 {
+    public const MESSAGE_TYPE_LOCKED = 'This fee already has payment records, so it cannot be changed between School fees and an additional fee. Create a new fee of the type you need instead.';
+
     /**
      * Fail closed if a subcategory does not belong to the acting school.
      * See CategoryController::assertBelongsToSchool() for why this backstop exists.
@@ -120,6 +125,33 @@ class SubcategoryController extends Controller
         }
     }
 
+    /**
+     * Does this fee have any payment record at all? Every row counts, whatever its
+     * status (success, pending, failed, mismatch, voided) or source (online or cash).
+     */
+    private function hasPaymentRecords(Subcategory $fee): bool
+    {
+        return $fee->transactions()->exists();
+    }
+
+    /**
+     * A fee with payment records keeps its type. Whether a past payment counts as
+     * school fees paid for its term can depend on the fee's type
+     * (Transaction::scopeTuitionPaid), so switching it would quietly un-pay a term —
+     * or, the other way, turn an additional fee bought in a term into that term's
+     * school fees. The admin creates a new fee instead; no payment row is touched.
+     */
+    private function assertTypeUnchangedOnceUsed(Subcategory $fee, bool $isTuition): void
+    {
+        if ((bool) $fee->is_tuition === $isTuition || ! $this->hasPaymentRecords($fee)) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'is_tuition' => self::MESSAGE_TYPE_LOCKED,
+        ]);
+    }
+
     /** Assign the fee to exactly these class levels; each row carries the school for tenant scoping. */
     private function syncClassLevels(School $school, Subcategory $fee, array $classLevelIds): void
     {
@@ -151,15 +183,18 @@ class SubcategoryController extends Controller
             // Optional for school fees, which are named after their term by default.
             'name' => [Rule::requiredIf(! $isTuition), 'nullable', 'string', 'max:255'],
             'price' => 'nullable|numeric|min:0',
-            // The period as the admin thinks of it. The internal session/term rows
-            // are found or created from these (AcademicPeriodService::termFor).
-            'academic_year' => ['required_with:term', 'nullable', 'string', 'max:20'],
+            // School fees only: the period as the admin thinks of it. The internal
+            // session/term rows are found or created from these
+            // (AcademicPeriodService::termFor). An additional fee is payable in any
+            // term, so whatever period it posts is excluded here, never saved.
+            'academic_year' => [Rule::excludeIf(! $isTuition), 'required_with:term', 'nullable', 'string', 'max:20'],
             'term' => [
+                Rule::excludeIf(! $isTuition),
                 Rule::requiredIf($isTuition && blank($request->input('academic_term_id'))),
                 'nullable', 'integer', Rule::in(array_keys(AcademicTerm::NAMES)),
             ],
-            // Legacy forms posted a term id directly; still honoured, still owner-checked.
-            'academic_term_id' => 'nullable|integer',
+            // Legacy forms posted a term id directly; still honoured for school fees, still owner-checked.
+            'academic_term_id' => [Rule::excludeIf(! $isTuition), 'nullable', 'integer'],
             'allows_quantity' => 'nullable|boolean',
             'class_level_ids' => 'nullable|array',
             'class_level_ids.*' => 'integer',
@@ -184,7 +219,10 @@ class SubcategoryController extends Controller
     private function resolveFee(School $school, array $data, Category $schoolFees, AcademicPeriodService $periods, ?Subcategory $existing = null): array
     {
         $isTuition = (bool) ($data['is_tuition'] ?? false);
-        $term = $this->resolveTerm($school, $data, $periods);
+        // Only school fees are tied to a term. An additional fee is saved payable in
+        // any term — a new one, an existing one that had a term, and a school fee
+        // switched to additional alike — whatever the request carried.
+        $term = $isTuition ? $this->resolveTerm($school, $data, $periods) : null;
 
         if ($isTuition && $term === null) {
             throw ValidationException::withMessages(['term' => 'Choose the term these school fees are for.']);
@@ -220,7 +258,7 @@ class SubcategoryController extends Controller
         return $existing->category ?? $schoolFees;
     }
 
-    /** The term from academic year + term, a legacy term id, or none (payable in any term). */
+    /** A school fee's term, from academic year + term or a legacy term id. Never called for an additional fee. */
     private function resolveTerm(School $school, array $data, AcademicPeriodService $periods): ?AcademicTerm
     {
         $year = trim((string) ($data['academic_year'] ?? ''));
@@ -303,11 +341,29 @@ class SubcategoryController extends Controller
      */
     public function indexSchool(School $school)
     {
+        $subcategories = $this->feesInPageOrder($school);
+        $categories = Category::where('school_id', $school->id)->get();
+
+        return view('subcategories.index', [
+            'school' => $school,
+            'subcategories' => $subcategories,
+            'categories' => $categories,
+            // For the current-term control re-homed from the retired Sessions page.
+            'currentTerm' => $school->currentTerm,
+        ]);
+    }
+
+    /**
+     * The school's fees in the Fees page's presentation order: School Fees first,
+     * then by category, then term (fees payable in any term first), then name.
+     *
+     * @return \Illuminate\Support\Collection<int, Subcategory>
+     */
+    private function feesInPageOrder(School $school)
+    {
         $schoolFees = Category::schoolFeesFor($school);
 
-        // Presentation order only: School Fees first, then by category, then term
-        // (fees payable in any term first), then name.
-        $subcategories = Subcategory::with(['category', 'academicTerm.session', 'classLevels'])
+        return Subcategory::with(['category', 'academicTerm.session', 'classLevels'])
             ->where('school_id', $school->id)
             ->get()
             ->sortBy([
@@ -318,14 +374,46 @@ class SubcategoryController extends Controller
                 fn ($a, $b) => strcasecmp($a->name, $b->name),
             ])
             ->values();
-        $categories = Category::where('school_id', $school->id)->get();
+    }
 
-        return view('subcategories.index', [
-            'school' => $school,
-            'subcategories' => $subcategories,
-            'categories' => $categories,
-            // For the current-term control re-homed from the retired Sessions page.
-            'currentTerm' => $school->currentTerm,
+    /**
+     * CSV of the school's fees, in the Fees page's order, for this school only.
+     *
+     * The amount is the school's own price as set on the Fees page — never the
+     * platform service fee, and never the total a parent is charged online; neither
+     * is computed here. Fee and category names are typed by the school, so every
+     * cell is neutralised against spreadsheet formula injection (CsvCell).
+     */
+    public function exportSchool(School $school): StreamedResponse
+    {
+        $fees = $this->feesInPageOrder($school);
+        $filename = sprintf('%s-fees-%s.csv', $school->slug, BusinessTime::display(now())->format('Ymd-His'));
+
+        return response()->streamDownload(function () use ($fees) {
+            $out = fopen('php://output', 'w');
+            // UTF-8 BOM so Excel decodes names with diacritics correctly.
+            fwrite($out, "\xEF\xBB\xBF");
+
+            fputcsv($out, ['Fee', 'Type', 'Category', 'Amount (NGN)', 'Multiple allowed', 'Applies to', 'Academic year', 'Term']);
+
+            foreach ($fees as $fee) {
+                fputcsv($out, CsvCell::row([
+                    $fee->name,
+                    $fee->is_tuition ? 'School fees' : 'Additional fee',
+                    $fee->category->name ?? '',
+                    $fee->price === null ? '' : number_format((float) $fee->price, 2, '.', ''),
+                    $fee->allows_quantity ? 'Yes' : 'No',
+                    $fee->classLevels->isEmpty()
+                        ? 'All classes'
+                        : $fee->classLevels->sortBy([['position', 'asc'], ['id', 'asc']])->pluck('name')->implode(', '),
+                    $fee->academicTerm?->session?->name ?? '',
+                    $fee->academicTerm?->name ?? 'Any term',
+                ]));
+            }
+
+            fclose($out);
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
         ]);
     }
 
@@ -389,7 +477,10 @@ class SubcategoryController extends Controller
 
         $subcategory->load(['classLevels', 'academicTerm.session']);
 
-        return view('subcategories.edit', $this->formData($school, $periods) + ['subcategory' => $subcategory]);
+        return view('subcategories.edit', $this->formData($school, $periods) + [
+            'subcategory' => $subcategory,
+            'typeLocked' => $this->hasPaymentRecords($subcategory),
+        ]);
     }
 
     public function updateSchool(Request $request, School $school, Subcategory $subcategory, RecordsSchoolAudit $audit, AcademicPeriodService $periods)
@@ -412,6 +503,8 @@ class SubcategoryController extends Controller
         ];
 
         DB::transaction(function () use ($subcategory, $school, $schoolFees, $periods, $data, $classLevelIds, $before, $audit, $request) {
+            // First, so a refused type change creates nothing (no academic year, no category).
+            $this->assertTypeUnchangedOnceUsed($subcategory, (bool) ($data['is_tuition'] ?? false));
             [$category, $term, $name] = $this->resolveFee($school, $data, $schoolFees, $periods, $subcategory);
             $this->assertMainFeeRules($school, (bool) ($data['is_tuition'] ?? false), $term, $classLevelIds, $subcategory->id);
 
@@ -442,8 +535,14 @@ class SubcategoryController extends Controller
             }
         });
 
+        // Saving an additional fee that had a term (or a school fee switched to
+        // additional) lifted the term limit; say so, as the form warned it would.
+        $termLifted = $before['academic_term_id'] !== null && $subcategory->academic_term_id === null
+            ? ' It is now payable in any term.'
+            : '';
+
         return redirect()->route('school.subcategories.index', ['school' => $school->slug])
-            ->with('success', 'Fee updated.'.$this->currentTermHint($school, $subcategory));
+            ->with('success', 'Fee updated.'.$termLifted.$this->currentTermHint($school, $subcategory));
     }
 
     public function destroySchool(Request $request, School $school, Subcategory $subcategory, RecordsSchoolAudit $audit)

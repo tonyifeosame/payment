@@ -23,6 +23,21 @@ class PaymentTimeline
     {
         $step = fn (string $label, string $note, $at, string $state) => compact('label', 'note', 'at', 'state');
 
+        // Cash the school received and recorded: no checkout, no provider, no payout.
+        if ($transaction->isManual()) {
+            $steps = [$step('Cash payment recorded', 'Your school recorded this payment as cash received'.($transaction->received_by ? ' by '.$transaction->received_by : '').'.', $transaction->created_at, 'done')];
+
+            if ($transaction->status === Transaction::STATUS_VOIDED) {
+                $steps[] = $step('Cash payment voided', 'Your school voided this entry: '.$transaction->void_reason.' It no longer counts as paid.', $transaction->voided_at, 'attention');
+
+                return $steps;
+            }
+
+            $steps[] = $step('No payout', 'The cash was received directly by your school, so FEYRA collected nothing and there is no payout.', null, 'done');
+
+            return $steps;
+        }
+
         $steps = [$step('Payment started', 'The parent opened checkout for this fee.', $transaction->created_at, 'done')];
 
         switch ($transaction->status) {
@@ -81,6 +96,20 @@ class PaymentTimeline
         }
 
         return $steps;
+    }
+
+    /** The payout state for a payment: cash recorded by the school never has one. */
+    public function payoutStateFor(Transaction $transaction): array
+    {
+        if ($transaction->isManual()) {
+            return [
+                'group' => null,
+                'headline' => 'Not applicable',
+                'note' => 'Cash received directly by your school. FEYRA did not collect this payment, so there is no payout.',
+            ];
+        }
+
+        return $this->payoutState($transaction->payout, $transaction->status === Transaction::STATUS_SUCCESS);
     }
 
     /**

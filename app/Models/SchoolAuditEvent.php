@@ -54,6 +54,15 @@ class SchoolAuditEvent extends Model
     /** The term new payments are attributed to changed. */
     public const ACTION_TERM_CHANGED = 'settings.current_term_changed';
 
+    /** A school-fee payment received in cash was recorded by the school. */
+    public const ACTION_CASH_PAYMENT_RECORDED = 'payment.cash_recorded';
+
+    /** A recorded cash payment was voided, with a reason. The payment row is kept. */
+    public const ACTION_CASH_PAYMENT_VOIDED = 'payment.cash_voided';
+
+    /** Students were added from a CSV file. Counts only — never the students themselves. */
+    public const ACTION_STUDENTS_IMPORTED = 'students.imported';
+
     // ---- Tier 2: destructive --------------------------------------------
 
     public const ACTION_CATEGORY_DELETED = 'category.deleted';

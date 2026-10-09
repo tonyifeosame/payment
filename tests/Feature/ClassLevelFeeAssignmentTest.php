@@ -117,8 +117,6 @@ class ClassLevelFeeAssignmentTest extends TestCase
             'student_id' => $student->id,
             'student_name' => $student->full_name,
             'student_admission_number' => $student->admission_number,
-            'academic_session_id' => $this->firstTerm->academic_session_id,
-            'academic_term_id' => $this->firstTerm->id,
         ], $overrides));
     }
 
@@ -277,8 +275,10 @@ class ClassLevelFeeAssignmentTest extends TestCase
 
     public function test_assignment_respects_the_fee_term(): void
     {
-        // Assigned to JSS1, but it is a First Term fee: not payable for Second Term.
-        $this->pay($this->secondaryTuition, overrides: ['academic_term_id' => $this->secondTerm->id])
+        // Assigned to JSS1, but it is a First Term fee: not payable once the school is
+        // in Second Term, even with First Term posted by the form.
+        $this->alpha->forceFill(['current_academic_term_id' => $this->secondTerm->id])->save();
+        $this->pay($this->secondaryTuition, overrides: ['academic_term_id' => $this->firstTerm->id])
             ->assertSessionHasErrors('subcategory_id');
         $this->assertSame(0, Transaction::count());
     }

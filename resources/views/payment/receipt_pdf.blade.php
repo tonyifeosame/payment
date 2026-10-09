@@ -80,9 +80,13 @@
     $paidAt = \App\Support\BusinessTime::display($transaction->paid_at ?? $transaction->created_at);
     $isSuccess = $transaction->status === 'success';
     $money = fn ($n) => '₦'.number_format((float) $n, 2);
-    $method = $transaction->payment_method
-        ? ucfirst(str_replace('_', ' ', (string) $transaction->payment_method))
-        : null;
+    $isCash = $transaction->isManual();
+    $isVoided = $transaction->status === 'voided';
+    $method = $isCash
+        ? 'Cash (recorded by the school)'
+        : ($transaction->payment_method
+            ? ucfirst(str_replace('_', ' ', (string) $transaction->payment_method))
+            : null);
     $categoryName = $transaction->category_name ?? optional($transaction->category)->name;
     $feeName = $transaction->subcategory_name ?? optional($transaction->subcategory)->name;
 
@@ -146,6 +150,15 @@
                     <tr><td class="k">Date</td><td class="v">{{ $paidAt ? $paidAt->format('d M Y, h:i A').' '.\App\Support\BusinessTime::label() : '—' }}</td></tr>
                     @if($method)
                         <tr><td class="k">Method</td><td class="v">{{ $method }}</td></tr>
+                    @endif
+                    @if($isCash)
+                        <tr><td class="k">Received by</td><td class="v">{{ $transaction->received_by ?? '—' }}</td></tr>
+                        @if($transaction->manual_receipt_number)
+                            <tr><td class="k">Cash receipt no.</td><td class="v">{{ $transaction->manual_receipt_number }}</td></tr>
+                        @endif
+                    @endif
+                    @if($isVoided)
+                        <tr><td class="k">Voided</td><td class="v">VOIDED — not proof of payment. {{ $transaction->void_reason }}</td></tr>
                     @endif
                     <tr><td class="k">Status</td><td class="v"><span class="badge {{ $isSuccess ? 'badge-success' : 'badge-other' }}">{{ $isSuccess ? 'Successful' : ucfirst($transaction->status) }}</span></td></tr>
                     @if($transaction->name)
@@ -220,7 +233,11 @@
 
 <div class="footer">
     {{-- L3: see payment/receipt.blade.php. --}}
-    @if($isSuccess)
+    @if($isSuccess && $isCash)
+        <div>This receipt is official proof of a cash payment received and recorded by the school. Keep it for your records and quote the reference in any enquiry to the school.</div>
+    @elseif($isVoided)
+        <div>This cash payment was voided by the school. This is not proof of payment.</div>
+    @elseif($isSuccess)
         <div>This receipt is official proof of payment for the transaction above. Keep it for your records and quote the reference in any enquiry to the school.</div>
     @else
         <div>This is a record of a payment attempt, not proof of payment. Quote the reference in any enquiry to the school.</div>

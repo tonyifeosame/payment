@@ -37,12 +37,15 @@ class AdminNamespaceTest extends TestCase
         $routes = Route::getRoutes();
         $canonical = collect($routes->getRoutes())->filter(fn ($r) => str_starts_with($r->uri(), 'admin/{school}/'));
 
-        $this->assertCount(41, $canonical, 'all authenticated admin routes are registered canonically');
+        $this->assertCount(50, $canonical, 'all authenticated admin routes are registered canonically');
 
         $expected = [
             'dashboard', 'students', 'students/create', 'students/{student}', 'students/{student}/edit',
             'students/classes', 'students/classes/{classLevel}', 'students/classes/{classLevel}/move', 'students/classes/assign',
             'students/promotion', 'students/promotion/review', 'sessions', 'current-term', 'terms/{academicTerm}/current',
+            'students/import', 'students/import/template',
+            'students/{student}/cash-payment', 'students/{student}/cash-payment/review',
+            'transactions/{transaction}/void', 'subcategories/export',
             'payouts', 'payouts/{payout}', 'settings', 'settings/bank', 'settings/password', 'share', 'share/qr.svg',
             'categories', 'categories/{category}', 'categories/{category}/edit',
             'subcategories', 'subcategories/create', 'subcategories/{subcategory}', 'subcategories/{subcategory}/edit',

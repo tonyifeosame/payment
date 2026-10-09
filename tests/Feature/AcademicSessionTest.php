@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\AcademicSession;
 use App\Models\AcademicTerm;
 use App\Models\Category;
+use App\Models\ClassLevel;
 use App\Models\School;
 use App\Models\SchoolAuditEvent;
 use App\Models\Subcategory;
@@ -222,22 +223,33 @@ class AcademicSessionTest extends TestCase
         $betaTerm = $this->makeSessionWithTerms($this->beta)->terms()->first();
         $category = Category::create(['school_id' => $this->alpha->id, 'name' => 'Levies']);
 
-        // Legacy forms posted a term id; it is still honoured, and still owner-checked.
+        $level = ClassLevel::create(['school_id' => $this->alpha->id, 'name' => 'JSS1', 'position' => 1]);
+
+        // Legacy forms posted a term id; it is still honoured for school fees, and still owner-checked.
         $this->actingAsSchoolAdmin($this->alpha)
             ->post('/admin/alpha/subcategories', [
-                'is_tuition' => '0', 'category_id' => $category->id, 'name' => 'Development levy', 'price' => 50000,
-                'academic_term_id' => $alphaTerm->id,
+                'is_tuition' => '1', 'name' => 'Development levy', 'price' => 50000,
+                'academic_term_id' => $alphaTerm->id, 'class_level_ids' => [$level->id],
             ])
             ->assertRedirect('/admin/alpha/subcategories');
         $this->assertDatabaseHas('subcategories', ['name' => 'Development levy', 'academic_term_id' => $alphaTerm->id, 'school_id' => $this->alpha->id]);
 
         $this->actingAsSchoolAdmin($this->alpha)
             ->post('/admin/alpha/subcategories', [
-                'is_tuition' => '0', 'category_id' => $category->id, 'name' => 'Smuggled', 'price' => 1,
-                'academic_term_id' => $betaTerm->id,
+                'is_tuition' => '1', 'name' => 'Smuggled', 'price' => 1,
+                'academic_term_id' => $betaTerm->id, 'class_level_ids' => [$level->id],
             ])
             ->assertNotFound();
         $this->assertDatabaseMissing('subcategories', ['name' => 'Smuggled']);
+
+        // An additional fee is never tied to a term: a posted term id, even another school's, is not saved.
+        $this->actingAsSchoolAdmin($this->alpha)
+            ->post('/admin/alpha/subcategories', [
+                'is_tuition' => '0', 'category_id' => $category->id, 'name' => 'Sports levy', 'price' => 1000,
+                'academic_term_id' => $betaTerm->id,
+            ])
+            ->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('subcategories', ['name' => 'Sports levy', 'academic_term_id' => null]);
 
         // An additional fee may be payable in any term.
         $this->actingAsSchoolAdmin($this->alpha)

@@ -44,14 +44,29 @@ class StudentRequest extends FormRequest
             ]]
             : ['class_name' => ['required', 'string', 'max:100']];
 
-        return $classRules + [
-            'full_name' => ['required', 'string', 'max:255'],
-            'admission_number' => ['required', 'string', 'max:50', $uniqueAdmission],
-            'status' => ['required', Rule::in(array_keys(Student::STATUS_LABELS))],
+        $shared = self::sharedRules();
+        $shared['admission_number'][] = $uniqueAdmission;
+
+        return $classRules + $shared + [
             'academic_session_id' => [
                 'nullable', 'integer',
                 Rule::exists('academic_sessions', 'id')->where(fn ($q) => $q->where('school_id', $school->id)),
             ],
+        ];
+    }
+
+    /**
+     * The per-field rules the student form and the CSV import (StudentImportService)
+     * both apply, so a student is valid the same way however it arrives. Class,
+     * academic year and admission-number uniqueness are school-scoped and checked
+     * by each caller.
+     */
+    public static function sharedRules(): array
+    {
+        return [
+            'full_name' => ['required', 'string', 'max:255'],
+            'admission_number' => ['required', 'string', 'max:50'],
+            'status' => ['required', Rule::in(array_keys(Student::STATUS_LABELS))],
             'guardian_name' => ['nullable', 'string', 'max:255'],
             'guardian_phone' => ['nullable', 'string', 'max:30'],
             'guardian_email' => ['nullable', 'email', 'max:255'],

@@ -34,6 +34,9 @@
     if ($filters['status'] !== \App\Models\Transaction::STATUS_SUCCESS) {
         $activeFilters['status'] = ['Status', in_array($filters['status'], $statuses, true) ? ucfirst($filters['status']) : 'All statuses'];
     }
+    if (in_array($filters['source'], ['online', 'cash'], true)) {
+        $activeFilters['source'] = ['Method', $filters['source'] === 'cash' ? 'Cash recorded by school' : 'Paid online'];
+    }
     if ($category = $pick($categories, $filters['category_id'])) {
         $activeFilters['category_id'] = ['Category', $category->name];
     }
@@ -70,6 +73,14 @@
                 @foreach($statuses as $s)
                     <option value="{{ $s }}" @selected($filters['status'] === $s)>{{ ucfirst($s) }}</option>
                 @endforeach
+            </select>
+        </div>
+        <div class="lg:col-span-3">
+            <label for="source" class="label">Method</label>
+            <select id="source" name="source" class="input">
+                <option value="">Online and cash</option>
+                <option value="online" @selected($filters['source'] === 'online')>Paid online</option>
+                <option value="cash" @selected($filters['source'] === 'cash')>Cash recorded by school</option>
             </select>
         </div>
         <div class="lg:col-span-3">
@@ -196,11 +207,11 @@
                 @if($b['quantity'] > 1)<span class="block text-xs text-brand-slate">{{ $b['quantity'] }} × ₦{{ number_format($b['unit_price'], 2) }}</span>@endif
                 </div>
             </td>
-            <td class="td" data-label="Status">@include('admin._badge', ['status' => $t->status])</td>
+            <td class="td" data-label="Status"><div class="min-w-0">@include('admin._payment_status', ['transaction' => $t])</div></td>
             <td class="td td-actions" data-label="">
                 {{-- Only payments that are (or may still become) collections get a detail
                      action; failed/mismatched attempts are listed as data, nothing more. --}}
-                @if(in_array($t->status, ['success', 'pending'], true))
+                @if(in_array($t->status, ['success', 'pending', 'voided'], true))
                     <div class="flex w-full gap-2 md:w-auto md:justify-end">
                         @if($t->status === 'success')
                             <a class="btn-outline btn-sm !min-h-[48px] flex-1 !px-4 text-sm md:flex-none" href="{{ route('payment.receipt', $t->id) }}">Receipt<span class="sr-only"> for {{ $t->reference }}</span></a>

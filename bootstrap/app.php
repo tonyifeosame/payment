@@ -7,6 +7,7 @@ use App\Support\StudentSearchLimiter;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Exceptions\PostTooLargeException;
 use Illuminate\Http\Request;
 use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Support\Facades\Log;
@@ -106,5 +107,15 @@ return Application::configure(basePath: dirname(__DIR__))
         });
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        // A student CSV larger than post_max_size (docker/php.ini) is refused by
+        // ValidatePostSize before routing or the session start, so there is nothing
+        // to flash an error into: send the admin back to the import page with a flag
+        // it turns into a plain message, instead of a bare 413.
+        $exceptions->render(function (PostTooLargeException $e, Request $request) {
+            if ($request->isMethod('post') && $request->is('admin/*/students/import', 's/*/students/import')) {
+                return redirect($request->url().'?too_large=1');
+            }
+
+            return null;
+        });
     })->create();

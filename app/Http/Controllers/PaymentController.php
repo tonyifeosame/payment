@@ -7,7 +7,6 @@ use App\Models\School;
 use App\Models\Student;
 use App\Models\Subcategory;
 use App\Models\Transaction;
-use App\Services\AcademicPeriodService;
 use App\Services\PaymentCheckoutService;
 use App\Services\PaymentSettlementService;
 use App\Support\SchoolSession;
@@ -97,7 +96,7 @@ class PaymentController extends Controller
 
         // Only ids, names, prices, the fee's term and whether it allows multiple
         // units reach the browser. The term id lets the page hide fees that are not
-        // payable in the chosen term, and allows_quantity whether to offer a
+        // payable in the school's current term, and allows_quantity whether to offer a
         // quantity; the server re-checks both rules on submit.
         //
         // Fees with no amount set are left out entirely. They are valid drafts on
@@ -131,19 +130,13 @@ class PaymentController extends Controller
             ];
         })->values();
 
-        $terms = app(AcademicPeriodService::class)->termsForSchool($school);
-        $sessionsForJs = $terms->groupBy('academic_session_id')->map(function ($group) {
-            $session = $group->first()->session;
-
-            return [
-                'id' => $session->id,
-                'name' => $session->name,
-                'terms' => $group->map(fn ($t) => ['id' => $t->id, 'name' => $t->name])->values(),
-            ];
-        })->values();
-
         $markupPercent = (float) config('fees.markup_percent', 2.5);
-        $currentTerm = $school->currentTerm;
+        // The term is the school's current term, set by the admin; the parent does
+        // not choose it. Checkout resolves it again from the school row on submit
+        // (PaymentCheckoutService::currentTerm), so the page only displays it.
+        $checkout = app(PaymentCheckoutService::class);
+        $currentTerm = $checkout->currentTerm($school);
+        $paymentsUnavailable = $checkout->paymentsUnavailable($school);
 
         // After a failed submit, re-select the student the parent had verified — but
         // only if the name and admission number they typed still verify to that
@@ -159,7 +152,7 @@ class PaymentController extends Controller
 
         return view('payment.index', compact(
             'categories', 'categoriesForJs', 'school', 'markupPercent',
-            'sessionsForJs', 'requiresStudent', 'currentTerm', 'oldStudent'
+            'requiresStudent', 'currentTerm', 'paymentsUnavailable', 'oldStudent'
         ));
     }
 
@@ -234,8 +227,8 @@ class PaymentController extends Controller
             'category_id' => 'required|integer',
             'quantity' => 'required|integer|min:1|max:'.self::MAX_QUANTITY,
             'student_id' => 'nullable|integer',
-            'academic_session_id' => 'nullable|integer',
-            'academic_term_id' => 'nullable|integer',
+            // No term or session: the payment is always for the school's current
+            // term, resolved on the server (PaymentCheckoutService::resolveTerm).
         ]);
 
         $transaction = $checkout->createPendingTransaction($school, $validated);

@@ -169,12 +169,13 @@ class FeeSetupTest extends TestCase
     {
         $page = $this->alpha()->get('/admin/alpha/subcategories/create')->assertOk();
         $page->assertSee('Add a fee')->assertSee('Create fee')
-            ->assertSee('<option value="2026/2027" selected>2026/2027</option>', false)->assertSee('Second Term')->assertSee('Any term')
+            ->assertSee('<option value="2026/2027" selected>2026/2027</option>', false)->assertSee('Second Term')->assertDontSee('>Any term</option>', false)
             ->assertSee('Tuition')->assertSee('Uniform')->assertDontSee('Beta Category');
 
+        // An additional fee is payable in any term: a posted term id is not saved.
         $this->alpha()->post('/admin/alpha/subcategories', ['category_id' => $this->tuition->id, 'name' => 'Second Term Tuition', 'price' => '52000.50', 'academic_term_id' => $this->first->id])
             ->assertRedirect('/admin/alpha/subcategories')->assertSessionHas('success');
-        $this->assertDatabaseHas('subcategories', ['school_id' => $this->alpha->id, 'category_id' => $this->tuition->id, 'name' => 'Second Term Tuition', 'price' => 52000.50, 'academic_term_id' => $this->first->id]);
+        $this->assertDatabaseHas('subcategories', ['school_id' => $this->alpha->id, 'category_id' => $this->tuition->id, 'name' => 'Second Term Tuition', 'price' => 52000.50, 'academic_term_id' => null]);
 
         // Validation: required fields, negative amount, old input preserved with inline errors.
         $this->alpha()->from('/admin/alpha/subcategories/create')
@@ -187,7 +188,9 @@ class FeeSetupTest extends TestCase
         // Edit: pre-filled, term shown, saves.
         $edit = $this->alpha()->get("/admin/alpha/subcategories/{$this->termFee->id}/edit")->assertOk();
         $edit->assertSee('Edit fee')->assertSee('value="First Term Tuition"', false)->assertSee('value="50000', false)
-            ->assertSee('<option value="1" selected>First Term</option>', false)->assertSee('Save changes')->assertSee('editing an existing fee');
+            ->assertSee('<option value="1" selected>First Term</option>', false)->assertSee('Save changes')->assertSee('editing an existing fee')
+            // An additional fee from before the any-term rule: saving it lifts the term, and the form says so.
+            ->assertSee('Saving will remove this fee’s term')->assertSee('currently limited to First Term, 2026/2027');
         $this->alpha()->put("/admin/alpha/subcategories/{$this->termFee->id}", ['category_id' => $this->generalFee->category_id, 'name' => 'Moved Fee', 'price' => '100', 'academic_term_id' => ''])
             ->assertRedirect('/admin/alpha/subcategories')->assertSessionHas('success');
         $this->assertDatabaseHas('subcategories', ['id' => $this->termFee->id, 'category_id' => $this->generalFee->category_id, 'name' => 'Moved Fee', 'price' => 100, 'academic_term_id' => null]);
@@ -215,7 +218,7 @@ class FeeSetupTest extends TestCase
         // Another school's category or term ids fail closed on create and update.
         $this->alpha()->post('/admin/alpha/subcategories', ['category_id' => $this->betaCategory->id, 'name' => 'Smuggled', 'price' => 1])->assertNotFound();
         $betaTerm = $this->makeSessionWithTerms($this->beta, '2026/2027')->terms()->firstOrFail();
-        $this->alpha()->post('/admin/alpha/subcategories', ['category_id' => $this->tuition->id, 'name' => 'Smuggled', 'price' => 1, 'academic_term_id' => $betaTerm->id])->assertNotFound();
+        $this->alpha()->post('/admin/alpha/subcategories', ['is_tuition' => '1', 'name' => 'Smuggled', 'price' => 1, 'academic_term_id' => $betaTerm->id])->assertNotFound();
         $this->alpha()->put("/admin/alpha/subcategories/{$this->termFee->id}", ['category_id' => $this->betaCategory->id, 'name' => 'Smuggled', 'price' => 1])->assertNotFound();
         $this->assertDatabaseMissing('subcategories', ['name' => 'Smuggled']);
         $this->assertDatabaseHas('subcategories', ['id' => $id, 'name' => 'Beta Fee']);

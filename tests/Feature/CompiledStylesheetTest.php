@@ -68,7 +68,32 @@ class CompiledStylesheetTest extends TestCase
             'categories' => $admin()->get('/admin/alpha/categories'),
             'settings' => $admin()->get('/admin/alpha/settings'),
             'share' => $admin()->get('/admin/alpha/share'),
+            'fees' => $admin()->get('/admin/alpha/subcategories'),
+            'student import' => $admin()->get('/admin/alpha/students/import?too_large=1'),
         ];
+
+        // The cash-payment pages, with a school fee they can resolve.
+        $term = $session->terms()->where('number', 1)->firstOrFail();
+        $school->forceFill(['current_academic_term_id' => $term->id])->save();
+        $level = \App\Models\ClassLevel::create(['school_id' => $school->id, 'name' => 'JSS 1', 'position' => 1, 'is_active' => true]);
+        $mainFee = $this->makeFee($school, 'School Fees', 'JSS 1 Fees', 80000, $term->id);
+        $mainFee->forceFill(['is_tuition' => true])->save();
+        $mainFee->classLevels()->sync([$level->id => ['school_id' => $school->id]]);
+        $pupil = $this->makeStudent($school, 'ADM/002', 'Bola Ade', 'JSS 1', ['class_level_id' => $level->id]);
+        $details = ['academic_year' => $session->name, 'term' => 1, 'paid_on' => now('Africa/Lagos')->format('Y-m-d'), 'received_by' => 'Bursar'];
+        $pages['student profile'] = $admin()->get('/admin/alpha/students/'.$pupil->id);
+        $pages['cash payment'] = $admin()->get('/admin/alpha/students/'.$pupil->id.'/cash-payment');
+        $pages['cash payment review'] = $admin()->post('/admin/alpha/students/'.$pupil->id.'/cash-payment/review', $details);
+        $admin()->post('/admin/alpha/students/'.$pupil->id.'/cash-payment', $details + [
+            'confirm_received' => '1', 'expected_fee_id' => $mainFee->id, 'expected_amount' => '80000.00',
+            'expected_term_id' => $term->id, 'expected_class_level_id' => $level->id,
+        ]);
+        $cash = \App\Models\Transaction::manual()->sole();
+        $pages['cash transaction'] = $admin()->get('/admin/alpha/transactions/'.$cash->id);
+        $pages['void cash payment'] = $admin()->get('/admin/alpha/transactions/'.$cash->id.'/void');
+        $pages['cash receipt'] = $admin()->get('/payment/receipt/'.$cash->id);
+        app(\App\Services\ManualPaymentService::class)->void($school, $cash, 'Recorded in error');
+        $pages['voided receipt'] = $admin()->get('/payment/receipt/'.$cash->id);
 
         $this->app->maintenanceMode()->activate(['retry' => 60, 'status' => 503]);
         try {

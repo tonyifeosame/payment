@@ -117,6 +117,11 @@ class SchoolFeePaidOnceTest extends TestCase
         $student ??= $this->anthony;
         $term ??= $this->firstTerm;
 
+        // The parent no longer chooses the term: checkout pays the school's current
+        // term, so "paying for $term" means the admin has made it the current term.
+        School::where('slug', $slug)->where('id', $term->school_id)
+            ->update(['current_academic_term_id' => $term->id]);
+
         return $this->post("/pay/{$slug}/initialize", [
             'email' => 'parent@example.test',
             'category_id' => $fee->category_id,
@@ -125,8 +130,6 @@ class SchoolFeePaidOnceTest extends TestCase
             'student_id' => $student->id,
             'student_name' => $student->full_name,
             'student_admission_number' => $student->admission_number,
-            'academic_session_id' => $term->academic_session_id,
-            'academic_term_id' => $term->id,
         ]);
     }
 

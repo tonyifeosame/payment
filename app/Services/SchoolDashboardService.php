@@ -15,6 +15,11 @@ use Illuminate\Support\Facades\DB;
  * school's own transactions and payouts. Nothing is estimated or derived from
  * anything but settled rows.
  *
+ * Collection totals are ONLINE payments only (Transaction::scopeOnline): money
+ * FEYRA collected through Paystack. Cash the school recorded itself is the
+ * school's own money; it is returned separately under `cash` so the dashboard
+ * can show it beneath the collections without ever adding it to them.
+ *
  * Two figures are shown for every collection total:
  *   gross — what parents were charged (transactions.amount)
  *   net   — the school's share (Transaction::netAmountExpression(), i.e.
@@ -34,6 +39,7 @@ class SchoolDashboardService
      *   status_counts: array<string, int>,
      *   recent: \Illuminate\Support\Collection<int, Transaction>,
      *   by_category: \Illuminate\Support\Collection<int, object>,
+     *   cash: array{today: array{gross: float, net: float, count: int}, week: array{gross: float, net: float, count: int}, all_time: array{gross: float, net: float, count: int}, term_totals: array{gross: float, net: float, count: int}},
      *   payouts: array{by_status: array<string, array{amount: float, count: int}>, recent: \Illuminate\Support\Collection<int, Payout>}
      * }
      */
@@ -50,18 +56,20 @@ class SchoolDashboardService
         $startOfWeek = $now->copy()->startOfWeek()->setTimezone($storageTz);
         $paidAt = Transaction::paidAtExpression();
 
-        $successful = fn () => Transaction::forSchool($school)->successful();
+        // Collections are what FEYRA collected online. Cash the school recorded itself
+        // is reported beside them (`cash` below), never inside them.
+        $successful = fn () => Transaction::forSchool($school)->successful()->online();
+        $cash = fn () => Transaction::forSchool($school)->successful()->manual();
 
-        $today = $this->totals(
-            $successful()->whereRaw("$paidAt >= ?", [$startOfToday])
-        );
-        $week = $this->totals(
-            $successful()->whereRaw("$paidAt >= ?", [$startOfWeek])
-        );
-        $allTime = $this->totals($successful());
-        $termTotals = $term
-            ? $this->totals($successful()->where('academic_term_id', $term->id))
-            : ['gross' => 0.0, 'net' => 0.0, 'count' => 0];
+        $buckets = fn (callable $query): array => [
+            'today' => $this->totals($query()->whereRaw("$paidAt >= ?", [$startOfToday])),
+            'week' => $this->totals($query()->whereRaw("$paidAt >= ?", [$startOfWeek])),
+            'all_time' => $this->totals($query()),
+            'term_totals' => $term
+                ? $this->totals($query()->where('academic_term_id', $term->id))
+                : ['gross' => 0.0, 'net' => 0.0, 'count' => 0],
+        ];
+        ['today' => $today, 'week' => $week, 'all_time' => $allTime, 'term_totals' => $termTotals] = $buckets($successful);
 
         $statusCounts = Transaction::forSchool($school)
             ->select('status', DB::raw('COUNT(*) as c'))
@@ -70,7 +78,8 @@ class SchoolDashboardService
             ->map(fn ($c) => (int) $c)
             ->all();
 
-        $recent = $successful()
+        // An activity list, not a total: cash payments appear here, labelled.
+        $recent = Transaction::forSchool($school)->successful()
             ->with(['student'])
             ->orderByDesc(DB::raw($paidAt))
             ->limit(10)
@@ -99,6 +108,7 @@ class SchoolDashboardService
             'status_counts' => $statusCounts,
             'recent' => $recent,
             'by_category' => $byCategory,
+            'cash' => $buckets($cash),
             'payouts' => $this->payoutSummary($school),
         ];
     }

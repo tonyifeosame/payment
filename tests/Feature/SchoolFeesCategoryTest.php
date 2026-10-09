@@ -2,11 +2,14 @@
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\SubcategoryController;
+use App\Models\AcademicSession;
 use App\Models\AcademicTerm;
 use App\Models\Category;
 use App\Models\ClassLevel;
 use App\Models\School;
 use App\Models\SchoolAuditEvent;
+use App\Models\Student;
 use App\Models\Subcategory;
 use App\Models\Transaction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -179,7 +182,11 @@ class SchoolFeesCategoryTest extends TestCase
         $page->assertSee('Add a fee')->assertSee('Type of fee')
             ->assertSee('name="is_tuition" value="1" class="mt-0.5 h-5 w-5 border-brand-ash text-brand-violet focus:ring-4 focus:ring-brand-violet/30" data-fee-kind checked', false)
             ->assertSee('Academic year')->assertSee('name="academic_year"', false)->assertSee('name="term"', false)
-            ->assertSee('First Term')->assertSee('Second Term')->assertSee('Third Term')->assertSee('Any term')
+            ->assertSee('First Term')->assertSee('Second Term')->assertSee('Third Term')
+            // Year and term are school fees' fields; an additional fee has neither.
+            ->assertDontSee('>Any term</option>', false)
+            ->assertSee('name="academic_year" id="academic_year" data-tuition-field', false)->assertSee('name="term" id="term" data-tuition-field', false)
+            ->assertDontSee('Saving will remove this fee’s term')
             ->assertSee('Uniform')->assertDontSee('Beta Only')
             // No internal ids or session management on the form.
             ->assertDontSee('name="academic_term_id"', false)->assertDontSee('/admin/alpha/sessions', false)
@@ -318,6 +325,224 @@ class SchoolFeesCategoryTest extends TestCase
         $this->assertTrue($shirt->isPayableForStudent(null), 'an unassigned ordinary fee stays payable by everyone');
         // "Any term" creates no academic year.
         $this->assertDatabaseCount('academic_sessions', 0);
+    }
+
+    public function test_an_additional_fee_never_saves_a_posted_academic_year_or_term(): void
+    {
+        $uniform = Category::create(['school_id' => $this->alpha->id, 'name' => 'Uniform']);
+        $betaTerm = $this->makeSessionWithTerms($this->beta, '2026/2027')->terms()->where('number', 1)->sole();
+
+        // Year, term and a legacy term id — even malformed or another school's — are
+        // excluded for an additional fee, not validated, saved or used to create a year.
+        $this->admin()->post('/admin/alpha/subcategories', [
+            'is_tuition' => '0', 'category_id' => $uniform->id, 'name' => 'Shirt', 'price' => 3000,
+            'academic_year' => '2026/2027', 'term' => 2, 'academic_term_id' => $betaTerm->id,
+        ])->assertRedirect('/admin/alpha/subcategories')->assertSessionHasNoErrors();
+        $this->admin()->post('/admin/alpha/subcategories', [
+            'is_tuition' => '0', 'category_id' => $uniform->id, 'name' => 'Tie', 'price' => 500,
+            'academic_year' => 'not a year', 'term' => 9,
+        ])->assertSessionHasNoErrors();
+
+        $this->assertSame([null, null], Subcategory::orderBy('id')->pluck('academic_term_id')->all());
+        $this->assertSame(0, AcademicTerm::where('school_id', $this->alpha->id)->count());
+        $this->assertTrue(Subcategory::where('name', 'Shirt')->sole()->isPayableForTerm($betaTerm));
+    }
+
+    public function test_saving_an_additional_fee_that_has_a_term_makes_it_payable_in_any_term(): void
+    {
+        $levies = Category::create(['school_id' => $this->alpha->id, 'name' => 'Levies']);
+        $session = $this->makeSessionWithTerms($this->alpha, '2026/2027');
+        $first = $session->terms()->where('number', 1)->sole();
+        $second = $session->terms()->where('number', 2)->sole();
+        $fee = Subcategory::create([
+            'school_id' => $this->alpha->id, 'category_id' => $levies->id, 'name' => 'Sports levy',
+            'price' => 2000, 'academic_term_id' => $first->id,
+        ]);
+        $paid = $this->makeSuccessfulTransaction($this->alpha, [
+            'category_id' => $levies->id, 'subcategory_id' => $fee->id, 'subcategory_name' => 'Sports levy',
+            'academic_session_id' => $session->id, 'academic_term_id' => $first->id,
+            'session_name' => '2026/2027', 'term_name' => 'First Term',
+        ]);
+        $paidBefore = $paid->fresh()->getAttributes();
+
+        // Untouched, an existing term-limited additional fee behaves as it did.
+        $this->assertFalse($fee->isPayableForTerm($second));
+
+        // The edit form warns that saving lifts the term.
+        $this->admin()->get("/admin/alpha/subcategories/{$fee->id}/edit")->assertOk()
+            ->assertSee('Saving will remove this fee’s term')->assertSee('currently limited to First Term, 2026/2027');
+
+        // Saved as it would be from the form — no checkbox, and a stale year/term is ignored.
+        $this->admin()->put("/admin/alpha/subcategories/{$fee->id}", [
+            'is_tuition' => '0', 'category_id' => $levies->id, 'name' => 'Sports levy', 'price' => 2000,
+            'academic_year' => '2026/2027', 'term' => 1,
+        ])->assertRedirect('/admin/alpha/subcategories')->assertSessionHasNoErrors()
+            ->assertSessionHas('success', fn ($message) => str_contains($message, 'It is now payable in any term.'));
+
+        $fee->refresh();
+        $this->assertNull($fee->academic_term_id);
+        $this->assertTrue($fee->isPayableForTerm($second));
+
+        $event = SchoolAuditEvent::where('action', SchoolAuditEvent::ACTION_FEE_UPDATED)->where('subject_id', $fee->id)->sole();
+        $this->assertEquals(['from' => $first->id, 'to' => null], $event->changes['academic_term_id']);
+
+        // The payment made under the term, and its receipt details, are untouched.
+        $this->assertSame($paidBefore, $paid->fresh()->getAttributes());
+    }
+
+    public function test_switching_school_fees_without_payment_records_to_an_additional_fee_removes_the_term_with_a_warning_and_an_audit_record(): void
+    {
+        $levies = Category::create(['school_id' => $this->alpha->id, 'name' => 'Levies']);
+        $this->admin()->post('/admin/alpha/subcategories', $this->schoolFees(['term' => 2]))->assertSessionHasNoErrors();
+        $fee = Subcategory::sole();
+        $termId = $fee->academic_term_id;
+
+        // No payment records, so the type is open. The warning is on the form, shown by
+        // the script only once "Additional fee" is chosen.
+        $this->admin()->get("/admin/alpha/subcategories/{$fee->id}/edit")->assertOk()
+            ->assertDontSee('id="is_tuition-locked"', false)->assertDontSee('data-fee-kind  disabled', false)
+            ->assertSee('data-additional-only role="status"', false)
+            ->assertSee('Saving will remove this fee’s term')->assertSee('currently limited to Second Term, 2026/2027');
+
+        // Without JavaScript the year and term are still posted; they are ignored.
+        $this->admin()->put("/admin/alpha/subcategories/{$fee->id}", [
+            'is_tuition' => '0', 'category_id' => $levies->id, 'name' => 'Second Term School Fees', 'price' => 80000,
+            'academic_year' => '2026/2027', 'term' => 2, 'class_level_ids' => [$this->jss1->id],
+        ])->assertRedirect('/admin/alpha/subcategories')->assertSessionHasNoErrors()
+            ->assertSessionHas('success', fn ($message) => str_contains($message, 'It is now payable in any term.'));
+
+        $fee->refresh();
+        $this->assertFalse($fee->is_tuition);
+        $this->assertNull($fee->academic_term_id);
+
+        $event = SchoolAuditEvent::where('action', SchoolAuditEvent::ACTION_FEE_UPDATED)->where('subject_id', $fee->id)->sole();
+        $this->assertEquals(['from' => true, 'to' => false], $event->changes['is_tuition']);
+        $this->assertEquals(['from' => $termId, 'to' => null], $event->changes['academic_term_id']);
+    }
+
+    // --------------------------------------------------------- fee-type lock
+
+    /** Every kind of payment record locks a fee's type, not only a successful payment. */
+    public static function paymentRecords(): array
+    {
+        return [
+            'successful' => ['success', 'paystack'],
+            'pending' => ['pending', 'paystack'],
+            'failed' => ['failed', 'paystack'],
+            'held for review' => ['mismatch', 'paystack'],
+            'cash' => ['success', 'manual'],
+            'voided cash' => ['voided', 'manual'],
+        ];
+    }
+
+    /** A payment row for the fee, student and term, with the given status and source. */
+    private function paymentRecord(Subcategory $fee, Student $student, AcademicTerm $term, string $status, string $source): Transaction
+    {
+        return $this->makeSuccessfulTransaction($this->alpha, [
+            'status' => $status, 'source' => $source, 'paid_at' => $status === 'success' ? now() : null,
+            'student_id' => $student->id, 'subcategory_id' => $fee->id, 'category_id' => $fee->category_id,
+            'academic_session_id' => $term->academic_session_id, 'academic_term_id' => $term->id,
+        ]);
+    }
+
+    #[DataProvider('paymentRecords')]
+    public function test_school_fees_with_payment_records_cannot_become_an_additional_fee(string $status, string $source): void
+    {
+        $levies = Category::create(['school_id' => $this->alpha->id, 'name' => 'Levies']);
+        $this->admin()->post('/admin/alpha/subcategories', $this->schoolFees())->assertSessionHasNoErrors();
+        $fee = Subcategory::sole();
+        $student = $this->makeStudent($this->alpha, 'A/1', 'Ada', 'JSS1', ['class_level_id' => $this->jss1->id]);
+        $record = $this->paymentRecord($fee, $student, $fee->academicTerm, $status, $source);
+        $recordBefore = $record->fresh()->getAttributes();
+        $feeBefore = $fee->fresh()->getAttributes();
+
+        // The form explains the lock and offers only the fee's own type.
+        $this->admin()->get("/admin/alpha/subcategories/{$fee->id}/edit")->assertOk()
+            ->assertSee('id="is_tuition-locked"', false)
+            ->assertSee('The type of this fee can’t be changed')->assertSee('create a new fee instead')
+            ->assertSee('value="1" class="mt-0.5 h-5 w-5 border-brand-ash text-brand-violet focus:ring-4 focus:ring-brand-violet/30" data-fee-kind checked', false)
+            ->assertSee('value="0" class="mt-0.5 h-5 w-5 border-brand-ash text-brand-violet focus:ring-4 focus:ring-brand-violet/30" data-fee-kind  disabled', false);
+
+        // A posted switch, however it was built, is refused and nothing changes.
+        $this->admin()->from("/admin/alpha/subcategories/{$fee->id}/edit")->put("/admin/alpha/subcategories/{$fee->id}", [
+            'is_tuition' => '0', 'category_id' => $levies->id, 'name' => 'Levy', 'price' => 5000,
+        ])->assertRedirect("/admin/alpha/subcategories/{$fee->id}/edit")
+            ->assertSessionHasErrors(['is_tuition' => SubcategoryController::MESSAGE_TYPE_LOCKED]);
+
+        $this->assertSame($feeBefore, $fee->fresh()->getAttributes());
+        $this->assertSame($recordBefore, $record->fresh()->getAttributes());
+        $this->assertSame(0, SchoolAuditEvent::where('action', SchoolAuditEvent::ACTION_FEE_UPDATED)->count());
+    }
+
+    #[DataProvider('paymentRecords')]
+    public function test_an_additional_fee_with_payment_records_cannot_become_school_fees(string $status, string $source): void
+    {
+        $levies = Category::create(['school_id' => $this->alpha->id, 'name' => 'Levies']);
+        $term = $this->makeSessionWithTerms($this->alpha, '2026/2027')->terms()->where('number', 1)->sole();
+        $fee = Subcategory::create(['school_id' => $this->alpha->id, 'category_id' => $levies->id, 'name' => 'Levy', 'price' => 5000]);
+        $student = $this->makeStudent($this->alpha, 'A/1', 'Ada', 'JSS1', ['class_level_id' => $this->jss1->id]);
+        $record = $this->paymentRecord($fee, $student, $term, $status, $source);
+        $recordBefore = $record->fresh()->getAttributes();
+
+        $this->admin()->get("/admin/alpha/subcategories/{$fee->id}/edit")->assertOk()
+            ->assertSee('id="is_tuition-locked"', false)
+            ->assertSee('To charge it as school fees, create a new fee instead.');
+
+        $this->admin()->from("/admin/alpha/subcategories/{$fee->id}/edit")
+            ->put("/admin/alpha/subcategories/{$fee->id}", $this->schoolFees(['name' => 'Levy', 'academic_year' => '2030/2031']))
+            ->assertSessionHasErrors(['is_tuition' => SubcategoryController::MESSAGE_TYPE_LOCKED]);
+
+        $this->assertFalse($fee->fresh()->is_tuition);
+        $this->assertSame($recordBefore, $record->fresh()->getAttributes());
+        // The refused save created nothing for the year it named.
+        $this->assertSame(0, AcademicSession::where('school_id', $this->alpha->id)->where('name', '2030/2031')->count());
+        // The levy payment was never school fees, and still is not.
+        $this->assertFalse(Transaction::paidObligation($student->id, $term->id)->exists());
+    }
+
+    public function test_a_locked_fee_keeps_every_other_detail_editable_and_its_paid_once_record(): void
+    {
+        $this->admin()->post('/admin/alpha/subcategories', $this->schoolFees())->assertSessionHasNoErrors();
+        $fee = Subcategory::sole();
+        $student = $this->makeStudent($this->alpha, 'A/1', 'Ada', 'JSS1', ['class_level_id' => $this->jss1->id]);
+        $key = Transaction::obligationKey($student->id, $fee->academicTerm->academic_session_id, $fee->academic_term_id);
+        $paid = $this->paymentRecord($fee, $student, $fee->academicTerm, 'success', 'paystack');
+        $paid->forceFill(['obligation_key' => $key, 'settled_obligation_key' => $key])->save();
+        $paidBefore = $paid->fresh()->getAttributes();
+
+        // Same type: name, amount and classes all save as usual.
+        $this->admin()->put("/admin/alpha/subcategories/{$fee->id}", $this->schoolFees([
+            'name' => 'JSS fees', 'price' => 90000, 'class_level_ids' => [$this->jss1->id, $this->jss2->id],
+        ]))->assertRedirect('/admin/alpha/subcategories')->assertSessionHasNoErrors();
+
+        $fee->refresh();
+        $this->assertTrue($fee->is_tuition);
+        $this->assertSame('JSS fees', $fee->name);
+        $this->assertEquals(90000, (float) $fee->price);
+        $this->assertEqualsCanonicalizing([$this->jss1->id, $this->jss2->id], $fee->classLevels->pluck('id')->all());
+
+        // The payment is untouched and still counts: this term's school fees stay paid,
+        // and checkout refuses a second payment.
+        $this->assertSame($paidBefore, $paid->fresh()->getAttributes());
+        $this->assertTrue(Transaction::paidObligation($student->id, $fee->academic_term_id)->exists());
+    }
+
+    public function test_switching_an_additional_fee_to_school_fees_requires_a_term_again(): void
+    {
+        $levies = Category::create(['school_id' => $this->alpha->id, 'name' => 'Levies']);
+        $fee = Subcategory::create(['school_id' => $this->alpha->id, 'category_id' => $levies->id, 'name' => 'Levy', 'price' => 5000]);
+
+        // An additional fee has no term to warn about.
+        $this->admin()->get("/admin/alpha/subcategories/{$fee->id}/edit")->assertOk()
+            ->assertDontSee('Saving will remove this fee’s term');
+
+        $this->admin()->from("/admin/alpha/subcategories/{$fee->id}/edit")
+            ->put("/admin/alpha/subcategories/{$fee->id}", $this->schoolFees(['name' => 'Levy', 'term' => '']))
+            ->assertSessionHasErrors(['term' => 'Choose the term these school fees are for.']);
+        $this->assertFalse($fee->fresh()->is_tuition);
+
+        $this->admin()->put("/admin/alpha/subcategories/{$fee->id}", $this->schoolFees(['name' => 'Levy', 'term' => 3]))->assertSessionHasNoErrors();
+        $this->assertSame(3, $fee->fresh()->academicTerm->number);
     }
 
     public function test_a_typed_new_category_is_created_once_and_variants_reuse_it(): void

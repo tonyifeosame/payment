@@ -8,7 +8,7 @@
         'success', 'paid', 'active', 'graduated' => 'bg-green-50 text-green-800',
         'pending', 'queued', 'initiating', 'sending', 'processing' => 'bg-brand-violet/10 text-brand-violet',
         'failed', 'mismatch', 'needs_review' => 'bg-red-50 text-red-700',
-        'reversed', 'left', 'inactive' => 'bg-brand-fog text-brand-slate',
+        'reversed', 'left', 'inactive', 'voided' => 'bg-brand-fog text-brand-slate',
         'current' => 'bg-brand-violet text-white',
         default => 'bg-brand-fog text-brand-obsidian',
     };

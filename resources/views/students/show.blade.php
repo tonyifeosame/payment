@@ -13,7 +13,15 @@
         <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
         All students
     </a>
-    <a href="{{ route('school.students.edit', ['school' => $school->slug, 'student' => $student->id]) }}" class="btn-obsidian">Edit student</a>
+    <a href="{{ route('school.students.edit', ['school' => $school->slug, 'student' => $student->id]) }}" class="btn-outline">Edit student</a>
+    @if($student->status === \App\Models\Student::STATUS_ACTIVE)
+        <a href="{{ route('school.students.cash-payment.create', ['school' => $school->slug, 'student' => $student->id]) }}" class="btn-obsidian">
+            <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h18v10H3zM12 14.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM6 10v4M18 10v4"/></svg>
+            Record cash payment
+        </a>
+    @else
+        <span class="btn-obsidian cursor-not-allowed opacity-50" aria-disabled="true" title="Cash payments can only be recorded for active students.">Record cash payment<span class="sr-only"> — only for active students</span></span>
+    @endif
 @endsection
 
 @section('content')
@@ -77,6 +85,16 @@
             <h2 id="paid-heading" class="text-xs font-semibold uppercase tracking-[0.08em] text-brand-slate">Total fees paid</h2>
             <p class="mt-1 font-display text-2xl font-extrabold tabular-nums tracking-tight">₦{{ number_format($totalPaid, 2) }}</p>
             <p class="mt-1 text-sm text-brand-slate">School share of successful payments, all time.</p>
+            <dl class="mt-3 divide-y divide-brand-fog border-t border-brand-fog text-sm">
+                <div class="flex items-baseline justify-between gap-4 py-2">
+                    <dt class="text-brand-slate">Paid online</dt>
+                    <dd class="font-medium tabular-nums">₦{{ number_format($paidOnline, 2) }}</dd>
+                </div>
+                <div class="flex items-baseline justify-between gap-4 py-2">
+                    <dt class="text-brand-slate">Paid with cash <span class="block text-xs">Recorded by your school</span></dt>
+                    <dd class="font-medium tabular-nums">₦{{ number_format($paidCash, 2) }}</dd>
+                </div>
+            </dl>
         </section>
     </div>
 
@@ -123,7 +141,11 @@
                             @if($b['quantity'] > 1)<span class="block text-xs text-brand-slate">{{ $b['quantity'] }} × ₦{{ number_format($b['unit_price'], 2) }}</span>@endif
                         </div>
                     </td>
-                    <td class="td" data-label="Status">@include('admin._badge', ['status' => $t->status])</td>
+                    <td class="td" data-label="Status">
+                        <div class="min-w-0">
+                            @include('admin._payment_status', ['transaction' => $t])
+                        </div>
+                    </td>
                     <td class="td td-actions" data-label="">
                         <div class="flex w-full flex-wrap gap-2 md:w-auto md:justify-end xl:flex-nowrap">
                             @if($t->status === 'success')
@@ -137,7 +159,7 @@
                 <x-slot:empty>
                     <x-admin.empty
                         title="No payments yet"
-                        description="Payments made for {{ $student->full_name }} on your payment page will appear here."
+                        description="Payments made for {{ $student->full_name }} on your payment page, and cash payments you record, will appear here."
                         icon="M4 8h16M4 16h16M8 4l-4 4 4 4M16 12l4 4-4 4"
                         compact />
                 </x-slot:empty>

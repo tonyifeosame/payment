@@ -70,6 +70,13 @@ class PayoutService
             return null;
         }
 
+        // Cash recorded by the school was never collected by FEYRA: there is nothing
+        // to pay out, ever. Read from the database, not the (possibly partial) model.
+        $source = $transaction->source ?? Transaction::whereKey($transaction->id)->value('source');
+        if ($source !== Transaction::SOURCE_PAYSTACK) {
+            return null;
+        }
+
         $existing = Payout::where('transaction_id', $transaction->id)->first();
         if ($existing) {
             return $existing;

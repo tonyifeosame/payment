@@ -9,6 +9,10 @@
 @section('heading', 'Fees')
 @section('subheading', 'School fees and additional fees parents can pay, by academic year and term.')
 @section('actions')
+    <a href="{{ route('school.subcategories.export', ['school' => $school->slug]) }}" class="btn-outline">
+        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0l-4-4m4 4l4-4M5 19h14"/></svg>
+        Export CSV
+    </a>
     <a href="{{ route('school.subcategories.create', ['school' => $school->slug]) }}" class="btn-obsidian">
         <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
         Add fee

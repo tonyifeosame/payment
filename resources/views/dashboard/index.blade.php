@@ -56,11 +56,13 @@
         ['Paid', $sum([\App\Models\Payout::SUCCESS]), 'success', 'text-green-800'],
         ['Needs attention', $sum([\App\Models\Payout::FAILED, \App\Models\Payout::NEEDS_REVIEW]), 'attention', 'text-red-700'],
     ];
+    // Main figures: online payments FEYRA collected. The cash line under each is the
+    // school's own cash, shown separately and never added in.
     $summaryCards = [
-        ['Today', $stats['today'], 'Since midnight'],
-        ['This week', $stats['week'], 'Since Monday'],
-        [$selectedTerm ? $selectedTerm->name : 'Current term', $selectedTerm ? $stats['term_totals'] : null, $selectedTerm ? $selectedTerm->session->name : 'No term selected'],
-        ['All time', $stats['all_time'], 'Every successful payment'],
+        ['Today', $stats['today'], 'Since midnight', $stats['cash']['today']],
+        ['This week', $stats['week'], 'Since Monday', $stats['cash']['week']],
+        [$selectedTerm ? $selectedTerm->name : 'Current term', $selectedTerm ? $stats['term_totals'] : null, $selectedTerm ? $selectedTerm->session->name : 'No term selected', $selectedTerm ? $stats['cash']['term_totals'] : null],
+        ['All time', $stats['all_time'], 'Every successful online payment', $stats['cash']['all_time']],
     ];
 @endphp
 
@@ -97,7 +99,7 @@
     <div class="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4" role="list">
         {{-- Loop variables are prefixed: @include shares this scope, and a bare label
              variable would leak into admin._badge below. --}}
-        @foreach($summaryCards as [$cardLabel, $bucket, $cardHint])
+        @foreach($summaryCards as [$cardLabel, $bucket, $cardHint, $cashBucket])
             <div class="card flex flex-col p-4 sm:p-5" role="listitem">
                 <span class="text-xs font-semibold uppercase tracking-[0.08em] text-brand-slate">{{ $cardLabel }}</span>
                 @if($bucket === null)
@@ -106,11 +108,14 @@
                 @else
                     <span class="mt-1 font-display text-xl font-extrabold tabular-nums tracking-tight sm:text-2xl">{{ $money($bucket['net']) }}</span>
                     <span class="mt-1 text-xs text-brand-slate">{{ $bucket['count'] }} {{ Str::plural('payment', $bucket['count']) }} · {{ $cardHint }}</span>
+                    @if($cashBucket && $cashBucket['count'] > 0)
+                        <span class="mt-2 border-t border-brand-fog pt-2 text-xs text-brand-slate" data-cash-recorded>+ <span class="font-semibold tabular-nums text-brand-obsidian">{{ $money($cashBucket['net']) }}</span> cash recorded by school <span class="whitespace-nowrap">({{ $cashBucket['count'] }})</span></span>
+                    @endif
                 @endif
             </div>
         @endforeach
     </div>
-    <p class="mt-3 px-1 text-sm text-brand-slate">Amounts are the fee amounts collected for your school from successful payments. Times follow {{ str_replace('_', ' ', $tz) }}.</p>
+    <p class="mt-3 px-1 text-sm text-brand-slate">Amounts are the fee amounts collected for your school from successful online payments. Cash recorded by your school is shown separately and is not included. Times follow {{ str_replace('_', ' ', $tz) }}.</p>
 </section>
 
 <div class="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-3 xl:items-start">
@@ -144,6 +149,7 @@
                         <div class="min-w-0">
                             <span class="block font-medium">{{ $t->subcategory_name ?? $t->category_name ?? '—' }}</span>
                             <span class="block text-xs text-brand-slate">{{ $t->category_name }}@if($t->term_name) · {{ $t->term_name }}@endif</span>
+                            @if($t->methodLabel())<span class="block text-xs font-medium text-brand-slate">{{ $t->methodLabel() }}</span>@endif
                         </div>
                     </td>
                     <td class="td text-right lg:whitespace-nowrap" data-label="Amount">
@@ -232,7 +238,7 @@
 <section class="mt-6" aria-labelledby="category-heading">
     <div class="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-1">
         <h2 id="category-heading" class="font-display text-lg font-bold tracking-tight">Collections by category</h2>
-        <p class="text-sm text-brand-slate">{{ $selectedTerm ? $selectedTerm->name.', '.$selectedTerm->session->name : 'All time' }}</p>
+        <p class="text-sm text-brand-slate">{{ $selectedTerm ? $selectedTerm->name.', '.$selectedTerm->session->name : 'All time' }} · online payments only; cash recorded by your school is not included</p>
     </div>
     <x-admin.table
         :columns="$stats['by_category']->isEmpty() ? [] : [['Category'], ['Payments', 'right', 'xl:w-[20%]'], ['Collected', 'right', 'xl:w-[25%]']]"

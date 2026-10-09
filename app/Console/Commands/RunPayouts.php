@@ -55,6 +55,9 @@ class RunPayouts extends Command
 
         $query = Transaction::query()
             ->where('status', 'success')
+            // Only money FEYRA collected through Paystack is owed to a school. Cash the
+            // school recorded itself is never a payout obligation.
+            ->where('source', Transaction::SOURCE_PAYSTACK)
             ->whereNotNull('school_id')
             // The guard against double-paying: anything already owed is left alone.
             ->whereDoesntHave('payout')

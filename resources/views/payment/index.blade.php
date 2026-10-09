@@ -50,7 +50,9 @@
         return $ids ? implode(' ', $ids) : null;
     };
     $inputClass = fn (string $field, string $base = 'field-input') => $base.($errors->has($field) ? ' field-input-error' : '');
-    $hasSessions = $sessionsForJs->isNotEmpty();
+    // The school's current term, set by the admin. The parent never picks a term:
+    // checkout pays the current term, resolved on the server.
+    $hasTerm = $currentTerm !== null;
     // L6: can this school actually be paid? $categoriesForJs carries only fees with
     // an amount set (M4 filters out drafts), so a school with categories but no
     // priced fee has nothing payable — and the form would render as an empty
@@ -90,7 +92,12 @@
             @endif
             <div class="min-w-0">
                 <h1 class="font-display text-2xl font-extrabold leading-tight tracking-tight sm:text-3xl">{{ $school->name }}</h1>
-                <p class="text-sm text-brand-slate">School fees payment</p>
+                <p class="text-sm text-brand-slate">
+                    School fees payment
+                    @if($hasTerm)
+                        · <span id="currentTermLabel" class="font-semibold text-brand-obsidian">{{ $currentTerm->label }}</span>
+                    @endif
+                </p>
             </div>
         </section>
 
@@ -166,6 +173,18 @@
                  the card above, with its actions and "Make another payment", which
                  reloads this page with the form. No form and no sticky Pay bar under a
                  confirmation or a "don't pay again". --}}
+        @elseif($paymentsUnavailable)
+            {{-- The school has academic terms but no current one: there is no term to pay
+                 for, so no form. Checkout refuses a submit in this state too. --}}
+            <section class="mt-6 rounded-3xl border border-brand-ash/60 bg-white p-6 text-center sm:p-8" aria-labelledby="unavailable-heading">
+                <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-brand-fog" aria-hidden="true">
+                    <svg class="h-6 w-6 text-brand-slate" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><path d="M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>
+                </div>
+                <h2 id="unavailable-heading" class="mt-4 font-display text-xl font-bold tracking-tight text-brand-obsidian">Payments are temporarily unavailable</h2>
+                <p class="mx-auto mt-2 max-w-md text-brand-slate">
+                    {{ $school->name }} has not set the current term for payments yet. Please contact the school, and try again once they have.
+                </p>
+            </section>
         @elseif(! $hasPayableFees)
             {{-- L6: nothing to pay for yet. Better to say so plainly than to show a
                  form whose dropdowns are empty. The school's own contact details are
@@ -186,33 +205,11 @@
 
             <div class="space-y-5 lg:col-span-7">
 
-                @if($requiresStudent || $hasSessions)
-                {{-- Step 1: who and when --}}
+                @if($requiresStudent)
+                {{-- Step 1: who. The term is the school's current term, not chosen here. --}}
                 <section class="step-card" aria-labelledby="step-student">
-                    <h2 id="step-student" class="step-heading"><span class="step-num" aria-hidden="true">1</span>{{ $requiresStudent ? 'Find your student' : 'Session and term' }}</h2>
+                    <h2 id="step-student" class="step-heading"><span class="step-num" aria-hidden="true">1</span>Find your student</h2>
 
-                    @if($hasSessions)
-                    <div class="mt-4 grid grid-cols-2 gap-3">
-                        <div>
-                            <label for="academic_session_id" class="field-label">Session</label>
-                            <div class="relative">
-                                <select name="academic_session_id" id="academic_session_id" class="{{ $inputClass('academic_session_id', 'field-select') }}"></select>
-                                <svg class="select-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
-                            </div>
-                            @include('marketing.partials.field-error', ['field' => 'academic_session_id'])
-                        </div>
-                        <div>
-                            <label for="academic_term_id" class="field-label">Term</label>
-                            <div class="relative">
-                                <select name="academic_term_id" id="academic_term_id" class="{{ $inputClass('academic_term_id', 'field-select') }}"></select>
-                                <svg class="select-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
-                            </div>
-                            @include('marketing.partials.field-error', ['field' => 'academic_term_id'])
-                        </div>
-                    </div>
-                    @endif
-
-                    @if($requiresStudent)
                     <div class="mt-4 space-y-3" id="studentPicker" data-old-student='@json($oldStudent)'>
                         {{-- L8: the parent enters the student's full name AND admission number; the server
                              reveals the student only when both match the same active student of this school.
@@ -271,13 +268,12 @@
                             </div>
                         </div>
                     </div>
-                    @endif
                 </section>
                 @endif
 
                 {{-- Step 2: fee --}}
                 <section class="step-card" aria-labelledby="step-fee">
-                    <h2 id="step-fee" class="step-heading"><span class="step-num" aria-hidden="true">{{ ($requiresStudent || $hasSessions) ? 2 : 1 }}</span>Select the fee</h2>
+                    <h2 id="step-fee" class="step-heading"><span class="step-num" aria-hidden="true">{{ $requiresStudent ? 2 : 1 }}</span>Select the fee</h2>
 
                     <div class="mt-4 space-y-4">
                         {{-- Class fee: when exactly one main (tuition) fee applies to the verified
@@ -348,7 +344,7 @@
 
                 {{-- Step 3: payer details (after the amount is known) --}}
                 <section class="step-card" aria-labelledby="step-details">
-                    <h2 id="step-details" class="step-heading"><span class="step-num" aria-hidden="true">{{ ($requiresStudent || $hasSessions) ? 3 : 2 }}</span>Your details</h2>
+                    <h2 id="step-details" class="step-heading"><span class="step-num" aria-hidden="true">{{ $requiresStudent ? 3 : 2 }}</span>Your details</h2>
                     <p class="mt-1 text-sm text-brand-slate">Your receipt will be sent to this email address.</p>
 
                     <div class="mt-4 space-y-4">
@@ -384,8 +380,8 @@
                             @if($requiresStudent)
                             <div class="flex items-start justify-between gap-4"><dt class="text-brand-slate">Student</dt><dd id="summaryStudent" class="text-right font-semibold">—</dd></div>
                             @endif
-                            @if($hasSessions)
-                            <div class="flex items-start justify-between gap-4"><dt class="text-brand-slate">Term</dt><dd id="summaryTerm" class="text-right font-semibold">—</dd></div>
+                            @if($hasTerm)
+                            <div class="flex items-start justify-between gap-4"><dt class="text-brand-slate">Term</dt><dd id="summaryTerm" class="text-right font-semibold">{{ $currentTerm->label }}</dd></div>
                             @endif
                             <div class="flex items-start justify-between gap-4"><dt class="text-brand-slate">Category</dt><dd id="summaryCategory" class="text-right font-semibold">—</dd></div>
                             <div class="flex items-start justify-between gap-4"><dt class="text-brand-slate">Fee</dt><dd id="summarySub" class="text-right font-semibold">—</dd></div>

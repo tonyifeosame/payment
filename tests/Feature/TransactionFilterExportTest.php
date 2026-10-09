@@ -152,6 +152,7 @@ class TransactionFilterExportTest extends TestCase
             'Payer Name', 'Payer Email', 'Payment Method',
             'Fee Amount (NGN)',
             'Payout Status', 'Payout Reference',
+            'Source', 'Receipt No.',
         ], $rows[0]);
 
         // The platform service fee and the gross charge are never exported to the school.
@@ -177,7 +178,9 @@ class TransactionFilterExportTest extends TestCase
         $this->assertSame('50000.00', $tuition[15]);
         $this->assertSame('success', $tuition[16]);
         $this->assertSame('PO-tuition', $tuition[17]);
-        $this->assertCount(18, $tuition);
+        $this->assertSame('Paystack', $tuition[18]);
+        $this->assertSame('', $tuition[19]);
+        $this->assertCount(20, $tuition);
 
         $this->assertStringNotContainsString('beta@private.test', $csv);
     }
