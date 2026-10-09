@@ -46,7 +46,7 @@ class DeploymentHardeningTest extends TestCase
 
         $this->assertSame('256M', $ini['memory_limit']);
         $this->assertSame('8M', $ini['post_max_size']);
-        $this->assertSame('2M', $ini['upload_max_filesize']);
+        $this->assertSame('6M', $ini['upload_max_filesize']);
         $this->assertSame('', $ini['expose_php']); // Off
     }
 

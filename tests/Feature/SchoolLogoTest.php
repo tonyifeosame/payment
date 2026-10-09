@@ -137,7 +137,7 @@ class SchoolLogoTest extends TestCase
         foreach ([
             UploadedFile::fake()->create('evil.php', 10, 'text/plain'),
             UploadedFile::fake()->create('evil.svg', 10, 'image/svg+xml'),
-            UploadedFile::fake()->image('big.png', 10, 10)->size(1025), // > 1024 KB
+            UploadedFile::fake()->image('big.png', 10, 10)->size(5121), // > 5120 KB (5 MB)
         ] as $file) {
             $this->actingAsSchoolAdmin($this->alpha)
                 ->from('/admin/alpha/settings')
@@ -152,6 +152,13 @@ class SchoolLogoTest extends TestCase
             $this->upload($this->alpha, UploadedFile::fake()->image($name, 16, 16));
         }
         $this->assertDatabaseHas('school_logos', ['school_id' => $this->alpha->id, 'mime' => 'image/webp']);
+    }
+
+    public function test_a_logo_of_exactly_5_mb_is_accepted(): void
+    {
+        $this->upload($this->alpha, UploadedFile::fake()->image('logo.png', 16, 16)->size(5120));
+
+        $this->assertDatabaseHas('school_logos', ['school_id' => $this->alpha->id, 'mime' => 'image/png']);
     }
 
     public function test_deleting_a_school_cascades_to_its_logo(): void
@@ -328,13 +335,13 @@ class SchoolLogoTest extends TestCase
         }
     }
 
-    public function test_an_image_over_4000_pixels_is_rejected_with_a_clear_message(): void
+    public function test_an_image_over_5000_pixels_is_rejected_with_a_clear_message(): void
     {
         $this->actingAsSchoolAdmin($this->alpha)
             ->from('/admin/alpha/settings')
-            ->put('/admin/alpha/settings', $this->profile(['logo' => UploadedFile::fake()->image('wide.png', 4001, 10)]))
+            ->put('/admin/alpha/settings', $this->profile(['logo' => UploadedFile::fake()->image('wide.png', 5001, 10)]))
             ->assertRedirect('/admin/alpha/settings')
-            ->assertSessionHasErrors(['logo' => 'The logo must be at most 4000 × 4000 pixels.']);
+            ->assertSessionHasErrors(['logo' => 'The logo must be at most 5000 × 5000 pixels.']);
 
         $this->assertDatabaseMissing('school_logos', ['school_id' => $this->alpha->id]);
     }
@@ -350,7 +357,7 @@ class SchoolLogoTest extends TestCase
             ->from('/admin/alpha/settings')
             ->put('/admin/alpha/settings', $this->profile(['logo' => $bomb]))
             ->assertRedirect('/admin/alpha/settings')
-            ->assertSessionHasErrors(['logo' => 'The logo must be at most 4000 × 4000 pixels.']);
+            ->assertSessionHasErrors(['logo' => 'The logo must be at most 5000 × 5000 pixels.']);
 
         $this->assertLessThan(32 * 1024 * 1024, memory_get_peak_usage() - $before, 'never decoded: decoding would need ~400 MB');
         $this->assertDatabaseMissing('school_logos', ['school_id' => $this->alpha->id]);

@@ -59,7 +59,7 @@ class SchoolSettingsController extends Controller
             // Content-based type and size first; then, from the header alone and
             // before any pixel is decoded, the dimension limit and animated WebP.
             'logo' => [
-                'bail', 'nullable', 'file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:1024',
+                'bail', 'nullable', 'file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120',
                 function ($attribute, $value, $fail) {
                     if (($problem = SchoolLogoImage::problem((string) $value->get())) !== null) {
                         $fail($problem);

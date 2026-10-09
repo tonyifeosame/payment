@@ -184,6 +184,23 @@ class SchoolLogoImageTest extends TestCase
         $this->assertSame($quadrants, $this->quadrantColours(imagecreatefromstring($out)));
     }
 
+    public function test_a_rotated_5000_pixel_jpeg_is_oriented_without_holding_two_full_size_copies(): void
+    {
+        $source = imagescale($this->quadrants(), 5000, 3333, IMG_NEAREST_NEIGHBOUR);
+        $upload = $this->withExif($this->encode($source, 'jpeg', 95), 6, 'MM');
+        unset($source);
+
+        memory_reset_peak_usage();
+        $before = memory_get_usage();
+
+        $out = SchoolLogoImage::normalize($upload)['bytes'];
+
+        // One decoded 5000 × 3333 image is ~67 MB; rotating it at full size needed twice that.
+        $this->assertLessThan(100 * 1024 * 1024, memory_get_peak_usage() - $before, 'scaled down before it is rotated');
+        $this->assertSame([341, 512], $this->dimensions($out));
+        $this->assertSame(['blue', 'red', 'yellow', 'green'], $this->quadrantColours(imagecreatefromstring($out)));
+    }
+
     public function test_malformed_exif_is_read_as_upright_and_never_errors(): void
     {
         $jpeg = $this->encode($this->quadrants(), 'jpeg', 95);
@@ -212,29 +229,29 @@ class SchoolLogoImageTest extends TestCase
     // Refused from the header, before decoding
     // -----------------------------------------------------------------------
 
-    public function test_images_over_4000_pixels_on_either_side_are_refused(): void
+    public function test_images_over_5000_pixels_on_either_side_are_refused(): void
     {
-        foreach ([[4001, 10], [10, 4001]] as [$w, $h]) {
+        foreach ([[5001, 10], [10, 5001]] as [$w, $h]) {
             $upload = $this->encode(imagecreatetruecolor($w, $h), 'png');
 
-            $this->assertSame('The logo must be at most 4000 × 4000 pixels.', SchoolLogoImage::problem($upload));
-            $this->assertThrows(fn () => SchoolLogoImage::normalize($upload), InvalidArgumentException::class, 'at most 4000 × 4000 pixels');
+            $this->assertSame('The logo must be at most 5000 × 5000 pixels.', SchoolLogoImage::problem($upload));
+            $this->assertThrows(fn () => SchoolLogoImage::normalize($upload), InvalidArgumentException::class, 'at most 5000 × 5000 pixels');
         }
 
-        $this->assertNull(SchoolLogoImage::problem($this->encode(imagecreatetruecolor(4000, 10), 'png')));
+        $this->assertNull(SchoolLogoImage::problem($this->encode(imagecreatetruecolor(5000, 10), 'png')));
     }
 
     public function test_a_decompression_bomb_is_refused_without_being_decoded(): void
     {
         // 10,000 × 10,000 pixels in about 100 KB: GD would need ~400 MB to decode it.
         $bomb = $this->bombPng(10000);
-        $this->assertLessThan(1024 * 1024, strlen($bomb), 'small enough to pass the upload size limit');
+        $this->assertLessThan(5 * 1024 * 1024, strlen($bomb), 'small enough to pass the upload size limit');
         $this->assertSame([10000, 10000], array_slice(getimagesizefromstring($bomb), 0, 2));
 
         memory_reset_peak_usage();
         $before = memory_get_peak_usage();
 
-        $this->assertThrows(fn () => SchoolLogoImage::normalize($bomb), InvalidArgumentException::class, 'at most 4000 × 4000 pixels');
+        $this->assertThrows(fn () => SchoolLogoImage::normalize($bomb), InvalidArgumentException::class, 'at most 5000 × 5000 pixels');
 
         $this->assertLessThan(8 * 1024 * 1024, memory_get_peak_usage() - $before, 'refused from the header: nothing was decoded');
     }

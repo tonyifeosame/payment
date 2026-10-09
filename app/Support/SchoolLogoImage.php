@@ -23,7 +23,7 @@ use InvalidArgumentException;
  *   - re-encoding writes none of the upload's metadata (EXIF, GPS, text chunks).
  *
  * Nothing is decoded before the header has been checked: an image larger than
- * 4000px on either side, an unsupported type, or an animated WebP (which GD
+ * 5000px on either side, an unsupported type, or an animated WebP (which GD
  * cannot decode) is refused from its header alone, so a small file that
  * declares enormous dimensions can never be expanded into memory.
  *
@@ -32,7 +32,7 @@ use InvalidArgumentException;
  */
 final class SchoolLogoImage
 {
-    public const MAX_SOURCE_DIMENSION = 4000;
+    public const MAX_SOURCE_DIMENSION = 5000;
 
     public const MAX_OUTPUT_DIMENSION = 512;
 
@@ -97,11 +97,14 @@ final class SchoolLogoImage
             throw new InvalidArgumentException('The logo image could not be read. Please upload a different file.');
         }
 
+        // Scaled down before it is oriented, so the rotated copy is at most 512px
+        // and a full-size source is never held in memory twice. Orientation only
+        // flips or turns by 90°, so the longest side, and the fit, are the same.
+        $image = self::fit($image);
+
         if ($type === IMAGETYPE_JPEG) {
             $image = self::applyOrientation($image, self::jpegOrientation($bytes));
         }
-
-        $image = self::fit($image);
 
         ob_start();
         match ($type) {

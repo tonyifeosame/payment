@@ -71,7 +71,7 @@
                         <div class="min-w-0 flex-1">
                             <label for="logo" class="sr-only">Upload a new logo</label>
                             <input id="logo" name="logo" type="file" accept="image/png,image/jpeg,image/webp" class="block w-full min-h-[48px] rounded-xl border border-brand-ash bg-white text-sm text-brand-obsidian file:mr-3 file:min-h-[46px] file:cursor-pointer file:rounded-l-xl file:border-0 file:bg-brand-fog file:px-4 file:font-semibold file:text-brand-obsidian focus:border-brand-violet focus:outline-none focus:ring-4 focus:ring-brand-violet/20 {{ $field('logo') ? 'border-red-500' : '' }}" aria-describedby="logo-help{{ $field('logo') ? ' logo-error' : '' }}" @if($field('logo')) aria-invalid="true" @endif>
-                            <p id="logo-help" class="field-help">PNG, JPG or WebP, up to 1 MB and 4000 × 4000 pixels. Shown on the payment page and receipts.</p>
+                            <p id="logo-help" class="field-help">PNG, JPG or WebP, up to 5 MB and 5000 × 5000 pixels. Shown on the payment page and receipts.</p>
                             @error('logo')<p id="logo-error" class="field-error">{{ $message }}</p>@enderror
                             @if($school->logoUrl())
                                 <label class="mt-3 flex min-h-[48px] cursor-pointer items-center gap-3 text-sm">
