@@ -9,6 +9,7 @@ use App\Services\PayoutService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Reconciliation / backfill for school payouts.
@@ -48,6 +49,11 @@ class RunPayouts extends Command
             ->whereNotNull('school_id')
             // The guard against double-paying: anything already owed is left alone.
             ->whereDoesntHave('payout')
+            // Forward compatibility with the next release, which records cash the
+            // school received itself (transactions.source = 'manual'). That money
+            // never passed through FEYRA, so it must never be paid out, even if
+            // this release is redeployed over the newer schema in a rollback.
+            ->when(Schema::hasColumn('transactions', 'source'), fn ($q) => $q->where('source', 'paystack'))
             ->orderBy('id')
             ->limit($limit);
 

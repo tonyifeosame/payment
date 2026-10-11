@@ -8,7 +8,9 @@ use App\Models\School;
 use App\Models\Transaction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 /**
@@ -243,5 +245,27 @@ class PayoutReconciliationCronTest extends TestCase
 
         Bus::assertDispatched(InitiateSchoolPayout::class, 1);
         $this->assertSame(Payout::PENDING, Payout::firstOrFail()->status);
+    }
+
+    // ---------------------------------------------------------------
+    // Forward compatibility: a rollback over the next release's schema
+    // ---------------------------------------------------------------
+
+    public function test_cash_recorded_by_the_next_release_is_never_paid_out(): void
+    {
+        // The next release adds transactions.source and records cash the school
+        // received itself as 'manual': settled, with no payout, and never FEYRA's
+        // money. If this release is redeployed over that schema, the hourly run
+        // must reconcile only the online payment.
+        Schema::table('transactions', fn ($table) => $table->string('source', 20)->default('paystack'));
+        Bus::fake();
+        $online = $this->settledTransaction('txn-online');
+        $cash = $this->settledTransaction('txn-cash');
+        DB::table('transactions')->where('id', $cash->id)->update(['source' => 'manual']);
+
+        $this->artisan('payouts:run --dispatch')->assertExitCode(0);
+
+        $this->assertSame([$online->id], Payout::pluck('transaction_id')->map(fn ($id) => (int) $id)->all());
+        Bus::assertDispatched(InitiateSchoolPayout::class, 1);
     }
 }
